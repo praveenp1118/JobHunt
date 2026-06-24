@@ -15,9 +15,9 @@ Local Docker deployment only. Multi-user capable.
 **Owner:** Praveen Prakash  
 **Admin email:** praveenp.1118@gmail.com  
 **Project root:** `D:\JobHunt`  
-**GitHub repo (private):** https://github.com/praveenp1118/jobhunt  
-**Docs site (public, GitHub Pages):** https://praveenp1118.github.io/jobhunt — served from `/docs` on `main`  
-*(Repo is **private**; the `/docs` GitHub Pages site is **public**. `docs/`: `index.html` landing page +
+**GitHub:** https://github.com/praveenp1118/JobHunt (public)  
+**Docs:** https://praveenp1118.github.io/JobHunt — GitHub Pages, served from `/docs` on `main`  
+*(Repo is **public** (as of June 24, 2026). `docs/`: `index.html` landing page +
 `architecture.html` / `features.html` / `api.html` — thin pages that render the matching `*.md` source
 via marked.js with shared `doc.css` + `doc.js` (consistent Tailwind styling). `.nojekyll` keeps it
 pure-static — no Jekyll.)*  
