@@ -42,6 +42,16 @@ def _ensure_configured():
         )
 
 
+def _g(obj, key, default=None):
+    """Safe field access for Stripe objects. This SDK's StripeObject does NOT expose
+    dict.get() — `.get` routes through __getattr__ and raises — but bracket access works."""
+    try:
+        val = obj[key]
+    except (KeyError, TypeError, AttributeError):
+        return default
+    return default if val is None else val
+
+
 class CheckoutRequest(BaseModel):
     plan: str = "pro"
     success_url: str
@@ -157,19 +167,19 @@ async def stripe_webhook(request: Request, session: AsyncSession = Depends(get_d
 
     try:
         if etype == "checkout.session.completed":
-            user = await _user_by_id(session, (obj.get("metadata") or {}).get("user_id", ""))
+            user = await _user_by_id(session, _g(_g(obj, "metadata") or {}, "user_id", ""))
             if not user:
-                user = await _user_by_customer(session, obj.get("customer"))
+                user = await _user_by_customer(session, _g(obj, "customer"))
             if user:
                 user.subscription_status = "active"
                 user.subscription_plan = "pro"
-                user.subscription_id = obj.get("subscription")
-                user.stripe_customer_id = obj.get("customer") or user.stripe_customer_id
+                user.subscription_id = _g(obj, "subscription")
+                user.stripe_customer_id = _g(obj, "customer") or user.stripe_customer_id
                 user.subscription_end = _now() + PRO_PERIOD
                 await session.commit()
 
         elif etype == "invoice.payment_succeeded":
-            user = await _user_by_customer(session, obj.get("customer"))
+            user = await _user_by_customer(session, _g(obj, "customer"))
             if user:
                 user.subscription_status = "active"
                 user.subscription_plan = "pro"
@@ -177,19 +187,19 @@ async def stripe_webhook(request: Request, session: AsyncSession = Depends(get_d
                 await session.commit()
 
         elif etype == "invoice.payment_failed":
-            user = await _user_by_customer(session, obj.get("customer"))
+            user = await _user_by_customer(session, _g(obj, "customer"))
             if user:
                 user.subscription_status = "past_due"
                 await session.commit()
 
         elif etype == "customer.subscription.deleted":
-            user = await _user_by_customer(session, obj.get("customer"))
+            user = await _user_by_customer(session, _g(obj, "customer"))
             if user:
                 user.subscription_status = "expired"
                 user.subscription_plan = "none"
                 await session.commit()
-    except Exception as e:  # never 500 a webhook — Stripe will retry storms
-        logger.error("Webhook handler error for %s: %s", etype, e)
+    except Exception:  # never 500 a webhook — Stripe will retry storms
+        logger.exception("Webhook handler error for %s", etype)
 
     return {"status": "ok"}
 
@@ -210,15 +220,15 @@ async def verify_session(
 
     # Only activate from a session that belongs to this user.
     owns = (
-        (checkout.get("metadata") or {}).get("user_id") == str(user.id)
-        or checkout.get("customer") == user.stripe_customer_id
+        _g(_g(checkout, "metadata") or {}, "user_id") == str(user.id)
+        or _g(checkout, "customer") == user.stripe_customer_id
     )
-    if checkout.get("payment_status") == "paid" and owns:
+    if _g(checkout, "payment_status") == "paid" and owns:
         user.subscription_status = "active"
         user.subscription_plan = "pro"
-        if checkout.get("subscription"):
-            user.subscription_id = checkout.get("subscription")
-        user.stripe_customer_id = checkout.get("customer") or user.stripe_customer_id
+        if _g(checkout, "subscription"):
+            user.subscription_id = _g(checkout, "subscription")
+        user.stripe_customer_id = _g(checkout, "customer") or user.stripe_customer_id
         user.subscription_end = _now() + PRO_PERIOD
         await session.commit()
         return {"success": True, "plan": "pro"}
