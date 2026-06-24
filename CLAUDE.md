@@ -269,7 +269,10 @@ D:\JobHunt\
 - `s1` (master fit), `s1d` (best domain CV fit), `s2`, `s3_domain`, `s3_master`
 - `domain_cv_scores` (JSONB `{domain_cv_id: score}` — fit vs ALL active domain CVs at ingest)
 - `best_domain_cv_id` (FK → domain_cvs; highest-scoring domain CV; drives Tailor pre-select)
-- `has_partial_jd` (bool) — JD is only an alert-email snippet (LinkedIn/gated cards); full JD behind `portal_url`
+- `has_partial_jd` (bool) — JD is only an alert-email snippet (LinkedIn/gated cards); full JD behind
+  `portal_url`. Saved **unscored** (`s1`/`s1d`/`domain_cv_scores`/`best_domain_cv_id` = NULL) — a 50-char
+  snippet scores unreliably. Score it by fetching the full JD (`POST /jobs/{id}/fetch-jd` → background
+  `fetch_and_rescore_partial_job`, which sets `has_partial_jd=False` on success or stays partial on a login wall)
 - `needs_hitl` (bool)
 - `domain_cv_id` — CV used for tailoring
 - `detected_domain_cv_id` — V2: which domain CV feed found this job
@@ -356,6 +359,8 @@ S3 = factual integrity % — computed after Apply
 - `POST /parse/text`, `POST /parse/url`
 - `POST /confirm/{temp_id}`
 - `GET /{id}`, `PATCH /{id}/status`, `GET /{id}/emails`
+- `POST /{id}/fetch-jd` — V3: queue a background fetch of the full JD (from `portal_url`) +
+  re-score for a partial-JD job → `{status: "queued"}` (Celery `tasks.fetch_partial_jd`)
 
 ### Tailor (`/api/tailor/`)
 - `POST /generate`, `GET /{id}/changelog`
@@ -479,6 +484,8 @@ platform has a single global `s1_min_threshold` (no per-domain support).
 | Auto-feed "AI & Data Product Leadership — NL" 429'd on nl.indeed RSS | ✅ Fixed | Re-pointed to Jobicy (`jobicy.com/?feed=job_feed&search_keywords=product+manager`) → **raw_results=29** confirmed (the `?feed=job_feed` form works; the old `feed/job_feed?…&search_region=netherlands` form returns ~3) |
 | Scanner saved **nothing** — every S1 score came back 0 | ✅ Fixed | `_score_batch` referenced an undefined `model` var → `NameError` caught by the bare `except` → returned `s1_score=0` for all jobs. Added a `model` param (defaults to `settings.anthropic_model`) threaded through `batch_score_s1`. First real end-to-end: scan saved **23/29** jobs with genuine S1 scores |
 | `/jobs/stats` `needs_hitl` always 0 — read a non-existent `"hitl"` status | ✅ Fixed | Replaced `counts.get("hitl", 0)` with a real `count(*) WHERE needs_hitl = true`. Also added `by_best_domain` + `by_score_bucket` for the tracker filter-pill counts |
+| Stripe webhook returned 200 but never updated the DB; verify-session 500'd | ✅ Fixed | Root cause: stripe SDK 15.x `StripeObject` has **no `dict.get()`** — `obj.get("customer")` → `AttributeError: get`. The webhook's `except Exception` swallowed it (→ 200, no DB write) and verify-session had no catch (→ 500). Fixed with a bracket-access `_g(obj, key, default)` helper across the webhook + verify-session, plus `logger.exception`. Live-verified: checkout → active; cancel → expired. |
+| Partial-JD (LinkedIn alert) jobs scored B=0 — S1 on a ~50-char snippet is unreliable | ✅ Fixed | Gated cards are now saved **unscored** (`_save_gated_cards` no longer calls Claude — `s1`/`s1d`/`domain_cv_scores`/`best_domain_cv_id` = NULL, `has_partial_jd=True`). New **`fetch_and_rescore_partial_job`** fetches the full JD from `portal_url` and computes real S1 + S1d (clears `has_partial_jd`; stays partial on a login wall). Exposed via **`POST /jobs/{id}/fetch-jd`** (Celery `tasks.fetch_partial_jd`) + a **"↻ Fetch full JD + score"** button in JobDetail. One-off reset cleared the 5 existing `s1=0` partial jobs → NULL. Tracker shows **"—"** (not "0") for NULL scores (ScorePill); score-bucket filters already exclude NULLs (`coalesce(s1d,s1)` + `is not None`) |
 | Jobs Tracker sort (e.g. Best Fit) only sorted the current page | ✅ Fixed | Sorting was **frontend-only** over the fetched ≤50-row page, so a high-`s1d` job sitting beyond the `created_at`-DESC page limit never surfaced when sorting by Best Fit (e.g. Ruby Labs s1d=92 missing from the top next to EWOR s1d=92). Moved sorting **server-side, before pagination**: `GET /jobs` now takes `sort`/`order` (`best_fit`→`s1d`, plus `s1`/`company`/`role`/`market`/`status`/`source`/`created_at`), pushes NULL scores last, and **tiebreaks on `created_at DESC`** for equal scores. JobsPage passes `sort`/`order` (from the URL) and renders the server order as-is (removed the client `useMemo` re-sort). Verified on 68 jobs: both 92s now top, 88-group tiebroken by date |
 | Jobs Tracker — filter pills/header now show live counts (Option C) | ✅ Added | `GET /jobs` returns `{jobs, total_count, unfiltered_count}` with **all filters server-side** (incl. new `score`/`domain` params); header shows "N total · M matching", each Status/Source/Score pill + Domain dropdown shows its facet count from `/jobs/stats` (zero-count pills greyed, not hidden). Note: this changed the `/jobs` response shape (array → object) — all consumers (JobsPage, AppLayout, Dashboard) updated |
 | Tailor + domain-CV flows broken — undefined `model` NameError (and a `model=` TypeError) | ✅ Fixed | All 4 `tailor_agents` functions **and** 3 `cv_agents` (`generate_domain_changelog`, `apply_changes`, `compute_s3_score`) referenced an undefined `model` on `client.messages.create(...)` → `NameError`; cvs.py also passed `model=user_model` to two of them that lacked the param → `TypeError`. Added `model: Optional[str] = None` to all 7 (defaults to `settings.anthropic_model`). Then **threaded `get_user_model()` through the tailor router** (generate / apply×3 incl. `compute_s3_score` / regenerate-cl / followup) so tailoring honours each user's `preferred_model` — matching cvs.py/jobs.py. Verified full flow: generate (6 changes, S2 72) → approve all → apply (S3 92/92 **green**) → CV + cover letter + email all populated |
@@ -742,9 +749,19 @@ Pro, ₹500/mo via Stripe); users bring their own Anthropic + Apify keys. Built 
   wizard gains **Subscribe as Step 1** (Skip-for-now allowed).
 - **Tests:** `test_billing.py` (4) — subscription status, checkout wiring, gate 402 on tailor,
   GET /jobs allowed. Stripe lib baked into the backend image.
+- **✅ Live-verified (test mode, June 24 2026):** full checkout → `checkout.session.completed` +
+  `invoice.payment_succeeded` → subscription **active/pro**; cancel → `customer.subscription.deleted`
+  → **expired** (DB flips ~3s after the Stripe CLI forwards the event); non-admin tailor → **402**.
+- **⚠️ Stripe SDK 15.x caveat:** the SDK (API `2026-05-27.dahlia`) `StripeObject` does **NOT** expose
+  `dict.get()` — `obj.get("customer")` routes through `__getattr__` and raises `AttributeError: get`.
+  Use **bracket access** instead. `billing.py` has a `_g(obj, key, default=None)` helper
+  (`try: obj[key] except (KeyError, TypeError, AttributeError): default`) used across the webhook +
+  verify-session; the webhook also uses `logger.exception` so handler errors surface (the original
+  `.get()` bug made every webhook return 200 while silently failing to update the DB, and verify-session 500'd).
 - **⚠️ Config note:** `STRIPE_PRO_PRICE_ID` must be a **Price** id (`price_…`), not a **Product**
-  id (`prod_…`) — checkout 502s ("No such price") otherwise. Webhook secret needed for the
-  webhook path. (Razorpay wallet code remains in the repo, unused.)
+  id (`prod_…`) — checkout 502s ("No such price") otherwise. `STRIPE_WEBHOOK_SECRET` (`whsec_…`) needed
+  for the webhook path. `.env` changes need a container **recreate** (`up -d --force-recreate backend`),
+  not just `restart` — docker-compose injects `env_file` values at creation. (Razorpay wallet code remains, unused.)
 
 ### 3. S3 File Storage Migration
 - Add boto3 to requirements.txt
@@ -839,4 +856,4 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 24, 2026 — V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); GitHub repo + Pages docs site live. All 30 smoke tests passing*
+*Last updated: June 25, 2026 — **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. All 30 smoke tests passing*
