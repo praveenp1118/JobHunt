@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow, format } from 'date-fns'
-import { getJob, getJobEmails, updateJobStatus, updateJob, deleteJob, draftFollowUp } from '../../api/jobs'
+import { getJob, getJobEmails, updateJobStatus, updateJob, deleteJob, draftFollowUp, fetchJobJd } from '../../api/jobs'
 import { sendReply } from '../../api/jobs'
+import { toast } from '../../store/toast'
 import { StatusBadge, MarketBadge } from '../../components/ui/Badge'
 import { ThreeScores } from '../../components/ui/ScorePill'
 import Button from '../../components/ui/Button'
@@ -23,6 +24,7 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
   const [jdExpanded, setJdExpanded] = useState(false)
   const [followUpDraft, setFollowUpDraft] = useState('')
   const [loadingFollowUp, setLoadingFollowUp] = useState(false)
+  const [fetchingJd, setFetchingJd] = useState(false)
 
   const { data: jobData, isLoading } = useQuery({
     queryKey: ['job', jobId],
@@ -51,6 +53,26 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
     qc.invalidateQueries({ queryKey: ['jobs'] })
     onUpdate?.()
     onClose()
+  }
+
+  const handleFetchJd = async () => {
+    setFetchingJd(true)
+    try {
+      await fetchJobJd(jobId)
+      toast.success('Fetching the full JD — scores will update shortly')
+      // Background Celery task: refresh the job + tracker a few times as it lands.
+      ;[8000, 16000, 26000].forEach((ms) =>
+        setTimeout(() => {
+          qc.invalidateQueries({ queryKey: ['job', jobId] })
+          qc.invalidateQueries({ queryKey: ['jobs'] })
+          onUpdate?.()
+        }, ms)
+      )
+      setTimeout(() => setFetchingJd(false), 27000)
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Could not fetch the full JD')
+      setFetchingJd(false)
+    }
   }
 
   const handleSendReply = async (emailId) => {
@@ -362,11 +384,18 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
               return (
                 <div>
                   {isPartial && (
-                    <div className="flex items-start gap-2 mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      <span className="text-amber-500 text-sm leading-none mt-0.5">⚠️</span>
-                      <p className="text-xs text-amber-700">
-                        Partial description — view the full JD at the posting before tailoring. {portalLink}
-                      </p>
+                    <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      <div className="flex items-start gap-2">
+                        <span className="text-amber-500 text-sm leading-none mt-0.5">⚠️</span>
+                        <p className="text-xs text-amber-700">
+                          Partial description — only the alert-email snippet was saved (unscored). {portalLink}
+                        </p>
+                      </div>
+                      {job.portal_url && (
+                        <Button size="sm" loading={fetchingJd} onClick={handleFetchJd} className="mt-2">
+                          ↻ Fetch full JD + score
+                        </Button>
+                      )}
                     </div>
                   )}
                   <div className={`text-sm text-gray-700 whitespace-pre-wrap leading-relaxed ${!jdExpanded ? 'line-clamp-20' : ''}`}>

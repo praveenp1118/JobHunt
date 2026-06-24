@@ -21,6 +21,10 @@ export const confirmJob = (tempId, data) =>
 export const updateJobStatus = (id, status, notes) =>
   client.patch(`/jobs/${id}/status`, { status, notes })
 
+// Queue a background fetch of the full JD (from portal_url) + re-score a partial-JD job.
+export const fetchJobJd = (id) =>
+  client.post(`/jobs/${id}/fetch-jd`)
+
 export const updateJob = (id, data) =>
   client.patch(`/jobs/${id}`, data)
 

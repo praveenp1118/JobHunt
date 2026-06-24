@@ -193,3 +193,49 @@ async def _check_ghosted_async():
 
     print(f"✅ Ghosted {ghosted_count} jobs")
     return {"ghosted": ghosted_count}
+
+
+@celery_app.task(name="tasks.fetch_partial_jd", bind=True, max_retries=1)
+def fetch_partial_jd(self, job_id: str, user_id: str):
+    """Background fetch + re-score of a partial-JD job's full description (from portal_url)."""
+    import asyncio
+    from app.database import engine
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(_fetch_partial_jd_async(job_id, user_id))
+    finally:
+        loop.run_until_complete(engine.dispose())  # avoid cross-loop pool reuse
+        loop.close()
+
+
+async def _fetch_partial_jd_async(job_id: str, user_id: str):
+    import uuid
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from app.models.user import User, UserCredentials, UserPreferences
+    from app.utils.encryption import decrypt_if_present
+    from app.agents.gmail_alert_agent import fetch_and_rescore_partial_job
+    from app.config import settings
+
+    async with AsyncSessionLocal() as session:
+        user = (await session.execute(
+            select(User).where(User.id == uuid.UUID(user_id))
+        )).scalar_one_or_none()
+        if not user:
+            return {"status": "user_not_found"}
+        creds = (await session.execute(
+            select(UserCredentials).where(UserCredentials.user_id == user.id)
+        )).scalar_one_or_none()
+        anthropic_key = (
+            (decrypt_if_present(creds.anthropic_api_key_enc) if creds and creds.anthropic_api_key_enc else None)
+            or settings.platform_anthropic_api_key or settings.anthropic_api_key
+        )
+        prefs = (await session.execute(
+            select(UserPreferences).where(UserPreferences.user_id == user.id)
+        )).scalar_one_or_none()
+        model = (prefs.preferred_model if prefs and getattr(prefs, "preferred_model", None)
+                 else settings.anthropic_model)
+        result = await fetch_and_rescore_partial_job(uuid.UUID(job_id), user, session, anthropic_key, model)
+        print(f"🔁 fetch_partial_jd {job_id}: {result.get('status')}")
+        return result

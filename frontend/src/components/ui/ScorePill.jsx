@@ -17,13 +17,14 @@ function getS3Color(score) {
 
 export function ScorePill({ score, label, type = 'fit', className = '' }) {
   const colorClass = type === 's3' ? getS3Color(score) : getScoreColor(score)
-  const display = score !== null && score !== undefined ? Math.round(score) : 'NA'
+  // NULL/undefined (e.g. an unscored partial-JD job) → neutral "—", never "0"/"NA".
+  const isEmpty = score === null || score === undefined
 
   return (
     <div className={clsx('inline-flex flex-col items-center', className)}>
       {label && <span className="text-[10px] text-gray-400 font-medium mb-0.5">{label}</span>}
       <span className={clsx('px-2 py-0.5 rounded-full text-xs font-semibold tabular-nums', colorClass)}>
-        {display === 'NA' ? 'NA' : `${display}`}
+        {isEmpty ? '—' : Math.round(score)}
       </span>
     </div>
   )

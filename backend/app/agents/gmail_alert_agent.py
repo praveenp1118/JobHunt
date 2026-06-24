@@ -242,47 +242,21 @@ def _best_domain(dscores: dict):
 
 async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
                             domain_cv_list, label_map, anthropic_key, min_s1, model=None) -> dict:
-    """Lightweight S1 pre-score (title + company + location + email snippet) for
-    login-gated job cards, saving those that clear the threshold. When there's no
-    master CV to score against, cards are saved unscored (s1=None) for review.
+    """Save login-gated job cards (LinkedIn etc) extracted from the alert email body.
 
-    Each card is also scored against ALL active domain CVs; the best one drives the
-    threshold decision (best S1d when domain CVs exist, else S1) and is stored as
-    best_domain_cv_id, with all scores in domain_cv_scores.
+    Partial-JD cards carry only a ~50-char snippet, so S1 scoring on them is unreliable
+    (it produced B=0). We therefore save them UNSCORED — s1/s1d/domain_cv_scores/
+    best_domain_cv_id = None, has_partial_jd=True — for the user to review. The full JD is
+    fetched + scored later (manual "Fetch full JD" button or background task) from
+    portal_url. No Claude tokens are spent here. (master_cv_md / domain_cv_list / label_map /
+    anthropic_key / min_s1 / model are accepted for signature stability but unused now.)
 
-    Returns {"saved_ids": [...], "results": [{url, reason, s1, s1d, domain_scores, ...}]}."""
+    Returns {"saved_ids": [...], "results": [{url, reason, ...}]}."""
     from app.agents.jd_agents import compute_jd_hash, detect_market_from_text
-    from app.agents.scanner_agents import batch_score_s1
     from app.models.job import Job, JobSource, JobStatus
 
-    card_inputs = [
-        {"id": str(i), "role": c.get("title", ""), "company": c.get("company") or "",
-         "location": c.get("location") or "", "description": c.get("snippet") or ""}
-        for i, c in enumerate(cards)
-    ]
-
-    # S1 (master CV) — one batch for all cards.
-    scores = {}
-    if master_cv_md:
-        try:
-            for s in await batch_score_s1(master_cv_md, card_inputs, api_key=anthropic_key, model=model):
-                scores[s["id"]] = s.get("s1_score", 0) or 0
-        except Exception as e:
-            print(f"⚠️ gated card scoring failed: {e}")
-
-    # Score every card against ALL active domain CVs → {card_idx: {dcv_id_str: score}}.
-    dscores_by_card = await _score_jobs_vs_domain_cvs(card_inputs, domain_cv_list, anthropic_key, model)
-
-    def _labelled(d):
-        return {label_map.get(k, k): v for k, v in (d or {}).items()}
-
     saved_ids, results = [], []
-    for i, c in enumerate(cards):
-        s1 = scores.get(str(i), 0)
-        dscores = dscores_by_card.get(str(i), {})
-        best_id, best_s1d = _best_domain(dscores)
-        has_domain = best_s1d is not None
-        decision = best_s1d if has_domain else s1
+    for c in cards:
         title = c.get("title") or "Unknown"
         company = c.get("company") or "Unknown"
         url = c.get("url")
@@ -293,11 +267,6 @@ async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
         )).scalars().first()
         if existing:
             results.append({"url": url, "reason": "duplicate", "role": title, "company": company})
-            continue
-        if master_cv_md and decision < min_s1:
-            results.append({"url": url, "reason": "below_threshold", "s1": s1, "s1d": best_s1d,
-                            "domain_scores": _labelled(dscores), "best_domain_cv": label_map.get(best_id),
-                            "role": title, "company": company})
             continue
         new_id = uuid_module.uuid4()
         session.add(Job(
@@ -311,23 +280,19 @@ async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
             jd_raw=snippet[:50000],
             jd_md=snippet[:50000],
             jd_language="en",
-            has_partial_jd=True,  # only the email snippet — full JD is behind portal_url
+            has_partial_jd=True,   # only the email snippet — full JD is behind portal_url
             portal_url=url,
             source=JobSource.gmail_alert,
             status=JobStatus.new,
-            s1=(s1 if master_cv_md else None),
-            s1d=best_s1d,
-            domain_cv_scores=(dscores or None),
-            best_domain_cv_id=(uuid_module.UUID(best_id) if best_id else None),
+            s1=None, s1d=None,     # unscored — snippet too short to score reliably
+            domain_cv_scores=None,
+            best_domain_cv_id=None,
             source_email_id=source_email_id,
-            detected_domain_cv_id=(uuid_module.UUID(best_id) if best_id else None),
+            detected_domain_cv_id=None,
         ))
         saved_ids.append(str(new_id))
-        results.append({"url": url, "reason": "saved", "s1": (s1 if master_cv_md else None),
-                        "s1d": best_s1d, "domain_scores": _labelled(dscores),
-                        "best_domain_cv": label_map.get(best_id),
-                        "decision": "s1d" if has_domain else "s1",
-                        "role": title, "company": company, "gated": True})
+        results.append({"url": url, "reason": "saved_unscored", "role": title,
+                        "company": company, "gated": True, "partial_jd": True})
     return {"saved_ids": saved_ids, "results": results}
 
 
@@ -503,3 +468,70 @@ async def process_job_alert_email(
             continue
 
     return _log(saved_ids, results)
+
+
+async def fetch_and_rescore_partial_job(job_id, user, session, anthropic_key, model=None) -> dict:
+    """Fetch the full JD for a partial-JD (gmail_alert) job from its portal_url and
+    re-score it properly.
+
+    On success (page > 500 chars): stores the full JD and computes S1 (master CV) +
+    S1d (all active domain CVs) + best_domain_cv_id, then clears has_partial_jd.
+    On a login wall / thin page: leaves has_partial_jd=True ("Login-gated, cannot fetch").
+
+    Returns {"status": "scored"|"gated"|"not_found"|"no_url", ...}."""
+    from app.agents.jd_agents import fetch_url_content, parse_and_score_jd
+    from app.models.job import Job
+    from app.models.cv import MasterCV
+
+    job = (await session.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == user.id)
+    )).scalar_one_or_none()
+    if not job:
+        return {"status": "not_found"}
+    if not job.portal_url:
+        return {"status": "no_url", "message": "No portal URL to fetch"}
+
+    try:
+        content = await fetch_url_content(job.portal_url)
+    except Exception as e:
+        print(f"⚠️ fetch_and_rescore: fetch failed for {job.portal_url}: {e}")
+        content = ""
+
+    if not content or len(content) < 500:
+        print(f"ℹ️ fetch_and_rescore: login-gated / thin page, cannot fetch full JD ({job.portal_url})")
+        return {"status": "gated", "message": "Login-gated, cannot fetch"}
+
+    master = (await session.execute(
+        select(MasterCV).where(MasterCV.user_id == user.id, MasterCV.is_active == True)
+    )).scalars().first()
+    master_cv_md = master.content_md if master else ""
+
+    result = await parse_and_score_jd(content, master_cv_md, anthropic_key, model=model)
+    s1 = result.get("s1_score", 0) or 0
+    parsed = result.get("parsed", {})
+
+    # Score against every active domain CV; best one drives S1d / best_domain_cv_id.
+    domain_cv_list = await _load_domain_cvs_full(session, user.id)
+    job_input = [{"id": "j",
+                  "role": job.role or parsed.get("role") or "",
+                  "company": job.company or parsed.get("company") or "",
+                  "location": job.location or parsed.get("location") or "",
+                  "description": content[:500]}]
+    dscores = (await _score_jobs_vs_domain_cvs(
+        job_input, domain_cv_list, anthropic_key, model)).get("j", {})
+    best_id, best_s1d = _best_domain(dscores)
+
+    job.jd_raw = content[:50000]
+    job.jd_md = content[:50000]
+    job.s1 = s1
+    job.s1d = best_s1d
+    job.domain_cv_scores = (dscores or None)
+    job.best_domain_cv_id = (uuid_module.UUID(best_id) if best_id else None)
+    if best_id:
+        job.detected_domain_cv_id = uuid_module.UUID(best_id)
+    if parsed.get("market"):
+        job.market = parsed.get("market")
+    job.has_partial_jd = False
+    await session.commit()
+    return {"status": "scored", "s1": s1, "s1d": best_s1d,
+            "best_domain_cv_id": best_id, "job_id": str(job_id)}

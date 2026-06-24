@@ -618,6 +618,26 @@ async def get_job_emails(
     return [EmailThreadRead.model_validate(e) for e in result.scalars().all()]
 
 
+@router.post("/{job_id}/fetch-jd")
+async def fetch_full_jd(
+    job_id: uuid.UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Queue a background fetch of the full JD (from portal_url) + re-score for a
+    partial-JD (gmail_alert) job. Returns immediately; the tracker refreshes when done."""
+    job = (await session.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == user.id)
+    )).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.portal_url:
+        raise HTTPException(status_code=400, detail="No portal URL to fetch the full JD from")
+    from app.tasks.gmail_tasks import fetch_partial_jd
+    fetch_partial_jd.delay(str(job_id), str(user.id))
+    return {"status": "queued"}
+
+
 @router.post("/{job_id}/score-s1")
 async def score_job_s1(
     job_id: uuid.UUID,
