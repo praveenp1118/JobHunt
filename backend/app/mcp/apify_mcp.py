@@ -26,7 +26,7 @@ def build_linkedin_input(keywords: str, location: str, max_results: int = 25) ->
     )
     return {
         "urls": [search_url],
-        "count": max_results,
+        "count": max(max_results, 10),  # actor rejects very low counts (400)
         "scrapeCompany": False,
     }
 
@@ -39,7 +39,7 @@ def build_google_jobs_input(keywords: str, location: str, max_results: int = 25)
     relevance is handled downstream by market detection + S1/S1d scoring."""
     return {
         "query": keywords or "head of product",
-        "num_results": max_results,
+        "num_results": max(max_results, 10),  # actor rejects very low counts (400)
     }
 
 
