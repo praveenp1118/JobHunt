@@ -1,0 +1,20 @@
+/* Shared "prose" styling for the rendered markdown docs (matches index.html). */
+.doc { color: #334155; line-height: 1.7; font-size: 15px; }
+.doc h1 { font-size: 2rem; font-weight: 700; color: #0f172a; letter-spacing: -.02em; margin: 0 0 .5rem; }
+.doc h2 { font-size: 1.3rem; font-weight: 700; color: #0f172a; margin: 2.2rem 0 .75rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
+.doc h3 { font-size: 1.05rem; font-weight: 600; color: #0f172a; margin: 1.6rem 0 .5rem; }
+.doc p { margin: .75rem 0; }
+.doc a { color: #059669; text-decoration: none; }
+.doc a:hover { text-decoration: underline; }
+.doc strong { color: #0f172a; font-weight: 600; }
+.doc ul, .doc ol { margin: .75rem 0; padding-left: 1.4rem; }
+.doc li { margin: .35rem 0; }
+.doc code { background: #f1f5f9; color: #0f172a; padding: .12em .4em; border-radius: 4px; font-size: .87em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.doc pre { background: #0f172a; color: #e2e8f0; padding: 1.1rem 1.25rem; border-radius: 12px; overflow-x: auto; margin: 1.1rem 0; line-height: 1.5; }
+.doc pre code { background: none; color: inherit; padding: 0; font-size: 12.5px; }
+.doc table { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: 14px; }
+.doc th { text-align: left; background: #f8fafc; color: #475569; font-weight: 600; padding: .55rem .8rem; border: 1px solid #e2e8f0; }
+.doc td { padding: .55rem .8rem; border: 1px solid #e2e8f0; vertical-align: top; }
+.doc blockquote { border-left: 3px solid #10b981; padding-left: 1rem; color: #64748b; margin: 1rem 0; }
+.doc hr { border: none; border-top: 1px solid #e2e8f0; margin: 2rem 0; }
+.doc em { color: #475569; }
