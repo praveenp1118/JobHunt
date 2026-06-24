@@ -296,48 +296,64 @@ async def save_job_direct(
 # TRACKER: LIST + DETAIL + UPDATE
 # ══════════════════════════════════════════════════════════════
 
-@router.get("", response_model=List[JobSummary])
+@router.get("")
 async def list_jobs(
     status_filter: Optional[List[JobStatus]] = Query(None, alias="status"),
     market: Optional[List[str]] = Query(None),
     source: Optional[List[JobSource]] = Query(None),
     needs_hitl: Optional[bool] = None,
     min_s1: Optional[float] = None,
+    score: Optional[float] = None,   # min effective score (coalesce s1d, s1)
+    domain: Optional[str] = None,    # best_domain_cv_id
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
-    """List jobs with filters. Used by the Tracker tab."""
-    query = select(Job).where(Job.user_id == user.id)
+    """List jobs with filters. Returns the page plus total_count (matching the
+    current filters) and unfiltered_count (all of the user's jobs)."""
+    from sqlalchemy import func
 
+    filters = [Job.user_id == user.id]
     if status_filter:
-        query = query.where(Job.status.in_(status_filter))
+        filters.append(Job.status.in_(status_filter))
     if market:
-        query = query.where(Job.market.in_(market))
+        filters.append(Job.market.in_(market))
     if source:
-        query = query.where(Job.source.in_(source))
+        filters.append(Job.source.in_(source))
     if needs_hitl is not None:
-        query = query.where(Job.needs_hitl == needs_hitl)
+        filters.append(Job.needs_hitl == needs_hitl)
     if min_s1 is not None:
-        query = query.where(Job.s1 >= min_s1)
+        filters.append(Job.s1 >= min_s1)
+    if score is not None:
+        # score filter uses the best domain fit when present, else base fit
+        filters.append(func.coalesce(Job.s1d, Job.s1) >= score)
+    if domain:
+        try:
+            filters.append(Job.best_domain_cv_id == uuid.UUID(domain))
+        except (ValueError, TypeError):
+            pass
     if search:
-        query = query.where(
-            or_(
-                Job.company.ilike(f"%{search}%"),
-                Job.role.ilike(f"%{search}%"),
-            )
-        )
+        filters.append(or_(
+            Job.company.ilike(f"%{search}%"),
+            Job.role.ilike(f"%{search}%"),
+        ))
 
-    query = query.order_by(Job.created_at.desc()).offset(skip).limit(limit)
-    result = await session.execute(query)
+    total_count = (await session.execute(
+        select(func.count(Job.id)).where(*filters)
+    )).scalar() or 0
+    unfiltered_count = (await session.execute(
+        select(func.count(Job.id)).where(Job.user_id == user.id)
+    )).scalar() or 0
+
+    result = await session.execute(
+        select(Job).where(*filters).order_by(Job.created_at.desc()).offset(skip).limit(limit)
+    )
     jobs = result.scalars().all()
 
     # Human-readable labels for every domain CV the user has, so the frontend can
     # resolve domain_cv_scores / best_domain_cv_id ids → "Industry × Country".
-    from app.models.cv import DomainCV
-    from app.models.domain import IndustryVertical
     dcv_rows = (await session.execute(
         select(DomainCV.id, IndustryVertical.label, DomainCV.country_code)
         .outerjoin(IndustryVertical, IndustryVertical.id == DomainCV.industry_id)
@@ -354,7 +370,7 @@ async def list_jobs(
         if ids:
             s.domain_cv_labels = {i: label_map.get(i, "Domain") for i in ids}
         summaries.append(s)
-    return summaries
+    return {"jobs": summaries, "total_count": total_count, "unfiltered_count": unfiltered_count}
 
 
 @router.get("/stats")
@@ -417,7 +433,15 @@ async def get_job_stats(
             label = f"{ind} × {fn}" if ind and fn else (ind or fn or "Domain CV")
         by_domain_cv.append({"label": label, "count": count, "domain_cv_id": dcv_id})
 
-    # S1 score distribution
+    # By best-fit domain CV (drives the Domain filter dropdown counts)
+    bd_result = await session.execute(
+        select(Job.best_domain_cv_id, func.count(Job.id))
+        .where(Job.user_id == user.id, Job.best_domain_cv_id != None)
+        .group_by(Job.best_domain_cv_id)
+    )
+    by_best_domain = {str(row[0]): row[1] for row in bd_result}
+
+    # S1 score distribution (legacy buckets, on s1)
     score_result = await session.execute(
         select(Job.s1).where(Job.user_id == user.id, Job.s1 != None)
     )
@@ -429,13 +453,33 @@ async def get_job_stats(
         "low": sum(1 for s in scores if s < 55),
     }
 
+    # Score buckets for the Score filter pills — use s1d when present, else s1.
+    eff_result = await session.execute(
+        select(func.coalesce(Job.s1d, Job.s1)).where(Job.user_id == user.id)
+    )
+    eff = [row[0] for row in eff_result if row[0] is not None]
+    total = sum(counts.values())
+    by_score_bucket = {
+        "any": total,
+        "gte_70": sum(1 for s in eff if s >= 70),
+        "gte_80": sum(1 for s in eff if s >= 80),
+        "gte_90": sum(1 for s in eff if s >= 90),
+    }
+
+    # Needs-HITL count (a boolean flag, not a status)
+    needs_hitl = (await session.execute(
+        select(func.count(Job.id)).where(Job.user_id == user.id, Job.needs_hitl == True)
+    )).scalar() or 0
+
     return {
-        "total": sum(counts.values()),
+        "total": total,
         "by_status": {s.value: counts.get(s, 0) for s in JobStatus},
-        "needs_hitl": counts.get("hitl", 0),
+        "needs_hitl": needs_hitl,
         "from_scan": from_scan,
         "by_source": by_source,
         "by_domain_cv": by_domain_cv,
+        "by_best_domain": by_best_domain,
+        "by_score_bucket": by_score_bucket,
         "score_distribution": score_dist,
         "avg_s1": round(sum(scores) / len(scores), 1) if scores else None,
     }

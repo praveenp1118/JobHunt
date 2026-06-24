@@ -16,7 +16,6 @@ import JobsPage from './pages/jobs/JobsPage'
 import TailorPage from './pages/jobs/TailorPage'
 import CVsPage from './pages/cvs/CVsPage'
 import SettingsPage from './pages/settings/SettingsPage'
-import FeedsPage from './pages/feeds/FeedsPage'
 import ActivityPage from './pages/activity/ActivityPage'
 import WalletPage from './pages/wallet/WalletPage'
 import ToastContainer from './components/ui/Toast'
@@ -72,7 +71,6 @@ export default function App() {
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/cvs" element={<CVsPage />} />
         <Route path="/wallet" element={<WalletPage />} />
-        <Route path="/feeds" element={<FeedsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/admin" element={<AdminPage />} />
       </Route>

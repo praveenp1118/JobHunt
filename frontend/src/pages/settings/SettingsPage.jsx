@@ -18,10 +18,13 @@ const TABS = [
 ]
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState('profile')
+  // Honour /settings#feeds (e.g. the Dashboard "Manage feeds" link).
+  const [tab, setTab] = useState(
+    () => (typeof window !== 'undefined' && window.location.hash === '#feeds') ? 'feeds' : 'profile'
+  )
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className={`p-6 mx-auto ${tab === 'feeds' ? 'max-w-5xl' : 'max-w-3xl'}`}>
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-900">Settings</h1>
         <p className="text-sm text-gray-500 mt-0.5">Manage your profile, API keys, and preferences</p>

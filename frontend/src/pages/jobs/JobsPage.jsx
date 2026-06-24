@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
-import { getJobs } from '../../api/jobs'
+import { getJobs, getJobStats } from '../../api/jobs'
 import { getDomainCVs } from '../../api/cvs'
 import { clsx } from 'clsx'
 import { StatusBadge, MarketBadge, SourceBadge } from '../../components/ui/Badge'
@@ -88,11 +88,13 @@ export default function JobsPage() {
     else patchSp({ sort: null })  // asc → desc → unsorted (default Added DESC)
   }
 
-  // Server-side filters (status/source/search/hitl); score+domain are client-side.
+  // All filters are server-side now (so counts stay accurate beyond the page limit).
   const params = {
     limit: 50,
     ...(statusFilter && { status: statusFilter }),
     ...(sourceFilter && { source: sourceFilter }),
+    ...(scoreFilter && { score: scoreFilter }),
+    ...(domainFilter && { domain: domainFilter }),
     ...(search && { search }),
     ...(needsHitl && { needs_hitl: true }),
   }
@@ -103,12 +105,13 @@ export default function JobsPage() {
     refetchInterval: 30000,
   })
 
-  const { data: hitlData } = useQuery({
-    queryKey: ['hitl-count'],
-    queryFn: () => getJobs({ needs_hitl: true, limit: 5 }),
+  // Facet counts for the header + filter pills.
+  const { data: statsData } = useQuery({
+    queryKey: ['job-stats'],
+    queryFn: getJobStats,
     refetchInterval: 30000,
-    retry: false,
   })
+  const stats = statsData?.data || {}
 
   const { data: domainCVsData } = useQuery({
     queryKey: ['domain-cvs'],
@@ -117,22 +120,16 @@ export default function JobsPage() {
   const domainCVOptions = (domainCVsData?.data || []).map((cv) => ({
     id: String(cv.id),
     label: `${cv.industry_label || 'Domain'} × ${cv.country_code || '—'}`,
+    count: (stats.by_best_domain || {})[String(cv.id)] || 0,
   }))
 
-  const jobs = data?.data || []
-  const hitlCount = hitlData?.data?.length || 0
+  const jobs = data?.data?.jobs || []
+  const totalCount = data?.data?.total_count ?? 0          // matching current filters
+  const unfilteredCount = data?.data?.unfiltered_count ?? 0 // all jobs
+  const hitlCount = stats.needs_hitl || 0
+  const anyFilter = !!(statusFilter || sourceFilter || scoreFilter || domainFilter || needsHitl || search)
 
-  // Client-side score (s1d when available, else s1) + domain (best_domain_cv_id) filters.
-  const filtered = useMemo(() => jobs.filter((j) => {
-    if (scoreFilter) {
-      const s = j.s1d ?? j.s1
-      if (s === null || s === undefined || s < Number(scoreFilter)) return false
-    }
-    if (domainFilter && String(j.best_domain_cv_id) !== domainFilter) return false
-    return true
-  }), [jobs, scoreFilter, domainFilter])
-
-  // Client-side sort (default Added DESC when no column is chosen).
+  // Sort the current page (default Added DESC when no column is chosen).
   const displayJobs = useMemo(() => {
     const key = sortKey || 'created_at'
     const dir = sortKey ? sortDir : 'desc'
@@ -142,15 +139,21 @@ export default function JobsPage() {
       if (key === 'created_at') return new Date(j.created_at).getTime()
       return (j[key] ?? '').toString().toLowerCase()
     }
-    return [...filtered].sort((a, b) => {
+    return [...jobs].sort((a, b) => {
       const va = val(a), vb = val(b)
       if (va < vb) return dir === 'asc' ? -1 : 1
       if (va > vb) return dir === 'asc' ? 1 : -1
       return 0
     })
-  }, [filtered, sortKey, sortDir])
+  }, [jobs, sortKey, sortDir])
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId)
+
+  // Count helpers for the filter pills.
+  const statusCount = (v) => (v ? (stats.by_status || {})[v] ?? 0 : stats.total ?? 0)
+  const sourceCount = (v) => (v ? (stats.by_source || {})[v] ?? 0 : stats.total ?? 0)
+  const SCORE_BUCKET = { null: 'any', '70': 'gte_70', '80': 'gte_80', '90': 'gte_90' }
+  const scoreCount = (v) => (stats.by_score_bucket || {})[v ? SCORE_BUCKET[v] : 'any'] ?? 0
 
   const onJobAdded = () => {
     qc.invalidateQueries({ queryKey: ['jobs'] })
@@ -172,7 +175,12 @@ export default function JobsPage() {
         {/* Header */}
         <div className="px-5 pt-5 pb-3 border-b border-gray-100 bg-white">
           <div className="flex items-center justify-between mb-3">
-            <h1 className="text-lg font-semibold text-gray-900">Jobs</h1>
+            <h1 className="text-lg font-semibold text-gray-900">
+              Jobs{' '}
+              <span className="text-sm font-normal text-gray-400">
+                {anyFilter ? `(${unfilteredCount} total · ${totalCount} matching)` : `(${unfilteredCount})`}
+              </span>
+            </h1>
             <Button size="sm" onClick={() => setShowAddModal(true)}>
               + Add job
             </Button>
@@ -208,17 +216,14 @@ export default function JobsPage() {
               </button>
             )}
             {STATUS_FILTERS.map((f) => (
-              <button
+              <FilterPill
                 key={f.value ?? 'all'}
+                active={statusFilter === f.value && !needsHitl}
+                count={statusCount(f.value)}
                 onClick={() => patchSp({ status: f.value, hitl: null })}
-                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  statusFilter === f.value && !needsHitl
-                    ? 'bg-slate-800 text-white border-slate-800'
-                    : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                }`}
               >
                 {f.label}
-              </button>
+              </FilterPill>
             ))}
           </div>
 
@@ -227,12 +232,14 @@ export default function JobsPage() {
             <FilterGroup label="Source">
               {SOURCE_FILTERS.map((f) => (
                 <FilterPill key={f.value ?? 'all'} active={(sourceFilter ?? null) === f.value}
+                  count={sourceCount(f.value)}
                   onClick={() => patchSp({ source: f.value })}>{f.label}</FilterPill>
               ))}
             </FilterGroup>
             <FilterGroup label="Score">
               {SCORE_FILTERS.map((f) => (
                 <FilterPill key={f.value ?? 'any'} active={(scoreFilter ?? null) === f.value}
+                  count={scoreCount(f.value)}
                   onClick={() => patchSp({ score: f.value })}>{f.label}</FilterPill>
               ))}
             </FilterGroup>
@@ -243,9 +250,9 @@ export default function JobsPage() {
                   onChange={(e) => patchSp({ domain: e.target.value || null })}
                   className="text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:border-emerald-400 bg-white text-gray-700"
                 >
-                  <option value="">All domains</option>
+                  <option value="">All domains ({stats.total ?? 0})</option>
                   {domainCVOptions.map((d) => (
-                    <option key={d.id} value={d.id}>{d.label}</option>
+                    <option key={d.id} value={d.id}>{d.label} ({d.count})</option>
                   ))}
                 </select>
               </FilterGroup>
@@ -398,16 +405,24 @@ function FilterGroup({ label, children }) {
   )
 }
 
-function FilterPill({ active, onClick, children }) {
+function FilterPill({ active, count, onClick, children }) {
+  const zero = count === 0 && !active
   return (
     <button
       onClick={onClick}
       className={clsx(
-        'px-2 py-0.5 rounded-full text-xs font-medium border transition-colors',
-        active ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+        'px-2.5 py-0.5 rounded-full text-xs font-medium border transition-colors',
+        active ? 'bg-slate-800 text-white border-slate-800'
+          : zero ? 'bg-white text-gray-300 border-gray-100'
+          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
       )}
     >
       {children}
+      {count != null && (
+        <span className={clsx('ml-1 tabular-nums', active ? 'text-white/70' : zero ? 'text-gray-300' : 'text-gray-400')}>
+          {count}
+        </span>
+      )}
     </button>
   )
 }

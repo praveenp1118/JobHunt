@@ -40,15 +40,6 @@ const NAV = [
     ),
   },
   {
-    to: '/feeds',
-    label: 'Feeds',
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7M6 17a1 1 0 110-2 1 1 0 010 2z" />
-      </svg>
-    ),
-  },
-  {
     to: '/wallet',
     label: 'Wallet',
     icon: (

@@ -57,8 +57,8 @@ export default function Dashboard() {
 
   const stats = statsData?.data || {}
   const byStatus = stats.by_status || {}
-  const hitlJobs = hitlData?.data || []
-  const recentJobs = recentData?.data || []
+  const hitlJobs = hitlData?.data?.jobs || []
+  const recentJobs = recentData?.data?.jobs || []
 
   const handlePollNow = async () => {
     setPolling(true)
@@ -177,8 +177,8 @@ export default function Dashboard() {
                       · avg S1: <strong>{stats.avg_s1}</strong>
                     </span>
                   )}
-                  <button onClick={() => navigate('/feeds')} className="text-emerald-600 hover:underline ml-auto text-xs font-medium">
-                    View feeds →
+                  <button onClick={() => navigate('/settings#feeds')} className="text-emerald-600 hover:underline ml-auto text-xs font-medium">
+                    Manage feeds →
                   </button>
                 </div>
               )}

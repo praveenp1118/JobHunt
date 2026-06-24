@@ -209,8 +209,7 @@ D:\JobHunt\
 │           ├── activity/            # V3: ActivityPage (Job Alerts + System tabs)
 │           ├── jobs/                # JobsPage, AddJobModal, JobDetail, TailorPage (full-screen), TailorOverlay (legacy fallback)
 │           ├── cvs/                 # CVsPage, MasterCVTab, DomainCVsTab
-│           ├── settings/            # SettingsPage + 7 tabs (Profile, Plan&Keys, Gmail, AutoMode, Preferences, Feeds&Scanning, ErrorLog)
-│           ├── feeds/               # FeedsPage (standalone — to be merged into Settings in V3)
+│           ├── settings/            # SettingsPage + 7 tabs; Feeds&Scanning tab (FeedsTab.jsx) is the single place for ALL feed management (RSS/Apify feeds, Target Companies, Scan History, add/edit modals, Apify Store search, per-feed run)
 │           ├── wallet/              # WalletPage
 │           └── admin/               # AdminPage (users, errors, stats)
 ├── docker-compose.yml
@@ -330,8 +329,15 @@ S3 = factual integrity % — computed after Apply
 - `POST /domains/{id}/regenerate`
 
 ### Jobs (`/api/jobs/`)
-- `GET /` (params: status, search, needs_hitl, limit)
-- `GET /stats` — pipeline counts + analytics (by_domain_cv, score_distribution, by_source)
+- `GET /` — params: `status`, `source`, `market`, `needs_hitl`, **`score`** (min effective score =
+  `coalesce(s1d, s1)`), **`domain`** (best_domain_cv_id), `search`, `skip`, `limit`. **Returns an
+  object** `{jobs: [...], total_count, unfiltered_count}` — `total_count` matches the current filters,
+  `unfiltered_count` is all of the user's jobs. (All filters are server-side so counts stay accurate
+  beyond the page limit.)
+- `GET /stats` — pipeline counts + analytics: `total`, `by_status`, **`needs_hitl`** (boolean-flag
+  count, fixed), `by_source`, `by_domain_cv` (by detected feed CV), **`by_best_domain`** (by
+  best_domain_cv_id — drives the Domain filter dropdown counts), **`by_score_bucket`**
+  (`{any, gte_70, gte_80, gte_90}` on `coalesce(s1d, s1)`), `score_distribution`, `avg_s1`
 - `POST /parse/text`, `POST /parse/url`
 - `POST /confirm/{temp_id}`
 - `GET /{id}`, `PATCH /{id}/status`, `GET /{id}/emails`
@@ -440,6 +446,8 @@ platform has a single global `s1_min_threshold` (no per-domain support).
 | Scanner/poll Celery tasks crashed intermittently: "Future attached to a different loop" / "Event loop is closed" | ✅ Fixed | Each task creates a new event loop, but the module-level async engine pool stayed bound to the first loop. All 3 task wrappers now `loop.run_until_complete(engine.dispose())` in `finally` before closing the loop |
 | Auto-feed "AI & Data Product Leadership — NL" 429'd on nl.indeed RSS | ✅ Fixed | Re-pointed to Jobicy (`jobicy.com/?feed=job_feed&search_keywords=product+manager`) → **raw_results=29** confirmed (the `?feed=job_feed` form works; the old `feed/job_feed?…&search_region=netherlands` form returns ~3) |
 | Scanner saved **nothing** — every S1 score came back 0 | ✅ Fixed | `_score_batch` referenced an undefined `model` var → `NameError` caught by the bare `except` → returned `s1_score=0` for all jobs. Added a `model` param (defaults to `settings.anthropic_model`) threaded through `batch_score_s1`. First real end-to-end: scan saved **23/29** jobs with genuine S1 scores |
+| `/jobs/stats` `needs_hitl` always 0 — read a non-existent `"hitl"` status | ✅ Fixed | Replaced `counts.get("hitl", 0)` with a real `count(*) WHERE needs_hitl = true`. Also added `by_best_domain` + `by_score_bucket` for the tracker filter-pill counts |
+| Jobs Tracker — filter pills/header now show live counts (Option C) | ✅ Added | `GET /jobs` returns `{jobs, total_count, unfiltered_count}` with **all filters server-side** (incl. new `score`/`domain` params); header shows "N total · M matching", each Status/Source/Score pill + Domain dropdown shows its facet count from `/jobs/stats` (zero-count pills greyed, not hidden). Note: this changed the `/jobs` response shape (array → object) — all consumers (JobsPage, AppLayout, Dashboard) updated |
 | Tailor + domain-CV flows broken — undefined `model` NameError (and a `model=` TypeError) | ✅ Fixed | All 4 `tailor_agents` functions **and** 3 `cv_agents` (`generate_domain_changelog`, `apply_changes`, `compute_s3_score`) referenced an undefined `model` on `client.messages.create(...)` → `NameError`; cvs.py also passed `model=user_model` to two of them that lacked the param → `TypeError`. Added `model: Optional[str] = None` to all 7 (defaults to `settings.anthropic_model`). Then **threaded `get_user_model()` through the tailor router** (generate / apply×3 incl. `compute_s3_score` / regenerate-cl / followup) so tailoring honours each user's `preferred_model` — matching cvs.py/jobs.py. Verified full flow: generate (6 changes, S2 72) → approve all → apply (S3 92/92 **green**) → CV + cover letter + email all populated |
 | Pre-filter wrongly rejected "Senior/Staff/Principal PM" as `not_a_product_role` | ✅ Fixed | Replaced the narrow hardcoded positive list with keyword-driven `pre_filter_jd(jd_text, user_keywords)` + `build_user_keywords(target_roles, feed_keywords)` (Option B). Verified: 29 Jobicy results went from 1→29 passing the pre-filter |
 | Every RSS job saved with company="Unknown" | ✅ Fixed | `_parse_title` only read "Role at Company" titles, but Jobicy puts the employer in a namespaced `<job_listing:company>` field. Added `_extract_company` fallback chain (namespaced `company`/`dc:creator`/`author`/`source` → title separator → "About X:" in JD); also reads namespaced `<location>`. Removed `-`/en-dash from title separators (Jobicy roles use '–' internally). Verified: 29 Jobicy jobs → 0 Unknown |
@@ -457,10 +465,12 @@ platform has a single global `s1_min_threshold` (no per-domain support).
 ## Pending — Not Yet Started
 
 ```
-1. Merge /feeds page into Settings → Feeds & Scanning tab
-   - Remove standalone /feeds route + sidebar nav item
-   - Move all add/edit/delete/toggle into FeedsTab.jsx
-   - Single place for all feed management
+1. ✅ DONE (June 24, 2026) — Merged /feeds page into Settings → Feeds & Scanning tab.
+   FeedsPage.jsx deleted; its full functionality (RSS/Apify feeds add/edit/delete/toggle,
+   Target Companies, expandable Scan History breakdown, per-feed Run, Add/Edit modals with
+   domain-CV-driven keywords + Apify Store search) now lives in settings/FeedsTab.jsx.
+   /feeds route + sidebar nav item removed; Dashboard "Manage feeds →" → /settings#feeds
+   (SettingsPage reads the #feeds hash and widens to max-w-5xl for that tab).
 
 2. Verify scanner correctly uses actor_name for all actor types
    (column added in b2c3d4e5f6a7 but end-to-end scan not yet confirmed)
@@ -705,7 +715,7 @@ section above for the full summary. 17/17 smoke tests passing.
 - Secrets management (not in .env)
 
 ### 5. Medium Priority
-- Merge /feeds page into Settings → Feeds & Scanning tab
+- ✅ DONE — Merge /feeds page into Settings → Feeds & Scanning tab (June 24, 2026)
 - "View changes" blink after domain CV generation
 - Auto-open changelog when generation finishes
 - Admin: seed data editor (industry verticals, job boards)

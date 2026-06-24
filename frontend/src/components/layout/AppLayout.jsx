@@ -11,7 +11,7 @@ export default function AppLayout() {
     retry: false,
   })
 
-  const hitlCount = hitlData?.data?.length || 0
+  const hitlCount = hitlData?.data?.total_count || 0
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">

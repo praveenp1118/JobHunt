@@ -79,6 +79,6 @@ async def test_partial_jd_flag_exposed_via_api(client, user_creds):
 
     r = await client.get("/api/jobs?limit=50", headers=user_creds["headers"])
     assert r.status_code == 200
-    job = next((j for j in r.json() if j["id"] == str(job_id)), None)
+    job = next((j for j in r.json()["jobs"] if j["id"] == str(job_id)), None)
     assert job is not None and job["has_partial_jd"] is True
     # cleanup via user_creds teardown (jobs.user_id ON DELETE CASCADE)

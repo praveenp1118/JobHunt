@@ -52,7 +52,9 @@ async def test_jobs_api_returns_domain_cv_scores_and_best(client, user_creds):
 
     r = await client.get("/api/jobs?limit=50", headers=user_creds["headers"])
     assert r.status_code == 200
-    job = next((j for j in r.json() if j["id"] == str(job_id)), None)
+    body = r.json()
+    assert "jobs" in body and "total_count" in body and "unfiltered_count" in body
+    job = next((j for j in body["jobs"] if j["id"] == str(job_id)), None)
     assert job is not None, "inserted job not returned by /api/jobs"
     assert job["domain_cv_scores"] == scores
     assert job["s1d"] == 88
