@@ -23,6 +23,12 @@ export default defineConfig({
         target: 'http://backend:8000',
         changeOrigin: true,
       },
+      // WebSocket for the support chat (ws: true upgrades the connection).
+      '/ws': {
+        target: 'ws://backend:8000',
+        ws: true,
+        changeOrigin: true,
+      },
     },
   },
 })

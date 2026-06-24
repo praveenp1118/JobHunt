@@ -74,6 +74,42 @@ async def send_verification_email(email: str, token: str) -> None:
     await send_email(email, subject, body)
 
 
+async def send_chat_ticket_email(ticket_number: str, title: str, requester: str, message: str) -> None:
+    """Notify the admin that a new support ticket was created."""
+    to = settings.notification_email or settings.gmail_address
+    if not to:
+        return
+    subject = f"New support ticket {ticket_number}: {title}"
+    body = f"""
+    <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto">
+      <h3 style="color:#1B2B4B">New support ticket {ticket_number}</h3>
+      <p><b>From:</b> {requester}</p>
+      <p><b>Title:</b> {title}</p>
+      <p><b>Message:</b><br>{message}</p>
+      <p><a href="{settings.frontend_url}/admin/chat" style="color:#1D9E75">Open in admin chat →</a></p>
+      <p style="color:#9CA3AF;font-size:12px">JobHunt — AI-powered job search</p>
+    </div>
+    """
+    await send_email(to, subject, body)
+
+
+async def send_chat_reply_email(to_email: str, ticket_number, admin_message: str) -> None:
+    """Notify a user/guest that support replied to their chat."""
+    if not to_email:
+        return
+    ref = f" to your ticket {ticket_number}" if ticket_number else ""
+    subject = f"JobHunt support replied{ref}"
+    body = f"""
+    <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto">
+      <h3 style="color:#1B2B4B">JobHunt support replied</h3>
+      <p>{admin_message}</p>
+      <p><a href="{settings.frontend_url}" style="color:#1D9E75">Continue the chat →</a></p>
+      <p style="color:#9CA3AF;font-size:12px">JobHunt — AI-powered job search</p>
+    </div>
+    """
+    await send_email(to_email, subject, body)
+
+
 async def send_notification_email(to: str, subject: str, message: str) -> None:
     """General notification email to personal address."""
     body = f"""

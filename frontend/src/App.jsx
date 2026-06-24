@@ -21,6 +21,7 @@ import ActivityPage from './pages/activity/ActivityPage'
 import WalletPage from './pages/wallet/WalletPage'
 import ToastContainer from './components/ui/Toast'
 import AdminPage from './pages/admin/AdminPage'
+import ChatPage from './pages/admin/ChatPage'
 
 // Placeholder for pages not yet built
 const Placeholder = ({ name }) => (
@@ -77,6 +78,7 @@ export default function App() {
         <Route path="/wallet" element={<WalletPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/admin/chat" element={<ChatPage />} />
       </Route>
 
       {/* Default */}

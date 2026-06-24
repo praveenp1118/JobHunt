@@ -1,6 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import useAuthStore from '../../store/auth'
+import { listConversations } from '../../api/chat'
 
 const NAV = [
   {
@@ -63,6 +65,15 @@ const NAV = [
 export default function Sidebar({ hitlCount = 0 }) {
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+
+  // Admin: poll unread support-chat count for the nav badge.
+  const { data: chatData } = useQuery({
+    queryKey: ['admin-chat-unread'],
+    queryFn: () => listConversations({ status: 'open' }),
+    enabled: user?.role === 'admin',
+    refetchInterval: 30000,
+  })
+  const chatUnread = chatData?.data?.total_unread || 0
 
   const initials = user?.name
     ? user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
@@ -128,6 +139,27 @@ export default function Sidebar({ hitlCount = 0 }) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
               <span className="font-medium">Admin</span>
+            </NavLink>
+            <NavLink
+              to="/admin/chat"
+              className={({ isActive }) =>
+                clsx(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+                  isActive
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                )
+              }
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.96 7.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              <span className="font-medium">Chat</span>
+              {chatUnread > 0 && (
+                <span className="ml-auto bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                  {chatUnread > 9 ? '9+' : chatUnread}
+                </span>
+              )}
             </NavLink>
           </>
         )}

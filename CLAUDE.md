@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (30 tests, all passing):
+- Current coverage (40 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -94,6 +94,11 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     create-checkout-session is wired (200 w/ `checkout_url` when Stripe fully configured, else
     502 bad-price / 503 not-configured); the subscription gate **blocks** POST /tailor/generate
     with **402** for a non-admin inactive user, and **allows** GET /jobs (read-only, 200).
+  - `test_chat.py` (10): rule-based FAQ matching (anthropic/gmail/no-match — pure); guest +
+    logged-in conversation create with FAQ-bot reply; no-match → ticket suggestion; admin message
+    (`sender_type=admin`); ticket create (`JH-###`); admin presence online; and presence **offline
+    after the 5-min timeout** (backdated `last_seen`). Guest convs cleaned up by `guest_email`;
+    admin paths use the owner token (skip if absent).
 - NOT tested: `check_title_relevance` (live Playwright) and a true live end-to-end
   (real Gmail inbox + Anthropic).
 
@@ -133,6 +138,9 @@ D:\JobHunt\
 │   │   │   ├── gmail_agents.py      # email classification
 │   │   │   ├── feed_agents.py       # V2: feed profile auto-generation
 │   │   │   └── gmail_alert_agent.py # V3: job alert email parser (rule-based detect + link extract + parse/score)
+│   │   ├── (models) chat.py         # V3: ChatConversation, ChatMessage, ChatTicket, AdminPresence
+│   │   ├── (routers) chat.py        # V3: support chat REST + WebSocket (rule-based FAQ, NO Claude)
+│   │   ├── (utils) chat_faq.py      # V3: 12 keyword FAQ rules + match_faq() (NO Claude)
 │   │   ├── mcp/             # External service clients
 │   │   │   ├── gmail_mcp.py         # IMAP poll + SMTP send
 │   │   │   ├── apify_mcp.py         # Apify actor runner
@@ -177,7 +185,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_domain_cv_scores → v3_partial_jd → v3_stripe_subscriptions
+│   │   └── versions/        # chain tip: … → v3_partial_jd → v3_stripe_subscriptions → v3_chat
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -187,7 +195,8 @@ D:\JobHunt\
 │   │       ├── v3_activity_log.py             # V3: run_logs.details→JSONB + email_alert_logs table
 │   │       ├── v3_domain_cv_scores.py         # V3: jobs.s1d + domain_cv_scores (JSONB) + best_domain_cv_id
 │   │       ├── v3_partial_jd.py               # V3: jobs.has_partial_jd (alert-email snippet flag)
-│   │       └── v3_stripe_subscriptions.py     # V3: users.stripe_customer_id + subscription_* fields
+│   │       ├── v3_stripe_subscriptions.py     # V3: users.stripe_customer_id + subscription_* fields
+│   │       └── v3_chat.py                      # V3: chat_conversations/messages/tickets + admin_presence
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
@@ -290,6 +299,14 @@ D:\JobHunt\
 - `is_active`, `is_platform`, `is_auto_generated`
 - `keywords`, `search_keywords` (Claude-generated), `job_boards` (JSON), `location`
 - `domain_cv_id` — linked domain CV
+
+### Chat (V3 support chat — `models/chat.py`)
+- **ChatConversation**: `user_id` (null for guests), `guest_name`/`guest_email`, `status`
+  (open/in_progress/resolved/closed), `category`, `assigned_to`, `is_guest`
+- **ChatMessage**: `conversation_id`, `sender_id`, `sender_type` (user/guest/admin/bot), `content`,
+  `message_type` (text/image/file/system), `attachment_*`, `is_internal_note`, `read_at`
+- **ChatTicket**: `conversation_id`, `ticket_number` (`JH-###`), `title`, `status`, `priority`, `resolved_at`
+- **AdminPresence**: `admin_id` (unique), `is_online`, `last_seen` (5-min auto-timeout = offline)
 
 ---
 
@@ -412,6 +429,22 @@ S3 = factual integrity % — computed after Apply
 
 ### Settings (`/api/settings/`)
 - `GET /mode` — send-mode visibility → `{mode: "test"|"production", notification_email}` (where an outgoing application email will actually go; surfaced as a banner in the Tailor Email Draft tab)
+
+### Chat (`/api/chat/`) — V3, support chat (**rule-based FAQ, NO Claude/AI**)
+- `POST /conversations` — optional auth (guests). `{guest_name?, guest_email?, first_message}` →
+  `{conversation_id, bot_response, admin_online}` (FAQ-bot reply only when no admin online)
+- `GET /conversations` — **admin**; all conversations + per-conversation `unread` + `total_unread`
+- `GET /conversations/{id}` — owner/guest/admin; conversation + messages (internal notes hidden from non-admins)
+- `PATCH /conversations/{id}` — **admin**; update status (resolve/close) / category
+- `POST /conversations/{id}/messages` — user/admin. User+admin-offline → `match_faq` auto-reply
+  (or no-match ticket suggestion); admin → plain save. Pushes over WebSocket.
+- `POST /conversations/{id}/messages/{msg_id}/read` — mark read
+- `POST /tickets` — `{conversation_id, title?, priority?}` → auto `JH-###`; emails the admin
+- `GET /tickets` (admin) · `PATCH /tickets/{id}` (admin) — status/priority
+- `POST /presence` (admin) `{is_online}` · `GET /presence` — `{is_online, last_seen}` (5-min auto-timeout)
+- `POST /upload` — optional auth; multipart (≤5 MB; image/PDF/doc/docx) → `{url, name, size, type}`
+  · `GET /attachments/{filename}` — serve
+- **WS** `/ws/chat/{conversation_id}` — real-time message push + typing/read relay (`ConnectionManager`)
 
 ---
 
@@ -856,4 +889,4 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 25, 2026 — **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. All 30 smoke tests passing*
+*Last updated: June 25, 2026 — **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. All 40 smoke tests passing*

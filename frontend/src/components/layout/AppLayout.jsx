@@ -1,7 +1,11 @@
+import { lazy, Suspense } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import Sidebar from './Sidebar'
+
+// Lazy — only loads when first rendered, keeping it off the critical path.
+const ChatWidget = lazy(() => import('../chat/ChatWidget'))
 import { getJobs } from '../../api/jobs'
 import { getSubscription } from '../../api/billing'
 import useAuthStore from '../../store/auth'
@@ -73,6 +77,10 @@ export default function AppLayout() {
         )}
         <Outlet />
       </main>
+      {/* Support chat — on all app pages except the admin chat console itself. */}
+      {!location.pathname.startsWith('/admin/chat') && (
+        <Suspense fallback={null}><ChatWidget /></Suspense>
+      )}
     </div>
   )
 }

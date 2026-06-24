@@ -130,6 +130,10 @@ app.include_router(activity_router, prefix="/api/activity", tags=["activity"])
 from app.routers.billing import router as billing_router
 app.include_router(billing_router, prefix="/api/billing", tags=["billing"])
 
+from app.routers.chat import router as chat_router, chat_websocket
+app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
+app.add_api_websocket_route("/ws/chat/{conversation_id}", chat_websocket)
+
 # ── Health check ─────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
