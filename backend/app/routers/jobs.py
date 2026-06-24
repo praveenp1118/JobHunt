@@ -306,14 +306,20 @@ async def list_jobs(
     score: Optional[float] = None,   # min effective score (coalesce s1d, s1)
     domain: Optional[str] = None,    # best_domain_cv_id
     search: Optional[str] = None,
+    sort: Optional[str] = None,       # best_fit | s1 | company | role | market | status | source | created_at
+    order: str = "desc",             # asc | desc
     skip: int = 0,
     limit: int = 50,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
     """List jobs with filters. Returns the page plus total_count (matching the
-    current filters) and unfiltered_count (all of the user's jobs)."""
-    from sqlalchemy import func
+    current filters) and unfiltered_count (all of the user's jobs).
+
+    Sorting is applied server-side BEFORE pagination so the correct rows reach the
+    page (a high-s1d job that sits beyond the page limit by created_at must still
+    surface at the top when sorting by Best Fit)."""
+    from sqlalchemy import func, nullslast
 
     filters = [Job.user_id == user.id]
     if status_filter:
@@ -347,8 +353,28 @@ async def list_jobs(
         select(func.count(Job.id)).where(Job.user_id == user.id)
     )).scalar() or 0
 
+    # ── Ordering (server-side, before pagination) ──
+    sort_map = {
+        "best_fit": Job.s1d,                 # Best Fit column = best domain-CV score
+        "s1": Job.s1,
+        "company": func.lower(Job.company),
+        "role": func.lower(Job.role),
+        "market": Job.market,
+        "status": Job.status,
+        "source": Job.source,
+        "created_at": Job.created_at,
+    }
+    sort_key = sort if sort in sort_map else "created_at"
+    col = sort_map[sort_key]
+    primary = col.asc() if order.lower() == "asc" else col.desc()
+    if sort_key in ("best_fit", "s1"):
+        primary = nullslast(primary)         # unscored jobs always sink to the bottom
+    order_clauses = [primary]
+    if sort_key != "created_at":
+        order_clauses.append(Job.created_at.desc())  # stable tiebreaker (same score → newest first)
+
     result = await session.execute(
-        select(Job).where(*filters).order_by(Job.created_at.desc()).offset(skip).limit(limit)
+        select(Job).where(*filters).order_by(*order_clauses).offset(skip).limit(limit)
     )
     jobs = result.scalars().all()
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
@@ -97,6 +97,7 @@ export default function JobsPage() {
     ...(domainFilter && { domain: domainFilter }),
     ...(search && { search }),
     ...(needsHitl && { needs_hitl: true }),
+    ...(sortKey && { sort: sortKey, order: sortDir }),
   }
 
   const { data, isLoading } = useQuery({
@@ -129,23 +130,9 @@ export default function JobsPage() {
   const hitlCount = stats.needs_hitl || 0
   const anyFilter = !!(statusFilter || sourceFilter || scoreFilter || domainFilter || needsHitl || search)
 
-  // Sort the current page (default Added DESC when no column is chosen).
-  const displayJobs = useMemo(() => {
-    const key = sortKey || 'created_at'
-    const dir = sortKey ? sortDir : 'desc'
-    const val = (j) => {
-      if (key === 'best_fit') return j.s1d ?? -1
-      if (key === 's1') return j.s1 ?? -1
-      if (key === 'created_at') return new Date(j.created_at).getTime()
-      return (j[key] ?? '').toString().toLowerCase()
-    }
-    return [...jobs].sort((a, b) => {
-      const va = val(a), vb = val(b)
-      if (va < vb) return dir === 'asc' ? -1 : 1
-      if (va > vb) return dir === 'asc' ? 1 : -1
-      return 0
-    })
-  }, [jobs, sortKey, sortDir])
+  // Backend sorts server-side (before pagination) and returns the page already in
+  // order — including the created_at-DESC tiebreaker for equal scores — so render as-is.
+  const displayJobs = jobs
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId)
 
