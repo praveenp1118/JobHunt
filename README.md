@@ -44,6 +44,29 @@ scraping (Apify) API keys.
 - **Application tracking** — full pipeline (`new → applied → interview → offer → ghosted`), recruiter
   email threads, human-in-the-loop reply approval, and automatic follow-up drafting.
 
+## Screenshots
+
+**Job Tracker** — every job scored against your master CV and all domain CVs (B · Best Fit · T · F):
+
+![Job Tracker](docs/screenshots/tracker.png)
+
+**AI Tailor** — bounded change log with a live CV / cover-letter / email preview:
+
+![AI Tailor](docs/screenshots/tailor.png)
+
+**Activity dashboard** — per-feed scan funnels and job-alert timelines:
+
+![Activity dashboard](docs/screenshots/activity-1.png)
+
+![Scan breakdown](docs/screenshots/activity-2.png)
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><b>Domain CVs</b><br/><img src="docs/screenshots/domain-cv.png" alt="Domain CVs"/></td>
+    <td width="50%" valign="top"><b>Feeds &amp; scanning</b><br/><img src="docs/screenshots/feeds.png" alt="Feeds and scanning"/></td>
+  </tr>
+</table>
+
 ## The scoring model
 
 | Score | Meaning | Computed |
