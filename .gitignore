@@ -56,3 +56,8 @@ Thumbs.db
 # Personal config workbook (job-search strategy / target companies — not source)
 # Remove this line if you want it tracked in the (private) repo.
 JobHunt_Feed_Config.xlsx
+
+# Celery Beat runtime schedule (regenerated at runtime)
+backend/celerybeat-schedule*
+celerybeat-schedule*
+*.pid
