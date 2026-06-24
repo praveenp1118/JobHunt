@@ -1,0 +1,92 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # ── App ──────────────────────────────────────────────────────────────────
+    env: str = "development"
+    frontend_url: str = "http://localhost:3000"
+    backend_url: str = "http://localhost:8000"
+
+    # ── Database ─────────────────────────────────────────────────────────────
+    database_url: str
+    postgres_db: str = "jobhunt"
+    postgres_user: str = "jobhunt"
+    postgres_password: str
+
+    # ── Redis ─────────────────────────────────────────────────────────────────
+    redis_url: str = "redis://redis:6379/0"
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_expire_days: int = 7
+    jwt_expire_days_remember_me: int = 30
+
+    # ── Google OAuth ──────────────────────────────────────────────────────────
+    google_client_id: Optional[str] = None
+    google_client_secret: Optional[str] = None
+    google_redirect_uri: str = "http://localhost:3000/auth/google/callback"
+
+    # ── Admin seed ────────────────────────────────────────────────────────────
+    admin_email: str
+    admin_initial_password: str
+
+    # ── Anthropic ─────────────────────────────────────────────────────────────
+    anthropic_api_key: Optional[str] = None
+    anthropic_model: str = "claude-sonnet-4-6"
+    platform_anthropic_api_key: Optional[str] = None
+
+    # ── Apify ─────────────────────────────────────────────────────────────────
+    apify_token: Optional[str] = None
+    platform_apify_token: Optional[str] = None
+
+    # ── Gmail ─────────────────────────────────────────────────────────────────
+    gmail_address: Optional[str] = None
+    gmail_app_password: Optional[str] = None
+    notification_email: Optional[str] = None
+
+    # ── Encryption ────────────────────────────────────────────────────────────
+    fernet_key: str
+
+    # ── Storage ───────────────────────────────────────────────────────────────
+    storage_backend: str = "local"
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_s3_bucket: Optional[str] = None
+    aws_region: str = "ap-south-1"
+
+    # ── Razorpay ──────────────────────────────────────────────────────────────
+    razorpay_key_id: Optional[str] = None
+    razorpay_key_secret: Optional[str] = None
+
+    # ── Scoring thresholds ────────────────────────────────────────────────────
+    s1_min_threshold: int = 65
+    s3_block_threshold: int = 85
+    s3_review_threshold: int = 90
+
+    # ── Scheduler ─────────────────────────────────────────────────────────────
+    weekly_scan_cron: str = "30 17 * * 0"
+    gmail_poll_interval_minutes: int = 60
+    ghost_after_days: int = 28
+
+    @property
+    def is_production(self) -> bool:
+        return self.env == "production"
+
+    @property
+    def sync_database_url(self) -> str:
+        """Sync version for Alembic migrations."""
+        return self.database_url.replace(
+            "postgresql+asyncpg://", "postgresql://"
+        )
+
+
+settings = Settings()

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JobHunt — AI-powered job search for senior product leaders</title>
+  <meta name="description" content="AI-powered job search platform for senior product leaders. CV tailoring with integrity scoring, multi-domain matching, job-alert parsing, and full application tracking." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .grad { background: radial-gradient(1200px 500px at 50% -10%, rgba(16,185,129,.18), transparent 60%); }
+    .diagram { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+
+  <!-- Nav -->
+  <header class="sticky top-0 z-20 backdrop-blur bg-white/80 border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-emerald-500 text-white font-bold grid place-items-center text-sm">JH</div>
+        <span class="font-semibold text-slate-900">JobHunt</span>
+      </div>
+      <nav class="flex items-center gap-5 text-sm text-slate-600">
+        <a href="architecture.md" class="hover:text-emerald-600">Architecture</a>
+        <a href="features.md" class="hover:text-emerald-600">Features</a>
+        <a href="api.md" class="hover:text-emerald-600">API</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="grad">
+    <div class="max-w-6xl mx-auto px-5 pt-20 pb-16 text-center">
+      <div class="w-16 h-16 rounded-2xl bg-emerald-500 text-white font-bold grid place-items-center text-2xl mx-auto mb-6 shadow-lg shadow-emerald-500/20">JH</div>
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900">JobHunt</h1>
+      <p class="mt-3 text-lg text-emerald-700 font-medium">AI-powered job search platform for senior product leaders</p>
+      <p class="mt-6 max-w-2xl mx-auto text-slate-600 leading-relaxed">
+        JobHunt automates the highest-effort parts of a senior product leadership job search.
+        It scans curated feeds and Gmail job-alert digests, scores every opportunity against your
+        master CV and multiple domain-specific CVs, then tailors your CV and cover letter for each
+        role — making only bounded, factual edits and never inventing experience. Everything is
+        tracked end-to-end, from discovery to application to recruiter follow-up.
+      </p>
+      <div class="mt-8 flex items-center justify-center gap-3">
+        <a href="features.md" class="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition">Explore features</a>
+        <a href="architecture.md" class="px-5 py-2.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 transition">View architecture</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="max-w-6xl mx-auto px-5 py-16">
+    <h2 class="text-2xl font-bold text-slate-900 text-center">Key capabilities</h2>
+    <div class="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center text-lg mb-4">✦</div>
+        <h3 class="font-semibold text-slate-900">AI-powered CV tailoring</h3>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed">Per-job CV + cover letter with a strict golden rule — reorder, rephrase, inject keywords only. Scored on S1 (base fit), S2 (tailored fit) and S3 (factual integrity), with a hard gate before anything is sent.</p>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center text-lg mb-4">◈</div>
+        <h3 class="font-semibold text-slate-900">Multi-domain CV scoring</h3>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed">Every job is scored against your master CV and <em>all</em> active domain CVs (e.g. AI &amp; Data, Supply Chain, eCommerce, FinTech). The best-fit domain surfaces automatically and pre-selects when you tailor.</p>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center text-lg mb-4">✉</div>
+        <h3 class="font-semibold text-slate-900">Gmail job-alert parser</h3>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed">Detects LinkedIn / Indeed / company job-alert digests in your inbox (rule-based, no AI cost), extracts job cards straight from the email body for login-gated sources, and scores + saves the relevant ones.</p>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center text-lg mb-4">⟳</div>
+        <h3 class="font-semibold text-slate-900">Feed scanner (RSS + Apify)</h3>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed">Scheduled scanning of RSS boards and Apify actors (LinkedIn, Google Jobs). Keyword profiles are driven by your domain CVs, with a keyword pre-filter before any paid scoring call.</p>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center text-lg mb-4">▤</div>
+        <h3 class="font-semibold text-slate-900">Activity dashboard</h3>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed">Full visibility into every scan and poll: per-feed funnels (raw → pre-filter → above-threshold → saved), job-alert timelines, error logs, and manual "run now" controls at every level.</p>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 p-6">
+        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center text-lg mb-4">◎</div>
+        <h3 class="font-semibold text-slate-900">Full application tracking</h3>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed">A pipeline from <em>new</em> through <em>applied</em>, <em>interview</em>, <em>offer</em> and <em>ghosted</em>, with recruiter email threads, human-in-the-loop reply approval, and automatic follow-up drafting.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Tech stack -->
+  <section class="max-w-6xl mx-auto px-5 pb-16">
+    <h2 class="text-2xl font-bold text-slate-900 text-center">Built with</h2>
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-2.5">
+      <span class="px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-sm font-medium text-slate-700">FastAPI</span>
+      <span class="px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-sm font-medium text-slate-700">React (Vite)</span>
+      <span class="px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-sm font-medium text-slate-700">PostgreSQL</span>
+      <span class="px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-sm font-medium text-slate-700">Claude AI</span>
+      <span class="px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-sm font-medium text-slate-700">Celery + Redis</span>
+      <span class="px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-sm font-medium text-slate-700">Playwright</span>
+      <span class="px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-sm font-medium text-slate-700">Tailwind CSS</span>
+      <span class="px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-sm font-medium text-slate-700">Docker</span>
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section class="max-w-6xl mx-auto px-5 pb-20">
+    <h2 class="text-2xl font-bold text-slate-900 text-center">Architecture at a glance</h2>
+    <p class="mt-3 text-center text-slate-600 text-sm max-w-2xl mx-auto">Local Docker deployment — six services. The Celery worker drives the four input pipelines; the API serves the React tracker and orchestrates AI calls.</p>
+    <div class="mt-8 bg-slate-900 rounded-2xl p-6 overflow-x-auto">
+      <pre class="diagram text-[12px] sm:text-[13px] leading-relaxed text-slate-300">
+   ┌───────────────────┐         ┌────────────────────────┐         ┌──────────────┐
+   │  React Frontend   │ ───────▶│   FastAPI Backend      │ ───────▶│  PostgreSQL  │
+   │  (Vite, port 3000)│  HTTPS  │   (port 8000)          │  async  │  (jobs, CVs) │
+   └───────────────────┘         └───────────┬────────────┘         └──────────────┘
+                                             │                        ┌──────────────┐
+                                             ├───────────────────────▶│    Redis     │
+                                             │      Claude AI          │  (broker)    │
+                                             ▼                         └──────┬───────┘
+                                   ┌────────────────────┐                     │
+                                   │   Anthropic Claude │                     ▼
+                                   │  (user's API key)  │            ┌──────────────────┐
+                                   └────────────────────┘            │  Celery Worker   │
+                                                                     │   + Beat         │
+        ┌──────────────────────────────────────────────────────────┴──────────────────┤
+        ▼                       ▼                        ▼                    ▼
+  ┌────────────┐         ┌────────────┐          ┌──────────────┐     ┌──────────────┐
+  │ Gmail IMAP │         │ RSS Feeds  │          │ Apify Actors │     │  Playwright  │
+  │  (alerts)  │         │  (Jobicy…) │          │ (LinkedIn,   │     │  (title pre- │
+  │  + SMTP    │         │            │          │  Google)     │     │   filter,PDF)│
+  └────────────┘         └────────────┘          └──────────────┘     └──────────────┘
+      </pre>
+    </div>
+    <div class="mt-6 text-center">
+      <a href="architecture.md" class="text-sm font-medium text-emerald-600 hover:text-emerald-700">Read the full architecture →</a>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-200 bg-white">
+    <div class="max-w-6xl mx-auto px-5 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-500">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded-md bg-emerald-500 text-white font-bold grid place-items-center text-[10px]">JH</div>
+        <span>JobHunt — product documentation</span>
+      </div>
+      <nav class="flex items-center gap-4">
+        <a href="architecture.md" class="hover:text-emerald-600">Architecture</a>
+        <a href="features.md" class="hover:text-emerald-600">Features</a>
+        <a href="api.md" class="hover:text-emerald-600">API</a>
+      </nav>
+    </div>
+  </footer>
+
+</body>
+</html>

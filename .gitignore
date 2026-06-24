@@ -1,0 +1,58 @@
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.log
+
+# Virtual envs
+venv/
+.venv/
+env/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Docker
+postgres_data/
+redis_data/
+
+# Storage
+backend/storage/
+
+# Alembic
+backend/alembic/versions/*.pyc
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Secrets — never commit these
+*.pem
+*.key
+*.cert
+
+# Claude Code — local session, memory, and settings data
+.claude/
+
+# Personal config workbook (job-search strategy / target companies — not source)
+# Remove this line if you want it tracked in the (private) repo.
+JobHunt_Feed_Config.xlsx

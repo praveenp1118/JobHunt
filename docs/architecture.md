@@ -1,0 +1,117 @@
+# Architecture
+
+## Overview
+
+JobHunt is a **local, Docker-based** platform — a single `docker-compose` stack of six
+services. It is designed for a small number of senior-product-leader users who bring their
+own AI and scraping API keys. There is no external SaaS dependency beyond the AI provider
+(Anthropic) and the job-scraping providers (Apify) the user configures.
+
+## System diagram
+
+```
+   ┌───────────────────┐         ┌────────────────────────┐         ┌──────────────┐
+   │  React Frontend   │ ───────▶│   FastAPI Backend      │ ───────▶│  PostgreSQL  │
+   │  (Vite, :3000)    │  HTTPS  │   (:8000)              │  async  │              │
+   └───────────────────┘         └───────────┬────────────┘         └──────────────┘
+                                             │                        ┌──────────────┐
+                                             ├───────────────────────▶│    Redis     │
+                                             │   Anthropic Claude      │  (broker)    │
+                                             ▼                         └──────┬───────┘
+                                   ┌────────────────────┐                     │
+                                   │  Claude (user key) │                     ▼
+                                   └────────────────────┘            ┌──────────────────┐
+                                                                     │  Celery Worker   │
+                                                                     │  + Celery Beat   │
+        ┌──────────────────────────────────────────────────────────┴──────────────────┤
+        ▼                       ▼                        ▼                    ▼
+  ┌────────────┐         ┌────────────┐          ┌──────────────┐     ┌──────────────┐
+  │ Gmail IMAP │         │ RSS Feeds  │          │ Apify Actors │     │  Playwright  │
+  │ + SMTP     │         │            │          │              │     │              │
+  └────────────┘         └────────────┘          └──────────────┘     └──────────────┘
+```
+
+### Services (`docker-compose`)
+
+| Service | Role |
+|---|---|
+| `jobhunt_frontend` | React (Vite) SPA — the tracker, CV manager, tailor UI, dashboards |
+| `jobhunt_backend` | FastAPI app — REST API, auth, AI orchestration |
+| `jobhunt_db` | PostgreSQL — jobs, CVs, feeds, email threads, run logs |
+| `jobhunt_redis` | Redis — Celery broker |
+| `jobhunt_worker` | Celery worker — feed scans, Gmail polls, ghosting checks |
+| `jobhunt_beat` | Celery Beat — schedules the recurring tasks |
+
+## Core components
+
+- **JD Parser** — extracts structured fields (company, role, location, market, seniority,
+  skills, salary, recruiter email) from raw job text or a fetched URL.
+- **Scorer** — four scores:
+  - **S1** — base fit of the JD against the **master CV**.
+  - **S1d** — contextual fit against the **best-matching domain CV** (a job is scored against
+    *every* active domain CV; the highest wins).
+  - **S2** — fit of the **tailored CV** against the JD (computed after applying changes).
+  - **S3** — **factual integrity**: what fraction of the tailored CV is traceable to the master
+    CV. Acts as a hard send-gate (≥90 green, 85–89 amber, <85 blocked).
+- **CV Tailor** — produces a bounded change log (reorder / rephrase / keyword-injection /
+  deselect) plus a cover letter and an application email. The **golden rule**: never invent
+  experiences, metrics, skills, or companies — only re-present what is already in the master CV.
+- **Feed Scanner** — runs RSS and Apify feeds, each linked to a domain CV; keyword profiles are
+  derived from the domain CV; a rule-based keyword pre-filter runs before any paid scoring call.
+- **Gmail Parser** — detects job-alert digest emails (rule-based), extracts job cards directly
+  from the email body for login-gated sources (LinkedIn/Indeed), and scores/saves matches.
+- **PDF Generator** — renders CVs and cover letters to PDF via Playwright (HTML template → PDF).
+
+## Data flow
+
+### Four input pipelines (all converge on the same scoring + save path)
+
+1. **Manual** — paste JD text or a URL → JD parser → S1 + multi-domain scoring → save.
+2. **Feed scan** — scheduled (or on-demand) RSS/Apify fetch → keyword pre-filter → dedup →
+   S1 + multi-domain scoring → threshold-gated save, tagged with the source feed + domain CV.
+3. **Gmail job alerts** — hourly IMAP poll → rule-based alert detection → email-body card
+   extraction (gated sources) or fetch + parse (public ATS links) → scoring → save.
+4. **Gmail recruiter mail** — the same poll classifies genuine recruiter replies and flags them
+   for human-in-the-loop approval (replies are never auto-sent).
+
+### Tailor → apply → send flow
+
+```
+Select domain CV (best-fit pre-selected)
+      │
+      ▼
+Generate package  ── one Claude call ──▶  change log + cover letter + email draft + S2
+      │
+      ▼
+Review change log  (approve / reject / edit each bounded change)
+      │
+      ▼
+Apply  ──▶  tailored CV + S3 integrity score (domain + master)  ──▶  green / amber / blocked
+      │
+      ▼
+Send application  ──▶  Gmail SMTP (test mode redirects to a notification address by default)
+      │
+      ▼
+Track  ──▶  status lifecycle + recruiter thread + follow-up drafting
+```
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Backend | FastAPI, SQLAlchemy (async), Alembic, PostgreSQL |
+| Auth | FastAPI-Users, JWT, Google OAuth |
+| Frontend | React (Vite) + Tailwind CSS |
+| State / data | Zustand, TanStack Query |
+| AI | Anthropic Claude (each user's own API key) |
+| Task queue | Celery + Redis + Celery Beat |
+| Email | Gmail IMAP (poll) + SMTP (send) |
+| Job scanning | RSS feeds + Apify actors |
+| Browser automation | Playwright (title pre-filter + PDF rendering) |
+| PDF | Playwright HTML template → PDF |
+| Storage | Local filesystem (S3 migration planned) |
+| Testing | pytest + pytest-asyncio (in-container, live-server smoke tests) |
+
+---
+
+[← Back to home](index.html) · [Features](features.md) · [API](api.md)

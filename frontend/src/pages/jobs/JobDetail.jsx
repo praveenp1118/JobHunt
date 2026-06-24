@@ -1,0 +1,391 @@
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { formatDistanceToNow, format } from 'date-fns'
+import { getJob, getJobEmails, updateJobStatus, updateJob, deleteJob, draftFollowUp } from '../../api/jobs'
+import { sendReply } from '../../api/jobs'
+import { StatusBadge, MarketBadge } from '../../components/ui/Badge'
+import { ThreeScores } from '../../components/ui/ScorePill'
+import Button from '../../components/ui/Button'
+import Spinner from '../../components/ui/Spinner'
+
+const STATUSES = [
+  'new', 'bookmarked', 'applied', 'screening',
+  'interview_r1', 'interview_r2', 'offer_received',
+  'offer_accepted', 'offer_declined', 'rejected', 'ghosted', 'not_interested',
+]
+
+export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
+  const qc = useQueryClient()
+  const [tab, setTab] = useState('details')
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [replyBody, setReplyBody] = useState('')
+  const [sendingReply, setSendingReply] = useState(false)
+  const [jdExpanded, setJdExpanded] = useState(false)
+  const [followUpDraft, setFollowUpDraft] = useState('')
+  const [loadingFollowUp, setLoadingFollowUp] = useState(false)
+
+  const { data: jobData, isLoading } = useQuery({
+    queryKey: ['job', jobId],
+    queryFn: () => getJob(jobId),
+    enabled: !!jobId,
+  })
+
+  const { data: emailData } = useQuery({
+    queryKey: ['job-emails', jobId],
+    queryFn: () => getJobEmails(jobId),
+    enabled: !!jobId && tab === 'emails',
+  })
+
+  const job = jobData?.data
+  const emails = emailData?.data || []
+
+  const handleStatusChange = async (newStatus) => {
+    await updateJobStatus(jobId, newStatus)
+    qc.invalidateQueries({ queryKey: ['job', jobId] })
+    qc.invalidateQueries({ queryKey: ['jobs'] })
+    onUpdate?.()
+  }
+
+  const handleDelete = async () => {
+    await deleteJob(jobId)
+    qc.invalidateQueries({ queryKey: ['jobs'] })
+    onUpdate?.()
+    onClose()
+  }
+
+  const handleSendReply = async (emailId) => {
+    if (!replyBody.trim()) return
+    setSendingReply(true)
+    try {
+      await sendReply({
+        job_id: jobId,
+        email_thread_id: emailId,
+        body: replyBody,
+      })
+      setReplyBody('')
+      qc.invalidateQueries({ queryKey: ['job-emails', jobId] })
+      qc.invalidateQueries({ queryKey: ['job', jobId] })
+      onUpdate?.()
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSendingReply(false)
+    }
+  }
+
+  const handleDraftFollowUp = async () => {
+    setLoadingFollowUp(true)
+    try {
+      const res = await draftFollowUp(jobId)
+      setFollowUpDraft(res.data.email_draft)
+      setTab('emails')
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoadingFollowUp(false)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <Spinner />
+      </div>
+    )
+  }
+
+  if (!job) return null
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className={`px-5 pt-4 pb-3 border-b border-gray-100 ${job.needs_hitl ? 'bg-red-50 border-red-200' : 'bg-white'}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            {job.needs_hitl && (
+              <div className="flex items-center gap-1.5 mb-2">
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-xs font-medium text-red-600">Recruiter replied — action needed</span>
+              </div>
+            )}
+            <h2 className="text-base font-semibold text-gray-900 truncate">{job.company}</h2>
+            <p className="text-sm text-gray-600 mt-0.5 truncate">{job.role}</p>
+            <div className="flex items-center gap-2 mt-2">
+              {job.market && <MarketBadge market={job.market} />}
+              <StatusBadge status={job.status} />
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 shrink-0">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Scores */}
+        <div className="flex items-center justify-between mt-3">
+          <ThreeScores s1={job.s1} s2={job.s2} s3Master={job.s3_master} />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => onTailor?.(jobId)}>
+              Tailor →
+            </Button>
+            <Button size="sm" variant="secondary" onClick={handleDraftFollowUp} loading={loadingFollowUp}>
+              Follow up
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-0 border-b border-gray-100 bg-white px-4">
+        {['details', 'emails', 'jd'].map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize ${
+              tab === t
+                ? 'border-emerald-500 text-emerald-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {t === 'jd' ? 'JD' : t}
+            {t === 'emails' && emails.length > 0 && (
+              <span className="ml-1.5 bg-gray-100 text-gray-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+                {emails.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto bg-white">
+        {/* ── Details tab ── */}
+        {tab === 'details' && (
+          <div className="p-5 space-y-5">
+            {/* Status update */}
+            <div>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Update status</label>
+              <div className="flex flex-wrap gap-1.5">
+                {STATUSES.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => handleStatusChange(s)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors capitalize ${
+                      job.status === s
+                        ? 'bg-slate-800 text-white border-slate-800'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    {s.replace(/_/g, ' ')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Key details */}
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {job.location && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">Location</p>
+                  <p className="text-gray-700">{job.location}</p>
+                </div>
+              )}
+              {job.salary_range_raw && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">Salary</p>
+                  <p className="text-gray-700">{job.salary_range_raw}</p>
+                </div>
+              )}
+              {job.recruiter_email && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">Recruiter</p>
+                  <a href={`mailto:${job.recruiter_email}`} className="text-emerald-600 hover:underline truncate block">{job.recruiter_email}</a>
+                </div>
+              )}
+              {job.applied_at && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-0.5">Applied</p>
+                  <p className="text-gray-700">{format(new Date(job.applied_at), 'MMM d, yyyy')}</p>
+                </div>
+              )}
+              {job.portal_url && (
+                <div className="col-span-2">
+                  <p className="text-xs text-gray-400 mb-0.5">Portal</p>
+                  <a href={job.portal_url} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline text-xs truncate block">
+                    {job.portal_url}
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="text-xs font-medium text-gray-500 uppercase tracking-wide block mb-2">Notes</label>
+              <textarea
+                defaultValue={job.notes || ''}
+                onBlur={(e) => updateJob(jobId, { notes: e.target.value })}
+                placeholder="Add notes..."
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-emerald-400 resize-none"
+              />
+            </div>
+
+            {/* Delete */}
+            <div className="pt-2 border-t border-gray-100">
+              {!showDeleteConfirm ? (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                >
+                  Delete this job
+                </button>
+              ) : (
+                <div className="flex items-center gap-3 bg-red-50 rounded-lg p-3">
+                  <p className="text-xs text-red-600 flex-1">Are you sure? This cannot be undone.</p>
+                  <Button size="sm" variant="danger" onClick={handleDelete}>Delete</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Emails tab ── */}
+        {tab === 'emails' && (
+          <div className="p-5">
+            {emails.length === 0 && !followUpDraft ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-gray-400 mb-3">No emails yet</p>
+                <p className="text-xs text-gray-400">Emails will appear after you send an application or receive a recruiter reply.</p>
+              </div>
+            ) : (
+              <div className="space-y-3 mb-4">
+                {emails.map((email) => (
+                  <div
+                    key={email.id}
+                    className={`rounded-xl border p-4 ${
+                      email.needs_hitl
+                        ? 'border-red-200 bg-red-50'
+                        : email.direction === 'sent'
+                        ? 'border-gray-100 bg-gray-50'
+                        : 'border-blue-100 bg-blue-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-500">
+                          {email.direction === 'sent' ? '📤 Sent' : '📥 Received'}
+                        </span>
+                        {email.classification && (
+                          <span className="text-[10px] bg-white border border-gray-200 px-1.5 py-0.5 rounded-full text-gray-500">
+                            {email.classification.replace(/_/g, ' ')}
+                          </span>
+                        )}
+                        {email.needs_hitl && (
+                          <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-medium">
+                            Needs reply
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-gray-400">
+                        {email.received_at || email.sent_at
+                          ? formatDistanceToNow(new Date(email.received_at || email.sent_at), { addSuffix: true })
+                          : ''}
+                      </span>
+                    </div>
+                    <p className="text-xs font-medium text-gray-700 mb-1 truncate">{email.subject}</p>
+                    <p className="text-xs text-gray-500 line-clamp-2">{email.body_preview}</p>
+                    {email.needs_hitl && (
+                      <div className="mt-3">
+                        <textarea
+                          value={replyBody}
+                          onChange={(e) => setReplyBody(e.target.value)}
+                          placeholder="Type your reply..."
+                          rows={4}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-emerald-400 resize-none mb-2"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => handleSendReply(email.id)}
+                          loading={sendingReply}
+                          disabled={!replyBody.trim()}
+                        >
+                          Send reply
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Follow-up draft */}
+            {followUpDraft && (
+              <div className="border border-emerald-200 bg-emerald-50 rounded-xl p-4">
+                <p className="text-xs font-medium text-emerald-700 mb-2">Follow-up draft</p>
+                <textarea
+                  value={followUpDraft}
+                  onChange={(e) => setFollowUpDraft(e.target.value)}
+                  rows={5}
+                  className="w-full px-3 py-2 border border-emerald-200 bg-white rounded-lg text-sm outline-none focus:border-emerald-400 resize-none mb-2"
+                />
+                <p className="text-xs text-emerald-600">Copy this and send from your Gmail, or use Send Reply above if you have a recruiter thread.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── JD tab ── */}
+        {tab === 'jd' && (
+          <div className="p-5">
+            {(() => {
+              const jd = job.jd_md || job.jd_raw || ''
+              const isPartial = job.has_partial_jd || (jd.length > 0 && jd.length < 200)
+              const portalLink = job.portal_url ? (
+                <a href={job.portal_url} target="_blank" rel="noreferrer"
+                   className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 hover:text-emerald-700">
+                  Open job posting →
+                </a>
+              ) : null
+
+              if (!jd && job.portal_url) {
+                return (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-gray-400 mb-2">Full JD not stored — view on company site</p>
+                    {portalLink}
+                  </div>
+                )
+              }
+              if (!jd) {
+                return <p className="text-sm text-gray-400 text-center py-8">No job description available</p>
+              }
+              return (
+                <div>
+                  {isPartial && (
+                    <div className="flex items-start gap-2 mb-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      <span className="text-amber-500 text-sm leading-none mt-0.5">⚠️</span>
+                      <p className="text-xs text-amber-700">
+                        Partial description — view the full JD at the posting before tailoring. {portalLink}
+                      </p>
+                    </div>
+                  )}
+                  <div className={`text-sm text-gray-700 whitespace-pre-wrap leading-relaxed ${!jdExpanded ? 'line-clamp-20' : ''}`}>
+                    {jd}
+                  </div>
+                  {jd.length > 600 && (
+                    <button
+                      onClick={() => setJdExpanded(!jdExpanded)}
+                      className="mt-3 text-xs text-emerald-600 hover:text-emerald-700 font-medium"
+                    >
+                      {jdExpanded ? 'Show less' : 'Show full JD'}
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
