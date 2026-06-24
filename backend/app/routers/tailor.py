@@ -204,6 +204,7 @@ async def generate_tailor(
         cl_template=str(cl_template),
         user_name=user.name or "Candidate",
         user_email=user.email,
+        recruiter_email=job.recruiter_email,
         user_anthropic_key=anthropic_key,
         model=user_model,
     )

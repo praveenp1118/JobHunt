@@ -29,3 +29,7 @@ export const getPreferences = () =>
 
 export const updatePreferences = (data) =>
   client.patch('/auth/me/preferences', data)
+
+// Where outgoing application email actually goes (test → notification address; prod → recruiter).
+export const getSettingsMode = () =>
+  client.get('/settings/mode')

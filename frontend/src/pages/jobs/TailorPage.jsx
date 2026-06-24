@@ -8,11 +8,23 @@ import {
   sendApplication, updateJobStatus,
 } from '../../api/jobs'
 import { getDomainCVs } from '../../api/cvs'
+import { getPreferences, getSettingsMode } from '../../api/auth'
+import useAuthStore from '../../store/auth'
 import { MarketBadge } from '../../components/ui/Badge'
 import ScorePill from '../../components/ui/ScorePill'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import { toast } from '../../store/toast'
+
+// Mirrors backend pdf_generator.make_filename: {Firstname}{Lastname}_{suffix}.pdf
+// (neutral — no company/role, so the same name goes to every firm).
+function makeFilename(userName, suffix) {
+  const parts = (userName || 'Candidate').trim().split(/\s+/)
+  const first = parts[0] || 'Candidate'
+  const last = parts.length > 1 ? parts[parts.length - 1] : ''
+  const name = `${first}${last}`.replace(/[^\w]/g, '') || 'Candidate'
+  return `${name}_${suffix}.pdf`
+}
 
 async function downloadPDF(url, filename) {
   const raw = localStorage.getItem('jobhunt-auth')
@@ -63,17 +75,28 @@ export default function TailorPage() {
 
   const { data: jobData } = useQuery({ queryKey: ['job', jobId], queryFn: () => getJob(jobId), enabled: !!jobId })
   const { data: domainCVsData } = useQuery({ queryKey: ['domain-cvs'], queryFn: getDomainCVs })
+  const { data: prefsData } = useQuery({ queryKey: ['preferences'], queryFn: getPreferences })
+  const { data: modeData } = useQuery({ queryKey: ['settings-mode'], queryFn: getSettingsMode })
   const { data: changelogData, refetch: refetchChangelog } = useQuery({
     queryKey: ['tailor-changelog', tailoredCvId],
     queryFn: () => getTailorChangelog(tailoredCvId),
     enabled: !!tailoredCvId,
   })
 
+  const user = useAuthStore((s) => s.user)
   const job = jobData?.data
   const domainCVs = domainCVsData?.data || []
   const changelog = changelogData?.data || []
   const selectedCV = domainCVs.find((c) => c.id === selectedDomainCvId)
   const jobScores = job?.domain_cv_scores || {}
+  // auto_mode: undefined while loading, then boolean. OFF → generation is manual.
+  const autoMode = prefsData?.data?.auto_mode
+  // Send mode: { mode: 'test'|'production', notification_email } — where the email really goes.
+  const sendMode = modeData?.data
+
+  // Attachment filenames (match the backend Content-Disposition names).
+  const cvFilename = makeFilename(user?.name, 'CV')
+  const clFilename = makeFilename(user?.name, 'CoverLetter')
 
   // Pre-select best-fit domain CV.
   useEffect(() => {
@@ -84,18 +107,20 @@ export default function TailorPage() {
     }
   }, [job, domainCVs]) // eslint-disable-line
 
-  // Generate (changelog + CL + email + S2) + JD highlights once per chosen domain CV.
+  // Per chosen domain CV: always load JD highlights; AUTO-generate the change log only
+  // when auto_mode is ON. In manual mode the middle panel shows a "Suggest changes" button.
   const genRef = useRef(null)
   useEffect(() => {
-    if (job && selectedDomainCvId && genRef.current !== selectedDomainCvId) {
-      genRef.current = selectedDomainCvId
-      runGenerate()
-    }
-  }, [job, selectedDomainCvId]) // eslint-disable-line
+    if (!job || !selectedDomainCvId || autoMode === undefined) return
+    if (genRef.current === selectedDomainCvId) return
+    genRef.current = selectedDomainCvId
+    setTailoredCvId(null); setApplyResult(null); setHighlights(null)
+    getJdHighlights(jobId, selectedDomainCvId).then((r) => setHighlights(r.data)).catch(() => {})
+    if (autoMode) runGenerate()
+  }, [job, selectedDomainCvId, autoMode]) // eslint-disable-line
 
   const runGenerate = async () => {
-    setError(''); setGenerating(true); setApplyResult(null); setTailoredCvId(null); setHighlights(null)
-    getJdHighlights(jobId, selectedDomainCvId).then((r) => setHighlights(r.data)).catch(() => {})
+    setError(''); setGenerating(true); setApplyResult(null); setTailoredCvId(null)
     try {
       const res = await generateTailor(jobId, selectedDomainCvId)
       setTailoredCvId(res.data.tailored_cv_id)
@@ -303,10 +328,26 @@ export default function TailorPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-            {generating || (!changelog.length && tailoredCvId) ? (
+            {generating ? (
+              <div className="flex justify-center py-12"><Spinner /></div>
+            ) : !tailoredCvId ? (
+              autoMode === false ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+                  <p className="text-sm font-medium text-gray-700 mb-1">No changes generated yet</p>
+                  <p className="text-xs text-gray-400 mb-5 max-w-sm">
+                    Auto mode is off — click to generate AI-powered change recommendations for this job.
+                  </p>
+                  <Button onClick={runGenerate}>⚡ Suggest changes</Button>
+                </div>
+              ) : (
+                <div className="flex justify-center py-12"><Spinner /></div>
+              )
+            ) : changelogData === undefined ? (
               <div className="flex justify-center py-12"><Spinner /></div>
             ) : !changelog.length ? (
-              <p className="text-sm text-gray-400 text-center py-12">No changes yet.</p>
+              <p className="text-sm text-gray-400 text-center py-12">
+                No changes suggested — the domain CV already fits this role. You can still generate the tailored CV.
+              </p>
             ) : (
               changelog.map((change) => {
                 const isApproved = change.status === 'approved' || change.status === 'approved_edited'
@@ -394,7 +435,7 @@ export default function TailorPage() {
                     <ScorePill score={applyResult.s3_domain} label="F·D" type="s3" />
                     <ScorePill score={applyResult.s3_master} label="F·M" type="s3" />
                   </div>
-                  <button onClick={() => downloadPDF(`/api/pdfs/tailored-cv/${tailoredCvId}`, 'CV_Tailored.pdf')}
+                  <button onClick={() => downloadPDF(`/api/pdfs/tailored-cv/${tailoredCvId}`, cvFilename)}
                     className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">↓ PDF</button>
                 </div>
                 {applyResult.s3_flags?.length > 0 && (
@@ -412,7 +453,7 @@ export default function TailorPage() {
                   <span className="text-[11px] text-gray-500">Template: {applyResult.cl_template_used?.replace('_', ' ')}</span>
                   <div className="flex gap-2">
                     <button onClick={handleRegenerateCL} className="text-xs text-gray-500 hover:text-gray-700 font-medium">Regenerate</button>
-                    <button onClick={() => downloadPDF(`/api/pdfs/cover-letter/${tailoredCvId}`, 'CoverLetter.pdf')}
+                    <button onClick={() => downloadPDF(`/api/pdfs/cover-letter/${tailoredCvId}`, clFilename)}
                       className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">↓ PDF</button>
                   </div>
                 </div>
@@ -421,7 +462,43 @@ export default function TailorPage() {
                 </pre>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
+                {/* Send-mode banner — where the email will actually go */}
+                {sendMode && (sendMode.mode === 'production' ? (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    <p className="text-xs text-emerald-700 font-medium">
+                      🟢 Production mode — email goes to{' '}
+                      {job.recruiter_email || 'the recruiter (none on file — will open the portal)'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <p className="text-xs text-amber-700 font-medium">
+                      🟠 Test mode ON — email will be sent to {sendMode.notification_email}
+                      {job.recruiter_email ? `, not ${job.recruiter_email}` : ''}
+                    </p>
+                  </div>
+                ))}
+
+                {/* Recipient */}
+                <div className="bg-gray-50 rounded-lg px-3 py-2">
+                  <span className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">To</span>
+                  {job.recruiter_email ? (
+                    <p className="text-xs text-gray-800 mt-0.5">{job.recruiter_email}</p>
+                  ) : (
+                    <p className="text-xs text-amber-600 mt-0.5">No recruiter email — will open the job portal</p>
+                  )}
+                </div>
+
+                {/* Attachments */}
+                <div className="bg-gray-50 rounded-lg px-3 py-2">
+                  <span className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">📎 Attachments</span>
+                  <ul className="mt-1 space-y-0.5">
+                    <li className="text-xs text-gray-700 truncate">• {cvFilename}</li>
+                    {includesCL && <li className="text-xs text-gray-700 truncate">• {clFilename}</li>}
+                  </ul>
+                </div>
+
                 <div>
                   <label className="text-[10px] uppercase tracking-wide text-gray-400 font-medium">Subject</label>
                   <input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)}

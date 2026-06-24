@@ -2,8 +2,21 @@
 PDF generator — converts markdown CV and cover letter to PDF via Playwright.
 Chromium is already installed in the Docker image.
 """
+import re
 import markdown as md_lib
 from typing import Optional
+
+
+def make_filename(user_name: str, suffix: str) -> str:
+    """Clean, neutral download name: {Firstname}{Lastname}_{suffix}.pdf
+    e.g. PraveenPrakash_CV.pdf / PraveenPrakash_CoverLetter.pdf.
+    Deliberately NO company/role — sending company-specific filenames to many firms
+    looks suspicious; the job is tracked internally via tailored_cv_id."""
+    parts = (user_name or "Candidate").split()
+    first = parts[0] if parts else "Candidate"
+    last = parts[-1] if len(parts) > 1 else ""
+    name = re.sub(r"[^\w]", "", f"{first}{last}") or "Candidate"
+    return f"{name}_{suffix}.pdf"
 
 
 # ── CV HTML template ──────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import engine, get_db
-from app.auth.dependencies import require_admin
+from app.auth.dependencies import require_admin, current_active_user
 from app.models.user import User
 
 
@@ -141,6 +141,32 @@ async def health():
 @app.get("/")
 async def root():
     return {"message": "JobHunt API — see /api/docs"}
+
+
+# ── Send-mode visibility ──────────────────────────────────────────────────────
+@app.get("/api/settings/mode")
+async def settings_mode(
+    user: User = Depends(current_active_user),
+    session=Depends(get_db),
+):
+    """Where will an outgoing application email actually go? In test mode every email
+    is redirected to the user's notification address; in production it goes to the
+    real recruiter. The Email Draft tab surfaces this so there are no surprises."""
+    from sqlalchemy import select
+    from app.models.user import UserCredentials
+
+    creds = (await session.execute(
+        select(UserCredentials).where(UserCredentials.user_id == user.id)
+    )).scalar_one_or_none()
+    notification_email = (
+        (creds.notification_email if creds and creds.notification_email else None)
+        or settings.notification_email
+        or user.email
+    )
+    return {
+        "mode": "production" if settings.is_production else "test",
+        "notification_email": notification_email,
+    }
 
 # ── Admin stats endpoint ──────────────────────────────────────────────────────
 @app.get("/api/admin/stats")

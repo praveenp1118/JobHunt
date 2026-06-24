@@ -83,6 +83,7 @@ async def generate_tailor_package(
     user_name: str = "Candidate",
     user_email: str = "",
     user_linkedin: str = "",
+    recruiter_email: Optional[str] = None,
     user_anthropic_key: Optional[str] = None,
     model: Optional[str] = None,
 ) -> dict:
@@ -172,11 +173,19 @@ Write a cover letter. Tone: {tone_desc}. {cl_instruction}
 - Close with a concrete call to action
 
 ━━━ TASK 3: APPLICATION EMAIL ━━━
-Write the email body (NOT the subject line). Maximum 5 lines.
-- Line 1: why you're writing
-- Line 2-3: your most relevant credential (one specific thing)
-- Line 4: brief forward reference
-- Line 5: sign-off
+Write a concise email BODY (NOT the subject line) WITH a greeting and a sign-off. Format exactly:
+
+Hi <first name of the recruiter if it's obvious from their email, otherwise "Hiring Team">,
+
+<3 short lines: why you're writing + your single most relevant credential + a brief forward reference>
+
+<1 line noting your tailored CV and cover letter are attached>
+
+Best regards,
+{user_name}
+
+Recruiter email (for the greeting only; may be empty): {recruiter_email or "none"}
+If no recruiter email is given, open with "Dear Hiring Team,".
 
 ━━━ TASK 4: S2 SCORE ━━━
 Score how well the DOMAIN CV (before tailoring) matches this JD.

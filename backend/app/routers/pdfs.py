@@ -12,7 +12,7 @@ from app.database import get_db
 from app.models.user import User, UserCredentials
 from app.models.cv import MasterCV, DomainCV, TailoredCV
 from app.auth.dependencies import current_active_user
-from app.utils.pdf_generator import cv_md_to_pdf, cl_md_to_pdf
+from app.utils.pdf_generator import cv_md_to_pdf, cl_md_to_pdf, make_filename
 
 router = APIRouter()
 
@@ -98,8 +98,7 @@ async def download_tailored_cv_pdf(
     tailored.cv_pdf_path = path
     await session.commit()
 
-    name = (user.name or "CV").replace(" ", "_")
-    return _pdf_response(pdf, f"CV_{name}_Tailored.pdf")
+    return _pdf_response(pdf, make_filename(user.name, "CV"))
 
 
 # ── Cover Letter ──────────────────────────────────────────────────────────────
@@ -140,5 +139,4 @@ async def download_cover_letter_pdf(
     tailored.cl_pdf_path = path
     await session.commit()
 
-    name = (user.name or "CL").replace(" ", "_")
-    return _pdf_response(pdf, f"CoverLetter_{name}.pdf")
+    return _pdf_response(pdf, make_filename(user.name, "CoverLetter"))
