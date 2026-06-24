@@ -1,17 +1,20 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Spinner from '../../components/ui/Spinner'
 import useAuthStore from '../../store/auth'
 import { updateCredentials, updatePreferences } from '../../api/auth'
 import { saveMasterCVText, uploadMasterCVFile } from '../../api/cvs'
+import { getSubscription, createCheckoutSession } from '../../api/billing'
 
 const STEPS = [
-  { id: 1, label: 'Master CV', required: true },
-  { id: 2, label: 'Gmail', required: false },
-  { id: 3, label: 'Targets', required: false },
-  { id: 4, label: 'API Keys', required: false },
+  { id: 1, label: 'Subscribe', required: false },
+  { id: 2, label: 'Master CV', required: true },
+  { id: 3, label: 'Gmail', required: false },
+  { id: 4, label: 'Targets', required: false },
+  { id: 5, label: 'API Keys', required: false },
 ]
 
 const MARKETS = ['NL/EU', 'Dubai', 'Singapore', 'India']
@@ -45,6 +48,22 @@ export default function Onboarding() {
   const [anthropicKey, setAnthropicKey] = useState('')
   const [apifyToken, setApifyToken] = useState('')
 
+  // Step 1 (Subscribe) state
+  const { data: subData } = useQuery({ queryKey: ['subscription'], queryFn: getSubscription, retry: false })
+  const subActive = subData?.data?.is_active
+  const [subBusy, setSubBusy] = useState(false)
+
+  const handleSubscribe = async () => {
+    setSubBusy(true)
+    try {
+      const res = await createCheckoutSession('pro')
+      window.location.href = res.data.checkout_url
+    } catch (e) {
+      setError(e.response?.data?.detail?.message || e.response?.data?.detail || 'Could not start checkout')
+      setSubBusy(false)
+    }
+  }
+
   const handleStep1 = async () => {
     setError('')
     setLoading(true)
@@ -63,7 +82,7 @@ export default function Onboarding() {
         await uploadMasterCVFile(cvFile)
       }
       setCvUploaded(true)
-      setStep(2)
+      setStep(3)
     } catch (err) {
       setError(err.response?.data?.detail || 'Upload failed. Please try again.')
     } finally {
@@ -74,7 +93,7 @@ export default function Onboarding() {
   const handleStep2 = async () => {
     setError('')
     if (!gmail && !gmailPassword) {
-      setStep(3)
+      setStep(4)
       return
     }
     setLoading(true)
@@ -84,7 +103,7 @@ export default function Onboarding() {
         gmail_app_password: gmailPassword || undefined,
         notification_email: notificationEmail || undefined,
       })
-      setStep(3)
+      setStep(4)
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to save Gmail settings')
     } finally {
@@ -98,7 +117,7 @@ export default function Onboarding() {
     try {
       const roles = [...selectedRoles, customRole].filter(Boolean).join(',')
       await updatePreferences({ target_roles: roles })
-      setStep(4)
+      setStep(5)
     } catch (err) {
       setError('Failed to save preferences')
     } finally {
@@ -192,8 +211,57 @@ export default function Onboarding() {
             </div>
           )}
 
-          {/* ── Step 1: Master CV ── */}
+          {/* ── Step 1: Subscribe ── */}
           {step === 1 && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">Subscribe to JobHunt Pro</h2>
+              <p className="text-sm text-gray-500 mb-6">
+                One plan unlocks everything — CV tailoring, multi-domain scoring, job scanning, and application sending.
+              </p>
+
+              <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-6 mb-6">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold text-gray-900">₹500</span>
+                  <span className="text-sm text-gray-500">/ month</span>
+                </div>
+                <ul className="mt-4 space-y-2 text-sm text-gray-700">
+                  {[
+                    'AI CV tailoring + cover letters',
+                    'Multi-domain job-fit scoring',
+                    'Weekly job scanning (RSS + LinkedIn/Google)',
+                    'Gmail job-alert parsing + application sending',
+                  ].map((f) => (
+                    <li key={f} className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-4 text-xs text-gray-500">
+                  You bring your own Anthropic + Apify keys (set up in a later step) — you control AI costs directly.
+                </p>
+              </div>
+
+              {subActive ? (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-emerald-700">✅ You're already on JobHunt Pro</p>
+                  <Button onClick={() => setStep(2)}>Continue →</Button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <button onClick={() => setStep(2)} className="text-sm text-gray-500 hover:text-gray-700 font-medium">
+                    Skip for now →
+                  </button>
+                  <Button loading={subBusy} onClick={handleSubscribe}>Subscribe — ₹500/month</Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Step 2: Master CV ── */}
+          {step === 2 && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-1">Upload your master CV</h2>
               <p className="text-sm text-gray-500 mb-6">
@@ -275,7 +343,7 @@ export default function Onboarding() {
           )}
 
           {/* ── Step 2: Gmail ── */}
-          {step === 2 && (
+          {step === 3 && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-1">Connect Gmail</h2>
               <p className="text-sm text-gray-500 mb-1">
@@ -320,7 +388,7 @@ export default function Onboarding() {
               </div>
 
               <div className="flex justify-between mt-6">
-                <Button variant="ghost" onClick={() => setStep(3)}>
+                <Button variant="ghost" onClick={() => setStep(4)}>
                   Skip for now
                 </Button>
                 <Button onClick={handleStep2} loading={loading} size="lg">
@@ -331,7 +399,7 @@ export default function Onboarding() {
           )}
 
           {/* ── Step 3: Targets ── */}
-          {step === 3 && (
+          {step === 4 && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-1">Set your targets</h2>
               <p className="text-sm text-gray-500 mb-6">
@@ -403,7 +471,7 @@ export default function Onboarding() {
               </div>
 
               <div className="flex justify-between mt-6">
-                <Button variant="ghost" onClick={() => setStep(4)}>
+                <Button variant="ghost" onClick={() => setStep(5)}>
                   Skip for now
                 </Button>
                 <Button onClick={handleStep3} loading={loading} size="lg">
@@ -414,7 +482,7 @@ export default function Onboarding() {
           )}
 
           {/* ── Step 4: API Keys ── */}
-          {step === 4 && (
+          {step === 5 && (
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-1">Add your API keys</h2>
               <p className="text-sm text-gray-500 mb-6">
@@ -480,8 +548,8 @@ export default function Onboarding() {
 
         <p className="text-center text-xs text-slate-500 mt-4">
           Step {step} of {STEPS.length}
-          {step === 1 && ' — Required'}
-          {step > 1 && ' — Optional (you can complete this later in Settings)'}
+          {step === 2 && ' — Required'}
+          {step !== 2 && ' — Optional (you can complete this later in Settings)'}
         </p>
       </div>
     </div>

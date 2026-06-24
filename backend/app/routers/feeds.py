@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.domain import UserFeed, UserTargetCompany
 from app.models.admin import RunLog, RunType, RunStatus
 from app.auth.dependencies import current_active_user
+from app.utils.subscription import require_active_subscription
 from app.schemas.feed import (
     FeedRead, FeedCreate, FeedUpdate,
     ScanResult, TargetCompanyRead, TargetCompanyCreate,
@@ -367,7 +368,7 @@ async def run_single_feed(
     return {"jobs_found": found, "jobs_added": added, "duration_seconds": round(duration, 1)}
 
 
-@router.post("/scanner/run")
+@router.post("/scanner/run", dependencies=[Depends(require_active_subscription)])
 async def trigger_scan(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),

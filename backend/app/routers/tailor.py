@@ -24,6 +24,7 @@ from app.models.cv import (
 )
 from app.models.domain import CountryMaster
 from app.auth.dependencies import current_active_user
+from app.utils.subscription import require_active_subscription
 from app.utils.encryption import decrypt_if_present
 from app.utils.model import get_user_model
 from app.agents.tailor_agents import (
@@ -121,7 +122,8 @@ async def jd_highlights(
 # STEP 1: GENERATE (tailor + CL + email + S2 in one call)
 # ══════════════════════════════════════════════════════════════
 
-@router.post("/generate", response_model=TailorPackageRead)
+@router.post("/generate", response_model=TailorPackageRead,
+             dependencies=[Depends(require_active_subscription)])
 async def generate_tailor(
     body: TailorRequest,
     user: User = Depends(current_active_user),
@@ -352,7 +354,8 @@ async def bulk_tailor_action(
 # STEP 2: APPLY (after change log approved, compute S3)
 # ══════════════════════════════════════════════════════════════
 
-@router.post("/{tailored_cv_id}/apply", response_model=TailorApplyResult)
+@router.post("/{tailored_cv_id}/apply", response_model=TailorApplyResult,
+             dependencies=[Depends(require_active_subscription)])
 async def apply_tailor(
     tailored_cv_id: uuid.UUID,
     user: User = Depends(current_active_user),

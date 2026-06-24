@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { toast } from '../../store/toast'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { format } from 'date-fns'
 import { getCredentials, updateCredentials } from '../../api/auth'
+import { getSubscription, createCheckoutSession, cancelSubscription } from '../../api/billing'
+import client from '../../api/client'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 
@@ -9,15 +12,44 @@ export default function PlanKeysTab() {
   const [anthropicKey, setAnthropicKey] = useState('')
   const [apifyToken, setApifyToken] = useState('')
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [subBusy, setSubBusy] = useState(false)
+  const [testingApify, setTestingApify] = useState(false)
 
-  const { data } = useQuery({
-    queryKey: ['credentials'],
-    queryFn: getCredentials,
-  })
-
+  const { data } = useQuery({ queryKey: ['credentials'], queryFn: getCredentials })
   const creds = data?.data || {}
+
+  const { data: subData, refetch: refetchSub } = useQuery({
+    queryKey: ['subscription'],
+    queryFn: getSubscription,
+  })
+  const sub = subData?.data || {}
+  const endLabel = sub.subscription_end ? format(new Date(sub.subscription_end), 'MMM d, yyyy') : null
+
+  const handleSubscribe = async () => {
+    setSubBusy(true)
+    try {
+      const res = await createCheckoutSession('pro')
+      window.location.href = res.data.checkout_url
+    } catch (e) {
+      toast.error(e.response?.data?.detail?.message || e.response?.data?.detail || 'Could not start checkout')
+      setSubBusy(false)
+    }
+  }
+
+  const handleCancel = async () => {
+    if (!window.confirm('Cancel your subscription? You keep full access until the current period ends.')) return
+    setSubBusy(true)
+    try {
+      await cancelSubscription()
+      toast.success('Subscription will cancel at period end')
+      refetchSub()
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Cancel failed')
+    } finally {
+      setSubBusy(false)
+    }
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -39,6 +71,19 @@ export default function PlanKeysTab() {
     }
   }
 
+  const handleTestApify = async () => {
+    setTestingApify(true)
+    try {
+      const r = await client.get('/feeds/apify-actors', { params: { search: 'jobs' } })
+      const n = (r.data || []).length
+      toast.success(`Apify connected — ${n} actor${n === 1 ? '' : 's'} found`)
+    } catch {
+      toast.error('Apify test failed — save a valid token first')
+    } finally {
+      setTestingApify(false)
+    }
+  }
+
   const handleModelChange = async (model) => {
     try {
       const { updatePreferences } = await import('../../api/auth')
@@ -51,87 +96,121 @@ export default function PlanKeysTab() {
 
   return (
     <div className="space-y-5">
-      {/* Plan info */}
+      {/* ── Section 1: Current plan ── */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         <h2 className="text-sm font-semibold text-gray-900 mb-3">Current plan</h2>
-        <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
-          <div className="w-10 h-10 bg-slate-200 rounded-lg flex items-center justify-center">
-            <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-            </svg>
+
+        {sub.is_active ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-emerald-800">✅ JobHunt Pro</p>
+              <p className="text-xs text-emerald-700 mt-0.5">
+                {endLabel ? `Active until: ${endLabel}` : 'Active'} · ₹500/month
+              </p>
+            </div>
+            <Button size="sm" variant="ghost" loading={subBusy} onClick={handleCancel}>Cancel plan</Button>
           </div>
-          <div>
-            <p className="text-sm font-semibold text-gray-900">Default Plan — Own keys</p>
-            <p className="text-xs text-gray-500 mt-0.5">You use your own Anthropic + Apify keys. Billed directly, no markup.</p>
+        ) : sub.status === 'cancelled' ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-amber-800">🟡 Cancelled</p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                {endLabel ? `Access until: ${endLabel}` : 'Cancelling at period end'} · Resubscribe to continue after that
+              </p>
+            </div>
+            <Button size="sm" loading={subBusy} onClick={handleSubscribe}>Resubscribe →</Button>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-xl border border-gray-200 bg-slate-50 p-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">⚪ No active subscription</p>
+              <p className="text-xs text-gray-500 mt-0.5">Subscribe to unlock CV tailoring, scanning, and application sending.</p>
+            </div>
+            <Button size="sm" loading={subBusy} onClick={handleSubscribe}>Subscribe — ₹500/month →</Button>
+          </div>
+        )}
       </div>
 
-      {/* API keys */}
+      {/* ── Section 2: Anthropic API key ── */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
-        <h2 className="text-sm font-semibold text-gray-900 mb-1">API keys</h2>
-        <p className="text-xs text-gray-500 mb-5">Keys are encrypted with AES-256 at rest. Never shared or logged.</p>
+        <h2 className="text-sm font-semibold text-gray-900 mb-1">Anthropic API key</h2>
+        <p className="text-xs text-gray-500 mb-4">Encrypted with AES-256 at rest. Never shared or logged.</p>
 
-        <div className="space-y-4">
-          {/* Anthropic */}
+        <div className="rounded-xl bg-slate-50 border border-slate-100 p-4 mb-4 text-xs text-gray-600 leading-relaxed space-y-2">
+          <p><span className="font-semibold text-gray-800">Why you need this:</span> JobHunt uses Claude AI to score job fit, tailor your CV, generate cover letters, and parse job descriptions. Your key connects to your own Anthropic account — you control the costs (~$3–5/month for active job searching).</p>
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm font-medium text-gray-700">Anthropic API key</label>
-              <span className={`text-xs font-medium ${creds.has_anthropic_key ? 'text-emerald-600' : 'text-gray-400'}`}>
-                {creds.has_anthropic_key ? '✓ Saved' : 'Not set'}
-              </span>
-            </div>
-            <Input
-              type="password"
-              placeholder={creds.has_anthropic_key ? '••••••••••••••••• (saved)' : 'sk-ant-...'}
-              value={anthropicKey}
-              onChange={(e) => setAnthropicKey(e.target.value)}
-              hint={
-                <span>
-                  Get your key at{' '}
-                  <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">
-                    console.anthropic.com
-                  </a>
-                </span>
-              }
-            />
+            <p className="font-semibold text-gray-800">How to get your key:</p>
+            <ol className="list-decimal list-inside mt-1 space-y-0.5">
+              <li>Go to <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">console.anthropic.com</a></li>
+              <li>Sign up or log in</li>
+              <li>Click <span className="font-medium">API Keys</span> in the left sidebar</li>
+              <li>Click <span className="font-medium">Create Key</span></li>
+              <li>Copy and paste below</li>
+            </ol>
           </div>
-
-          {/* Apify */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm font-medium text-gray-700">Apify token</label>
-              <span className={`text-xs font-medium ${creds.has_apify_token ? 'text-emerald-600' : 'text-gray-400'}`}>
-                {creds.has_apify_token ? '✓ Saved' : 'Not set'}
-              </span>
-            </div>
-            <Input
-              type="password"
-              placeholder={creds.has_apify_token ? '••••••••••••••••• (saved)' : 'apify_api_...'}
-              value={apifyToken}
-              onChange={(e) => setApifyToken(e.target.value)}
-              hint={
-                <span>
-                  Used for weekly job scanning.{' '}
-                  <a href="https://console.apify.com" target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">
-                    console.apify.com
-                  </a>
-                </span>
-              }
-            />
-          </div>
+          <p className="text-emerald-700">💡 New accounts get $5 free credit — enough for weeks of job searching.</p>
         </div>
 
-        {error && <p className="text-sm text-red-500 mt-3">{error}</p>}
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-sm font-medium text-gray-700">API key</label>
+          <span className={`text-xs font-medium ${creds.has_anthropic_key ? 'text-emerald-600' : 'text-gray-400'}`}>
+            {creds.has_anthropic_key ? '✓ Saved' : 'Not set'}
+          </span>
+        </div>
+        <Input
+          type="password"
+          placeholder={creds.has_anthropic_key ? '••••••••••••••••• (saved)' : 'sk-ant-...'}
+          value={anthropicKey}
+          onChange={(e) => setAnthropicKey(e.target.value)}
+        />
+      </div>
 
-        <div className="flex justify-end mt-5">
-          <Button onClick={handleSave} loading={saving} disabled={!anthropicKey && !apifyToken} size="sm">
-            Save keys
-          </Button>
+      {/* ── Section 3: Apify token ── */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+        <h2 className="text-sm font-semibold text-gray-900 mb-1">Apify token <span className="text-gray-400 font-normal">(optional)</span></h2>
+        <p className="text-xs text-gray-500 mb-4">Encrypted with AES-256 at rest.</p>
+
+        <div className="rounded-xl bg-slate-50 border border-slate-100 p-4 mb-4 text-xs text-gray-600 leading-relaxed space-y-2">
+          <p><span className="font-semibold text-gray-800">Why you need this (optional):</span> Apify powers LinkedIn Jobs and Google Jobs scanning. Without it, RSS feeds still find jobs (Jobicy etc). With it, 50+ additional jobs per scan from LinkedIn and Google.</p>
+          <p>Free tier: $5 credit on signup (~500 job scans).</p>
+          <div>
+            <p className="font-semibold text-gray-800">How to get your token:</p>
+            <ol className="list-decimal list-inside mt-1 space-y-0.5">
+              <li>Go to <a href="https://apify.com" target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">apify.com</a></li>
+              <li>Sign up (free)</li>
+              <li>Click your profile → <span className="font-medium">Settings</span></li>
+              <li>Go to the <span className="font-medium">Integrations</span> tab</li>
+              <li>Copy your <span className="font-medium">Personal API token</span></li>
+            </ol>
+          </div>
+          <p className="text-emerald-700">💡 Free tier is enough for weeks of scanning.</p>
+        </div>
+
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-sm font-medium text-gray-700">Token</label>
+          <span className={`text-xs font-medium ${creds.has_apify_token ? 'text-emerald-600' : 'text-gray-400'}`}>
+            {creds.has_apify_token ? '✓ Saved' : 'Not set'}
+          </span>
+        </div>
+        <Input
+          type="password"
+          placeholder={creds.has_apify_token ? '••••••••••••••••• (saved)' : 'apify_api_...'}
+          value={apifyToken}
+          onChange={(e) => setApifyToken(e.target.value)}
+        />
+        <div className="flex justify-end mt-2">
+          <Button size="sm" variant="ghost" loading={testingApify} onClick={handleTestApify}>Test connection</Button>
         </div>
       </div>
 
-      {/* Model selector */}
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      <div className="flex justify-end">
+        <Button onClick={handleSave} loading={saving} disabled={!anthropicKey && !apifyToken} size="sm">
+          Save keys
+        </Button>
+      </div>
+
+      {/* ── Section 4: Model selector ── */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         <h2 className="text-sm font-semibold text-gray-900 mb-1">Claude model</h2>
         <p className="text-xs text-gray-500 mb-4">Used for all AI operations — tailoring, scoring, domain CV generation.</p>

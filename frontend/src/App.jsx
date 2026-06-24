@@ -14,6 +14,7 @@ import Onboarding from './pages/onboarding/Onboarding'
 import Dashboard from './pages/dashboard/Dashboard'
 import JobsPage from './pages/jobs/JobsPage'
 import TailorPage from './pages/jobs/TailorPage'
+import SubscriptionSuccess from './pages/billing/SubscriptionSuccess'
 import CVsPage from './pages/cvs/CVsPage'
 import SettingsPage from './pages/settings/SettingsPage'
 import ActivityPage from './pages/activity/ActivityPage'
@@ -63,6 +64,9 @@ export default function App() {
 
       {/* Full-screen tailor experience (no app sidebar — maximum space) */}
       <Route path="/jobs/:jobId/tailor" element={<RequireAuth><TailorPage /></RequireAuth>} />
+
+      {/* Post-checkout landing */}
+      <Route path="/billing/success" element={<RequireAuth><SubscriptionSuccess /></RequireAuth>} />
 
       {/* Protected app routes — all use AppLayout */}
       <Route element={<RequireAuth><AppLayout /></RequireAuth>}>

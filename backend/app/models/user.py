@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from enum import Enum
 from typing import Optional
-from sqlalchemy import String, Boolean, Text, Integer, ForeignKey, Enum as SAEnum
+from sqlalchemy import String, Boolean, Text, Integer, ForeignKey, DateTime, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
@@ -64,6 +65,15 @@ class User(SQLAlchemyBaseUserTableUUID, Base, TimestampMixin):
     google_id: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True, unique=True, index=True
     )
+
+    # ── Stripe subscription (JobHunt Pro) ──
+    stripe_customer_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    # inactive / active / expired / cancelled / past_due
+    subscription_status: Mapped[str] = mapped_column(String(20), default="inactive", nullable=False)
+    # none / pro
+    subscription_plan: Mapped[str] = mapped_column(String(20), default="none", nullable=False)
+    subscription_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    subscription_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Relationships
     credentials: Mapped[Optional["UserCredentials"]] = relationship(

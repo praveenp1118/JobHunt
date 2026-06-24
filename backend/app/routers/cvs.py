@@ -16,6 +16,7 @@ from app.models.cv import (
 )
 from app.models.domain import IndustryVertical, FunctionalDiscipline, CountryMaster
 from app.auth.dependencies import current_active_user
+from app.utils.subscription import require_active_subscription
 from app.utils.cv_parser import parse_file_to_text, count_words
 from app.utils.storage import (
     save_text_file, read_text_file,
@@ -291,7 +292,8 @@ async def get_domain_cv(
     return DomainCVRead.model_validate(cv)
 
 
-@router.post("/domains/generate-changelog", status_code=status.HTTP_201_CREATED)
+@router.post("/domains/generate-changelog", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_active_subscription)])
 async def generate_domain_cv_changelog(
     body: DomainCVCreate,
     user: User = Depends(current_active_user),
@@ -518,7 +520,8 @@ async def bulk_change_action(
     return {"updated": len(changes), "action": body.action}
 
 
-@router.post("/domains/{domain_cv_id}/apply", response_model=DomainCVRead)
+@router.post("/domains/{domain_cv_id}/apply", response_model=DomainCVRead,
+             dependencies=[Depends(require_active_subscription)])
 async def apply_domain_cv_changes(
     domain_cv_id: uuid.UUID,
     user: User = Depends(current_active_user),

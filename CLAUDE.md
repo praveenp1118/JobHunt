@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (26 tests, all passing):
+- Current coverage (30 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -90,6 +90,10 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     apply → asserts CV/CL/email (with greeting) non-empty + s2>0 + s3>0 + s3_status green/amber. Uses the
     owner's real master/domain CV + a job and makes REAL Claude calls (~80s); **skips** if those aren't
     present (clean CI). Restores the owner's original `auto_mode`.
+  - `test_billing.py` (4): GET /billing/subscription returns inactive/none for a fresh user;
+    create-checkout-session is wired (200 w/ `checkout_url` when Stripe fully configured, else
+    502 bad-price / 503 not-configured); the subscription gate **blocks** POST /tailor/generate
+    with **402** for a non-admin inactive user, and **allows** GET /jobs (read-only, 200).
 - NOT tested: `check_title_relevance` (live Playwright) and a true live end-to-end
   (real Gmail inbox + Anthropic).
 
@@ -109,7 +113,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
 | Email | Gmail IMAP (poll) + SMTP (send) |
 | Job scanning | RSS feeds + Apify actors |
 | PDF | Playwright → HTML template → PDF |
-| Payments | Razorpay (V3 — not yet built) |
+| Payments | **Stripe** — JobHunt Pro subscription ₹500/mo (Razorpay wallet code present but unused) |
 | Storage | Local /app/storage/ (S3 migration in V3) |
 | Testing | pytest + pytest-asyncio (API smoke tests, run in-container against live server) |
 
@@ -149,6 +153,7 @@ D:\JobHunt\
 │   │   │   ├── feeds.py             # feeds CRUD, scanner trigger, apify-actors search
 │   │   │   ├── pdfs.py              # PDF generation endpoints
 │   │   │   ├── wallet.py            # wallet balance, transactions
+│   │   │   ├── billing.py           # V3: Stripe subscription (checkout, cancel, webhook, verify-session)
 │   │   │   └── activity.py          # V3: activity dashboard (alerts timeline + system runs)
 │   │   ├── tasks/           # Celery tasks
 │   │   │   ├── scanner_tasks.py     # weekly_job_scan
@@ -157,6 +162,7 @@ D:\JobHunt\
 │   │   │   ├── pdf_generator.py     # Playwright CV + CL PDF generation
 │   │   │   ├── encryption.py        # AES-256 for API keys
 │   │   │   ├── storage.py           # local file storage helpers
+│   │   │   ├── subscription.py      # V3: require_active_subscription gate (402; admin bypass)
 │   │   │   └── model.py             # V2: get_user_model() helper
 │   │   ├── auth/            # FastAPI-Users config
 │   │   ├── config.py        # settings from .env
@@ -171,7 +177,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_activity_log → v3_domain_cv_scores → v3_partial_jd
+│   │   └── versions/        # chain tip: … → v3_domain_cv_scores → v3_partial_jd → v3_stripe_subscriptions
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -180,7 +186,8 @@ D:\JobHunt\
 │   │       ├── v3_gmail_alert_prefs.py        # V3: user_preferences job-alert controls
 │   │       ├── v3_activity_log.py             # V3: run_logs.details→JSONB + email_alert_logs table
 │   │       ├── v3_domain_cv_scores.py         # V3: jobs.s1d + domain_cv_scores (JSONB) + best_domain_cv_id
-│   │       └── v3_partial_jd.py               # V3: jobs.has_partial_jd (alert-email snippet flag)
+│   │       ├── v3_partial_jd.py               # V3: jobs.has_partial_jd (alert-email snippet flag)
+│   │       └── v3_stripe_subscriptions.py     # V3: users.stripe_customer_id + subscription_* fields
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
@@ -229,6 +236,8 @@ D:\JobHunt\
 - `id`, `email`, `name`, `role` (user/admin), `plan` (default/wallet)
 - `is_active`, `is_superuser`, `is_verified`
 - `linkedin_url`, `phone`, `current_location`, `salary_expectation`
+- V3 Stripe: `stripe_customer_id`, `subscription_status` (inactive/active/expired/cancelled/past_due),
+  `subscription_plan` (none/pro), `subscription_end`, `subscription_id`
 
 ### UserCredentials (one per user)
 - `anthropic_api_key_enc` — AES-256 encrypted
@@ -374,6 +383,20 @@ S3 = factual integrity % — computed after Apply
 
 ### Wallet (`/api/wallet/`)
 - `GET /` — balance + transactions
+
+### Billing (`/api/billing/`) — V3, Stripe JobHunt Pro (₹500/mo)
+- `POST /create-checkout-session` — `{plan, success_url, cancel_url}` → `{checkout_url}` (get/create
+  Stripe customer, create subscription Checkout Session)
+- `GET /subscription` — `{plan, status, subscription_end, stripe_customer_id, is_active}`
+- `POST /cancel` — `Subscription.modify(cancel_at_period_end=True)`; sets status `cancelled`
+- `POST /webhook` — Stripe-signature verified; handles `checkout.session.completed` /
+  `invoice.payment_succeeded` (→ active, +30d) / `invoice.payment_failed` (→ past_due) /
+  `customer.subscription.deleted` (→ expired). No auth.
+- `GET /verify-session?session_id=` — success-page polling; activates the user if `payment_status=paid`
+- **Gate:** `require_active_subscription` (utils/subscription.py) returns **402** for non-active
+  non-admin users on: tailor `generate`/`apply`, `cvs/domains/generate-changelog`,
+  `cvs/domains/{id}/apply`, `feeds/scanner/run`, `gmail/send-application`, `gmail/poll`. **Admins
+  bypass.** GET / auth / billing / dashboard endpoints are NOT gated.
 
 ### Activity (`/api/activity/`) — V3, read-only
 - `GET /alerts?days=&limit=` — per-email job-alert timeline + saved-job summaries
@@ -705,12 +728,23 @@ section above for the full summary. 17/17 smoke tests passing.
 
 ---
 
-### 2. Razorpay Wallet Top-up
-- Add Razorpay SDK to requirements.txt
-- `POST /api/wallet/create-order` — create Razorpay order
-- `POST /api/wallet/verify-payment` — verify + credit wallet
-- WalletPage.jsx: Top up button → Razorpay checkout modal
-- Test with Razorpay test mode keys
+### 2. Payments — ✅ COMPLETE (Stripe subscription, June 24, 2026)
+
+**Superseded the Razorpay wallet plan** — JobHunt is now a single-plan **subscription** (JobHunt
+Pro, ₹500/mo via Stripe); users bring their own Anthropic + Apify keys. Built across 12 steps:
+- **DB:** `v3_stripe_subscriptions` migration → User `stripe_customer_id`/`subscription_*` fields.
+- **Backend:** `routers/billing.py` (checkout / subscription / cancel / webhook / verify-session;
+  Stripe SDK calls in `asyncio.to_thread`), `utils/subscription.py` gate (**402**, admin bypass)
+  on the 7 paid write endpoints. `config.py` Stripe settings.
+- **Frontend:** `api/billing.js`; PlanKeysTab subscription card (Subscribe/Cancel/Resubscribe) +
+  educational Anthropic/Apify key docs; AppLayout status banner (amber inactive / red past_due /
+  yellow cancelled, hidden on settings/billing + for admins); `/billing/success` page; onboarding
+  wizard gains **Subscribe as Step 1** (Skip-for-now allowed).
+- **Tests:** `test_billing.py` (4) — subscription status, checkout wiring, gate 402 on tailor,
+  GET /jobs allowed. Stripe lib baked into the backend image.
+- **⚠️ Config note:** `STRIPE_PRO_PRICE_ID` must be a **Price** id (`price_…`), not a **Product**
+  id (`prod_…`) — checkout 502s ("No such price") otherwise. Webhook secret needed for the
+  webhook path. (Razorpay wallet code remains in the repo, unused.)
 
 ### 3. S3 File Storage Migration
 - Add boto3 to requirements.txt
@@ -769,6 +803,12 @@ GMAIL_APP_PASSWORD=
 # Apify
 APIFY_TOKEN=                 # platform fallback token (optional)
 
+# Stripe (JobHunt Pro subscription)
+STRIPE_SECRET_KEY=           # sk_test_… / sk_live_…
+STRIPE_PUBLISHABLE_KEY=      # pk_test_… / pk_live_…
+STRIPE_PRO_PRICE_ID=         # price_… (a Price id, NOT a prod_… Product id)
+STRIPE_WEBHOOK_SECRET=       # whsec_… (from `stripe listen` or the Dashboard webhook)
+
 # App config
 ENV=test                     # test | production
 SCORE_THRESHOLD=65
@@ -799,4 +839,4 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 24, 2026 — V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); GitHub repo + Pages docs site live. All 26 smoke tests passing*
+*Last updated: June 24, 2026 — V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); GitHub repo + Pages docs site live. All 30 smoke tests passing*

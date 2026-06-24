@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     razorpay_key_id: Optional[str] = None
     razorpay_key_secret: Optional[str] = None
 
+    # ── Stripe (JobHunt Pro subscription) ─────────────────────────────────────
+    stripe_secret_key: str = ""
+    stripe_publishable_key: str = ""
+    stripe_pro_price_id: str = ""
+    stripe_webhook_secret: str = ""
+
     # ── Scoring thresholds ────────────────────────────────────────────────────
     s1_min_threshold: int = 65
     s3_block_threshold: int = 85

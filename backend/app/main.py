@@ -127,6 +127,9 @@ app.include_router(pdfs_router, prefix="/api/pdfs", tags=["pdfs"])
 from app.routers.activity import router as activity_router
 app.include_router(activity_router, prefix="/api/activity", tags=["activity"])
 
+from app.routers.billing import router as billing_router
+app.include_router(billing_router, prefix="/api/billing", tags=["billing"])
+
 # ── Health check ─────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():

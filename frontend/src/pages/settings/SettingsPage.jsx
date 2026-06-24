@@ -18,10 +18,11 @@ const TABS = [
 ]
 
 export default function SettingsPage() {
-  // Honour /settings#feeds (e.g. the Dashboard "Manage feeds" link).
-  const [tab, setTab] = useState(
-    () => (typeof window !== 'undefined' && window.location.hash === '#feeds') ? 'feeds' : 'profile'
-  )
+  // Honour /settings#<tab> (e.g. Dashboard "Manage feeds" → #feeds, billing cancel → #plan).
+  const [tab, setTab] = useState(() => {
+    const h = typeof window !== 'undefined' ? window.location.hash.replace('#', '') : ''
+    return TABS.some((t) => t.key === h) ? h : 'profile'
+  })
 
   return (
     <div className={`p-6 mx-auto ${tab === 'feeds' ? 'max-w-5xl' : 'max-w-3xl'}`}>

@@ -15,6 +15,7 @@ from app.models.user import User, UserCredentials
 from app.models.job import Job, EmailThread, JobStatus, EmailDirection, EmailClassification
 from app.models.cv import TailoredCV
 from app.auth.dependencies import current_active_user
+from app.utils.subscription import require_active_subscription
 from app.utils.encryption import decrypt_if_present
 from app.mcp.gmail_mcp import (
     poll_inbox, test_imap_connection,
@@ -354,7 +355,8 @@ async def _process_inbox_emails(
     }
 
 
-@router.post("/poll", response_model=PollResult)
+@router.post("/poll", response_model=PollResult,
+             dependencies=[Depends(require_active_subscription)])
 async def poll_gmail(
     since_hours: int = 24,
     user: User = Depends(current_active_user),
@@ -385,7 +387,7 @@ async def poll_gmail(
 # SEND APPLICATION
 # ══════════════════════════════════════════════════════════════
 
-@router.post("/send-application")
+@router.post("/send-application", dependencies=[Depends(require_active_subscription)])
 async def send_application(
     body: SendApplicationRequest,
     user: User = Depends(current_active_user),
