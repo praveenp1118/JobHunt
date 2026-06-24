@@ -17,8 +17,10 @@ Local Docker deployment only. Multi-user capable.
 **Project root:** `D:\JobHunt`  
 **GitHub repo (private):** https://github.com/praveenp1118/jobhunt  
 **Docs site (public, GitHub Pages):** https://praveenp1118.github.io/jobhunt — served from `/docs` on `main`  
-*(Repo is **private**; the `/docs` GitHub Pages site is **public**. Source under `docs/`: `index.html`
-landing page + `architecture.md` / `features.md` / `api.md`, `.nojekyll` to skip Jekyll.)*  
+*(Repo is **private**; the `/docs` GitHub Pages site is **public**. `docs/`: `index.html` landing page +
+`architecture.html` / `features.html` / `api.html` — thin pages that render the matching `*.md` source
+via marked.js with shared `doc.css` + `doc.js` (consistent Tailwind styling). `.nojekyll` keeps it
+pure-static — no Jekyll.)*  
 **Last major build:** V3 Multi-domain-CV scoring (June 24, 2026) — every job scored vs master + ALL
 domain CVs; Best Fit column + filters/sort; RSS company fix. All 19 smoke tests passing
 (prior: V3 Activity Dashboard, Gmail Job Alert Parser + Option A)
