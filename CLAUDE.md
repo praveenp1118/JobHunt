@@ -785,4 +785,4 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 24, 2026 — V3 Multi-domain-CV scoring; Apify feeds fixed; LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page at /jobs/:id/tailor (+ JD highlights endpoint). All 25 smoke tests passing*
+*Last updated: June 24, 2026 — V3 Multi-domain-CV scoring; Apify feeds fixed; LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds page merged into Settings → Feeds & Scanning; GitHub repo + Pages docs site live. All 25 smoke tests passing*
