@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (25 tests, all passing):
+- Current coverage (26 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -86,6 +86,10 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     and a `gmail_alert` job with `has_partial_jd=True` surfaces the flag via GET /api/jobs.
   - `test_tailor.py` (2): `_country_rule_display` maps `CountryMaster` flags → display strings (pure);
     `POST /api/tailor/jd-highlights` returns 404 for an unknown job.
+  - `test_auto_mode.py` (1): **live** auto-mode pipeline — auto_mode ON → generate → bulk approve_all →
+    apply → asserts CV/CL/email (with greeting) non-empty + s2>0 + s3>0 + s3_status green/amber. Uses the
+    owner's real master/domain CV + a job and makes REAL Claude calls (~80s); **skips** if those aren't
+    present (clean CI). Restores the owner's original `auto_mode`.
 - NOT tested: `check_title_relevance` (live Playwright) and a true live end-to-end
   (real Gmail inbox + Anthropic).
 
@@ -376,6 +380,9 @@ S3 = factual integrity % — computed after Apply
 ### Admin (`/api/admin/`)
 - `GET /stats` — platform stats (admin only, locked behind require_admin)
 
+### Settings (`/api/settings/`)
+- `GET /mode` — send-mode visibility → `{mode: "test"|"production", notification_email}` (where an outgoing application email will actually go; surfaced as a banner in the Tailor Email Draft tab)
+
 ---
 
 ## V2 Changes (June 23, 2026)
@@ -449,6 +456,7 @@ platform has a single global `s1_min_threshold` (no per-domain support).
 | `/jobs/stats` `needs_hitl` always 0 — read a non-existent `"hitl"` status | ✅ Fixed | Replaced `counts.get("hitl", 0)` with a real `count(*) WHERE needs_hitl = true`. Also added `by_best_domain` + `by_score_bucket` for the tracker filter-pill counts |
 | Jobs Tracker — filter pills/header now show live counts (Option C) | ✅ Added | `GET /jobs` returns `{jobs, total_count, unfiltered_count}` with **all filters server-side** (incl. new `score`/`domain` params); header shows "N total · M matching", each Status/Source/Score pill + Domain dropdown shows its facet count from `/jobs/stats` (zero-count pills greyed, not hidden). Note: this changed the `/jobs` response shape (array → object) — all consumers (JobsPage, AppLayout, Dashboard) updated |
 | Tailor + domain-CV flows broken — undefined `model` NameError (and a `model=` TypeError) | ✅ Fixed | All 4 `tailor_agents` functions **and** 3 `cv_agents` (`generate_domain_changelog`, `apply_changes`, `compute_s3_score`) referenced an undefined `model` on `client.messages.create(...)` → `NameError`; cvs.py also passed `model=user_model` to two of them that lacked the param → `TypeError`. Added `model: Optional[str] = None` to all 7 (defaults to `settings.anthropic_model`). Then **threaded `get_user_model()` through the tailor router** (generate / apply×3 incl. `compute_s3_score` / regenerate-cl / followup) so tailoring honours each user's `preferred_model` — matching cvs.py/jobs.py. Verified full flow: generate (6 changes, S2 72) → approve all → apply (S3 92/92 **green**) → CV + cover letter + email all populated |
+| Tailor page enhancements (auto-mode gating, email tab, PDF filenames) | ✅ Added (June 24, 2026) | **(1)** Respects `auto_mode`: when OFF, the page no longer auto-calls Claude on load — the middle panel shows a **"⚡ Suggest changes"** button (fetched from `GET /auth/me/preferences`); when ON, auto-generates as before. JD highlights still load either way. **(2)** Email Draft tab adds a **To** recipient (job.recruiter_email or "open the portal" note) + **📎 Attachments** list (CV + CL filenames). **(3)** Email body now has a greeting/sign-off — `generate_tailor_package` takes `recruiter_email` and the prompt opens "Hi <recruiter/Hiring Team>," … "Best regards, <name>". **(4)** Clean, neutral PDF filenames via `pdf_generator.make_filename(user_name, suffix)` → **`{FirstnameLastname}_CV.pdf`** / **`{FirstnameLastname}_CoverLetter.pdf`** (first+last from `user.name.split()`, special chars stripped). Deliberately **no company/role** — sending company-specific filenames to many firms looks suspicious; the job is tracked internally via `tailored_cv_id`. Used by `pdfs.py` + mirrored in the frontend email-tab attachment list. **(5)** Email Draft tab shows a **send-mode banner** — amber *"🟠 Test mode ON — email will be sent to {notification_email}"* / green *"🟢 Production mode — email goes to {recruiter_email}"* — from new **`GET /api/settings/mode`** → `{mode: "test"\|"production", notification_email}` (per-user notification address, falling back to `settings.notification_email` then login email). **(6)** Sidebar nav reordered → Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin |
 | Tailor page: CV/CL/Email blank, T/F never populated | ✅ Fixed | Backend was fine (apply → 200, returns full CV/CL/email + persists s2/s3). The **"Generate tailored CV + cover letter" button was gated on `changelog.length > 0`** — a 0-change generation (or not-yet-loaded changelog) left it permanently disabled, so apply never ran. Changed to `allReviewed = !!tailoredCvId && changelogData !== undefined && pending.length === 0` (enables once generation done + nothing pending, incl. the valid 0-changes case) |
 | Admin → Users page broken (blank / error) | ✅ Fixed | API **path mismatch**: frontend called `/admin/users` (+`/{id}/role`,`/active`) → `/api/admin/users` → **404**; the routes actually live in the auth router at `/api/auth/admin/users`. (`/admin/stats` worked — it's defined in main.py.) Pointed AdminPage at `/auth/admin/users…`. Verified 200, returns the user with role dropdown |
 | Tailoring could alter protected CV sections / metrics | ✅ Fixed | Added **PRESERVATION RULES** to the `generate_tailor_package` prompt: only modify EXPERIENCE/SUMMARY; never touch EDUCATION/CERTIFICATIONS; never change section order, headers, or contact line; preserve all metrics/numbers + the candidate's voice; consistent bullet format. Verified: a generate produced 6 changes, all in SUMMARY/EXPERIENCE |
@@ -788,4 +796,4 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 24, 2026 — V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); GitHub repo + Pages docs site live. All 25 smoke tests passing*
+*Last updated: June 24, 2026 — V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); GitHub repo + Pages docs site live. All 26 smoke tests passing*
