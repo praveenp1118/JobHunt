@@ -1,6 +1,11 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import useAuthStore from './store/auth'
 import AppLayout from './components/layout/AppLayout'
+
+// Support chat — mounted app-wide (incl. /login, /register) so guests can reach
+// support before signing up. Lazy so it stays off the critical path.
+const ChatWidget = lazy(() => import('./components/chat/ChatWidget'))
 
 // Auth pages
 import Login from './pages/auth/Login'
@@ -51,6 +56,7 @@ function PublicOnly({ children }) {
 }
 
 export default function App() {
+  const location = useLocation()
   return (
     <>
     <ToastContainer />
@@ -85,6 +91,10 @@ export default function App() {
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
+    {/* Support chat on every page except the admin chat console itself. */}
+    {!location.pathname.startsWith('/admin/chat') && (
+      <Suspense fallback={null}><ChatWidget /></Suspense>
+    )}
   </>
   )
 }

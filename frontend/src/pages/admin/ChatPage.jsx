@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
 import {
   listConversations, getConversation, sendChatMessage, updateConversation,
-  setPresence, createTicket, chatWsUrl,
+  setPresence, createTicket, uploadAttachment, chatWsUrl,
 } from '../../api/chat'
 import useAuthStore from '../../store/auth'
 import { toast } from '../../store/toast'
@@ -23,8 +23,10 @@ export default function ChatPage() {
   const [reply, setReply] = useState('')
   const [internalNote, setInternalNote] = useState(false)
   const [sending, setSending] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const wsRef = useRef(null)
   const bottomRef = useRef(null)
+  const fileRef = useRef(null)
 
   // Presence — online on mount, heartbeat 60s, offline on leave (Step 10).
   useEffect(() => {
@@ -89,6 +91,31 @@ export default function ChatPage() {
       setInternalNote(false)
       refetch()
     } catch { toast.error('Failed to send') } finally { setSending(false) }
+  }
+
+  const handleAdminFile = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !selectedId) return
+    if (file.size > 5 * 1024 * 1024) { toast.error('File too large (max 5 MB)'); return }
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const up = await uploadAttachment(fd)
+      const res = await sendChatMessage(selectedId, {
+        content: reply.trim(),
+        message_type: up.data.type?.startsWith('image/') ? 'image' : 'file',
+        attachment_url: up.data.url,
+        attachment_name: up.data.name,
+        attachment_size: up.data.size,
+        is_internal_note: internalNote,
+      })
+      setMessages((prev) => (prev.some((m) => m.id === res.data.message.id) ? prev : [...prev, res.data.message]))
+      setReply('')
+      setInternalNote(false)
+      refetch()
+    } catch { toast.error('Upload failed') } finally { setUploading(false) }
   }
 
   const handleStatus = async (status) => {
@@ -210,9 +237,13 @@ export default function ChatPage() {
                     onKeyDown={(e) => { if (e.key === 'Enter' && !sending) handleReply() }}
                     placeholder={internalNote ? 'Add an internal note…' : 'Type a reply…'}
                     className={`flex-1 px-3 py-2 border rounded-lg text-sm outline-none focus:border-emerald-400 ${internalNote ? 'bg-yellow-50 border-yellow-200' : 'border-gray-200'}`} />
+                  <input ref={fileRef} type="file" hidden accept="image/*,.pdf,.doc,.docx" onChange={handleAdminFile} />
+                  <button onClick={() => fileRef.current?.click()} disabled={uploading} title="Attach a file"
+                    className="text-gray-400 hover:text-gray-600 disabled:opacity-50 text-lg">📎</button>
                   <button onClick={() => handleReply()} disabled={sending || !reply.trim()}
                     className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium">Send</button>
                 </div>
+                {uploading && <p className="text-[10px] text-gray-400 mt-1">Uploading…</p>}
               </div>
             </>
           )}
