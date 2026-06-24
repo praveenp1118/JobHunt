@@ -109,7 +109,11 @@ export default function TailorPage() {
   const pending = changelog.filter((c) => c.status === 'pending')
   const approved = changelog.filter((c) => c.status === 'approved' || c.status === 'approved_edited')
   const rejected = changelog.filter((c) => c.status === 'rejected')
-  const allReviewed = changelog.length > 0 && pending.length === 0
+  // Apply is allowed once generation finished (tailoredCvId set), the change log has
+  // loaded, and nothing is left pending — INCLUDING the valid 0-changes case (a CV
+  // with no edits is still applicable). Previously this required changelog.length > 0,
+  // so a 0-change generation left the button permanently disabled → blank preview.
+  const allReviewed = !!tailoredCvId && changelogData !== undefined && pending.length === 0
 
   const handleApprove = async (id) => { await approveChange(tailoredCvId, id); refetchChangelog() }
   const handleReject = async (id) => { await rejectChange(tailoredCvId, id); refetchChangelog() }

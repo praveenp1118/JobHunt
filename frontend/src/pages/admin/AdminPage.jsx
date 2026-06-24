@@ -73,14 +73,14 @@ function UsersTab() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-users'],
-    queryFn: () => client.get('/admin/users'),
+    queryFn: () => client.get('/auth/admin/users'),
   })
 
   const users = data?.data || []
 
   const handleRoleChange = async (userId, role) => {
     try {
-      await client.patch(`/admin/users/${userId}/role`, { role })
+      await client.patch(`/auth/admin/users/${userId}/role`, { role })
       qc.invalidateQueries({ queryKey: ['admin-users'] })
       toast.success('Role updated')
     } catch {
@@ -90,7 +90,7 @@ function UsersTab() {
 
   const handleToggleActive = async (userId, isActive) => {
     try {
-      await client.patch(`/admin/users/${userId}/active`, { is_active: !isActive })
+      await client.patch(`/auth/admin/users/${userId}/active`, { is_active: !isActive })
       qc.invalidateQueries({ queryKey: ['admin-users'] })
       toast.success(isActive ? 'User deactivated' : 'User activated')
     } catch {

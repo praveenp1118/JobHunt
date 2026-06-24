@@ -155,6 +155,16 @@ GOLDEN RULES:
 - Maximum 6 changes
 - Country adaptations: {', '.join(country_adaptations) if country_adaptations else 'none needed'}
 
+PRESERVATION RULES (must be respected by every proposed change):
+- ONLY modify the EXPERIENCE and SUMMARY sections. Do not touch any other section.
+- NEVER modify the EDUCATION or CERTIFICATIONS sections at all.
+- NEVER change section order — SUMMARY, EXPERIENCE, EDUCATION, CERTIFICATIONS must stay in their original order.
+- NEVER rename section headers.
+- NEVER change the contact line / header format.
+- Preserve ALL metrics and numbers EXACTLY as written (never alter figures, %s, dates, or amounts).
+- Preserve the candidate's voice and writing style.
+- Keep the bullet-point format consistent throughout.
+
 ━━━ TASK 2: COVER LETTER ━━━
 Write a cover letter. Tone: {tone_desc}. {cl_instruction}
 - 3-4 paragraphs, 200-280 words
