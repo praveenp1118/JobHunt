@@ -60,6 +60,9 @@ class DomainCVRead(BaseModel):
     industry_label: Optional[str] = None
     function_label: Optional[str] = None
     country_name: Optional[str] = None
+    # Usage for the just-completed apply (None on plain reads)
+    tokens_used: Optional[int] = None
+    cost_inr: Optional[float] = None
 
     class Config:
         from_attributes = True

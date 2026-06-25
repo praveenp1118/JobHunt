@@ -3,6 +3,7 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Spinner from '../../components/ui/Spinner'
 import { ScorePill } from '../../components/ui/ScorePill'
+import TokenBadge from '../../components/ui/TokenBadge'
 import { parseJobFromText, parseJobFromURL, confirmJob } from '../../api/jobs'
 
 export default function AddJobModal({ onClose, onSuccess }) {
@@ -190,7 +191,10 @@ export default function AddJobModal({ onClose, onSuccess }) {
                 <div className="bg-gray-50 rounded-xl p-4 mb-5">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm font-medium text-gray-700">Base fit score (S1)</span>
-                    <ScorePill score={s1} />
+                    <div className="flex items-center gap-2">
+                      {parseResult.s1_tokens && <TokenBadge tokens={parseResult.s1_tokens} cost_inr={parseResult.s1_cost_inr} />}
+                      <ScorePill score={s1} />
+                    </div>
                   </div>
                   {parseResult.key_matches?.length > 0 && (
                     <div className="mb-2">

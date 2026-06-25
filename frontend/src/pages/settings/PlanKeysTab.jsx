@@ -163,6 +163,28 @@ export default function PlanKeysTab() {
           value={anthropicKey}
           onChange={(e) => setAnthropicKey(e.target.value)}
         />
+
+        {/* Typical cost estimates (static, informational) */}
+        <div className="mt-4 rounded-xl bg-slate-50 border border-slate-100 p-4">
+          <p className="text-xs font-semibold text-gray-800 mb-2">💡 Typical costs with Claude Sonnet</p>
+          <div className="space-y-1 text-xs text-gray-600">
+            {[
+              ['Score a job', '~1K', '~₹0.10'],
+              ['Tailor a CV', '~12K', '~₹1.20'],
+              ['Generate domain CV', '~9K', '~₹0.90'],
+              ['Monthly (active search)', '~150K', '~₹15–30'],
+            ].map(([label, tok, cost]) => (
+              <div key={label} className="flex items-center justify-between">
+                <span>{label}</span>
+                <span className="tabular-nums text-gray-500">⚡ {tok} <span className="text-gray-700 font-medium ml-2">{cost}</span></span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-3">
+            Set a $10 spending limit on Anthropic to protect against unexpected usage.{' '}
+            <a href="https://console.anthropic.com/settings/limits" target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">Open Anthropic Console →</a>
+          </p>
+        </div>
       </div>
 
       {/* ── Section 3: Apify token ── */}

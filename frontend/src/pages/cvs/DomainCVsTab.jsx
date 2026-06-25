@@ -11,6 +11,7 @@ import client from '../../api/client'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import { ScorePill } from '../../components/ui/ScorePill'
+import { fmtTokens } from '../../components/ui/TokenBadge'
 import { toast } from '../../store/toast'
 
 const STATUS_CONFIG = {
@@ -46,10 +47,12 @@ export default function DomainCVsTab() {
     setApplying(true)
     setError('')
     try {
-      await applyDomainCV(cvId)
+      const res = await applyDomainCV(cvId)
       qc.invalidateQueries({ queryKey: ['domain-cvs'] })
       setShowChangelog(false)
       setSelectedCvId(null)
+      const tk = res.data?.tokens_used
+      toast.success(tk ? `✅ Domain CV applied · ⚡ ${fmtTokens(tk)} · ₹${(res.data.cost_inr || 0).toFixed(2)}` : '✅ Domain CV applied')
     } catch (e) {
       setError(e.response?.data?.detail || 'Apply failed')
     } finally {
@@ -229,7 +232,11 @@ function GenerateWizard({ onClose, onSuccess }) {
     setGenerating(true)
     setError('')
     try {
-      await generateDomainChangelog(industryId, functionId, countryCode)
+      const res = await generateDomainChangelog(industryId, functionId, countryCode)
+      const tk = res.data?.tokens_used
+      toast.success(tk
+        ? `${res.data.change_count} changes generated · ⚡ ${fmtTokens(tk)} · ₹${(res.data.cost_inr || 0).toFixed(2)}`
+        : `${res.data?.change_count ?? ''} changes generated`)
       onSuccess()
     } catch (e) {
       const msg = e.response?.data?.detail || 'Generation failed. Check your Anthropic API key in Settings.'

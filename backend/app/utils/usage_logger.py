@@ -18,14 +18,48 @@ from app.models.usage import APIUsageLog
 # every signature. Copies into child tasks created by asyncio.gather/to_thread.
 _current_user_id: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar(
     "usage_user_id", default=None)
+# Per-request accumulators so endpoints can return tokens/cost at the point of action
+# (no extra DB round-trip). Reset whenever the attribution user changes (i.e. new request).
+_session_usage: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
+    "usage_session", default=None)
+_last_usage: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
+    "usage_last", default=None)
+_current_entity: "contextvars.ContextVar[Optional[dict]]" = contextvars.ContextVar(
+    "usage_entity", default=None)
+
+
+def reset_session_usage() -> None:
+    _session_usage.set({"tokens": 0, "cost_inr": 0.0})
+    _last_usage.set(None)
 
 
 def set_usage_user(user_id) -> None:
-    _current_user_id.set(str(user_id) if user_id else None)
+    uid = str(user_id) if user_id else None
+    if _current_user_id.get() != uid:   # new request/user → fresh session totals
+        _current_user_id.set(uid)
+        reset_session_usage()
 
 
 def get_usage_user() -> Optional[str]:
     return _current_user_id.get()
+
+
+def set_usage_entity(entity_type=None, entity_id=None, entity_label=None) -> None:
+    """Tag subsequent agent calls with an entity (e.g. a job) so they're queryable +
+    badged. log_call uses this as a fallback when the agent doesn't pass its own."""
+    _current_entity.set({
+        "type": entity_type,
+        "id": str(entity_id) if entity_id else None,
+        "label": entity_label,
+    })
+
+
+def get_session_usage() -> dict:
+    return _session_usage.get() or {"tokens": 0, "cost_inr": 0.0}
+
+
+def get_last_usage():
+    return _last_usage.get()
 
 # Approximate USD pricing per 1M tokens.
 PRICING = {
@@ -119,18 +153,29 @@ async def log_call(agent_name: str, category: str, response, model: str,
     attribute to the contextvar user, and log fire-and-forget. Never raises, no-ops
     when there's no current user. Call right after `client.messages.create(...)`."""
     user_id = get_usage_user()
-    if not user_id:
-        return
     try:
         usage = getattr(response, "usage", None)
         in_t = int(getattr(usage, "input_tokens", 0) or 0)
         out_t = int(getattr(usage, "output_tokens", 0) or 0)
     except Exception:
         in_t, out_t = 0, 0
+
+    total = in_t + out_t
+    _usd, inr = estimate_anthropic_cost(in_t, out_t, model)
+    # Accumulate per-request totals + remember the last call (read by endpoints for badges).
+    sess = get_session_usage()
+    _session_usage.set({"tokens": sess["tokens"] + total, "cost_inr": round(sess["cost_inr"] + inr, 4)})
+    _last_usage.set({"tokens": total, "cost_inr": round(inr, 4)})
+
+    if not user_id:
+        return
+    ent = _current_entity.get() or {}
     await log_anthropic_usage_safe(
         user_id, agent_name, category, in_t, out_t, model,
-        entity_type=entity_type, entity_id=entity_id,
-        entity_label=entity_label, result_summary=result_summary)
+        entity_type=entity_type or ent.get("type"),
+        entity_id=entity_id or ent.get("id"),
+        entity_label=entity_label or ent.get("label"),
+        result_summary=result_summary)
 
 
 async def log_anthropic_usage_safe(user_id, agent_name, category, input_tokens,

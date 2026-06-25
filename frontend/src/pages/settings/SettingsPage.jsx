@@ -27,14 +27,14 @@ export default function SettingsPage() {
   })
 
   return (
-    <div className={`p-6 mx-auto ${tab === 'feeds' || tab === 'usage' ? 'max-w-5xl' : 'max-w-3xl'}`}>
+    <div className="p-6 mx-auto max-w-5xl">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-900">Settings</h1>
         <p className="text-sm text-gray-500 mt-0.5">Manage your profile, API keys, and preferences</p>
       </div>
 
       {/* Tab nav */}
-      <div className="flex gap-0 border-b border-gray-200 mb-6 overflow-x-auto">
+      <div className="flex flex-wrap gap-0 border-b border-gray-200 mb-6">
         {TABS.map((t) => (
           <button
             key={t.key}

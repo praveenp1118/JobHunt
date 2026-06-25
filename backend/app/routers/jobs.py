@@ -720,16 +720,24 @@ async def _parse_raw_text(
     s1_score = 0.0
     key_matches: list = []
     gaps: list = []
+    s1_tokens = None
+    s1_cost_inr = None
 
     if score and filter_result["passed"]:
         master = await _get_master_cv(user, session)
         if master:
             anthropic_key = await _get_anthropic_key(user, session)
+            from app.utils.usage_logger import set_usage_user, set_usage_entity, get_session_usage
+            set_usage_user(user.id)
+            set_usage_entity("job", None, None)
             result_data = await parse_and_score_jd(raw_text, master.content_md, anthropic_key)
             parsed_data = result_data.get("parsed", {})
             s1_score = result_data.get("s1_score", 0)
             key_matches = result_data.get("key_matches", [])
             gaps = result_data.get("gaps", [])
+            _pu = get_session_usage()
+            s1_tokens = _pu["tokens"] or None
+            s1_cost_inr = round(_pu["cost_inr"], 2) or None
         else:
             # No master CV — parse only, no scoring
             parsed_data = {
@@ -759,8 +767,8 @@ async def _parse_raw_text(
 
     return JDParseResult(
         temp_id=temp_id,
-        company=parsed_data.get("company", "Unknown"),
-        role=parsed_data.get("role", "Unknown"),
+        company=parsed_data.get("company") or "Unknown",
+        role=parsed_data.get("role") or "Unknown",
         location=parsed_data.get("location"),
         market=parsed_data.get("market"),
         seniority=parsed_data.get("seniority"),
@@ -769,11 +777,13 @@ async def _parse_raw_text(
         preferred_skills=parsed_data.get("preferred_skills", []),
         comp_range=parsed_data.get("comp_range"),
         recruiter_email=parsed_data.get("recruiter_email"),
-        jd_language=parsed_data.get("jd_language", "en"),
+        jd_language=parsed_data.get("jd_language") or "en",
         s1_score=s1_score,
         key_matches=key_matches,
         gaps=gaps,
         pre_filter_passed=filter_result["passed"],
         pre_filter_reason=filter_result.get("reason_code"),
         is_duplicate=False,
+        s1_tokens=s1_tokens,
+        s1_cost_inr=s1_cost_inr,
     )

@@ -391,6 +391,8 @@ async def generate_domain_cv_changelog(
     }
 
     user_model = await get_user_model(user.id, session)
+    from app.utils.usage_logger import set_usage_entity, get_session_usage
+    set_usage_entity("domain_cv", domain_cv.id, f"{industry.label} × {body.country_code}")
     changes = await generate_domain_changelog(
         master_cv_md=master.content_md,
         industry_label=industry.label,
@@ -420,12 +422,15 @@ async def generate_domain_cv_changelog(
     await session.commit()
     await session.refresh(domain_cv)
 
+    _u = get_session_usage()
     return {
         "domain_cv_id": str(domain_cv.id),
         "version": domain_cv.version,
         "change_count": len(changes),
         "changes": changes,
         "message": f"Generated {len(changes)} proposed changes. Review and approve each one.",
+        "tokens_used": _u["tokens"] or None,
+        "cost_inr": round(_u["cost_inr"], 2) or None,
     }
 
 
@@ -585,6 +590,8 @@ async def apply_domain_cv_changes(
 
     # Apply changes via Claude
     user_model = await get_user_model(user.id, session)
+    from app.utils.usage_logger import set_usage_entity, get_session_usage
+    set_usage_entity("domain_cv", domain_cv.id, None)
     final_cv_md = await apply_changes(
         master_cv_md=master.content_md,
         approved_changes=approved_dicts,
@@ -644,7 +651,11 @@ async def apply_domain_cv_changes(
         except Exception as e:
             print(f"⚠️ Feed profile creation failed (non-blocking): {e}")
 
-    return DomainCVRead.model_validate(domain_cv)
+    _out = DomainCVRead.model_validate(domain_cv)
+    _u = get_session_usage()
+    _out.tokens_used = _u["tokens"] or None
+    _out.cost_inr = round(_u["cost_inr"], 2) or None
+    return _out
 
 
 @router.post("/domains/{domain_cv_id}/regenerate")

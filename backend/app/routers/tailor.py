@@ -191,6 +191,8 @@ async def generate_tailor(
 
     anthropic_key = await _get_anthropic_key(user, session)
     user_model = await get_user_model(user.id, session)
+    from app.utils.usage_logger import set_usage_entity, get_session_usage
+    set_usage_entity("job", job.id, f"{job.company} · {job.role}")
 
     # One batched Claude call
     jd_text = job.jd_md or job.jd_raw or ""
@@ -258,6 +260,8 @@ async def generate_tailor(
         cover_letter_md=package["cover_letter_md"],
         email_draft=package["email_draft"],
         cl_template_used=cl_used,
+        tokens_used=get_session_usage()["tokens"] or None,
+        cost_inr=round(get_session_usage()["cost_inr"], 2) or None,
     )
 
 
@@ -427,6 +431,8 @@ async def apply_tailor(
 
     anthropic_key = await _get_anthropic_key(user, session)
     user_model = await get_user_model(user.id, session)
+    from app.utils.usage_logger import set_usage_entity, get_session_usage
+    set_usage_entity("job", tailored.job_id, None)
 
     # Apply changes
     base_cv = domain_cv.content_md if domain_cv else master.content_md if master else ""
@@ -487,6 +493,17 @@ async def apply_tailor(
 
     await session.commit()
 
+    # This apply's tokens + the job's full tailoring session total (generate + apply).
+    this_usage = get_session_usage()
+    from app.models.usage import APIUsageLog
+    job_rows = (await session.execute(
+        select(APIUsageLog).where(
+            APIUsageLog.user_id == user.id, APIUsageLog.provider == "anthropic",
+            APIUsageLog.entity_id == str(tailored.job_id))
+    )).scalars().all()
+    sess_tokens = sum(r.total_tokens or 0 for r in job_rows)
+    sess_inr = round(sum(r.estimated_cost_inr or 0 for r in job_rows), 2)
+
     return TailorApplyResult(
         tailored_cv_id=tailored.id,
         tailored_cv_md=final_cv_md,
@@ -498,6 +515,10 @@ async def apply_tailor(
         s3_status=s3_status,
         s3_flags=s3_flags,
         cl_template_used=tailored.cl_template_used or "",
+        tokens_used=this_usage["tokens"] or None,
+        cost_inr=round(this_usage["cost_inr"], 2) or None,
+        session_tokens=sess_tokens or None,
+        session_cost_inr=sess_inr or None,
     )
 
 
@@ -551,7 +572,10 @@ async def regenerate_cl(
     tailored.cl_template_used = template_used
     await session.commit()
 
-    return {"cover_letter_md": new_cl, "template_used": template_used}
+    from app.utils.usage_logger import get_session_usage
+    _u = get_session_usage()
+    return {"cover_letter_md": new_cl, "template_used": template_used,
+            "tokens_used": _u["tokens"] or None, "cost_inr": round(_u["cost_inr"], 2) or None}
 
 
 # ══════════════════════════════════════════════════════════════

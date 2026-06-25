@@ -20,6 +20,8 @@ class TailorPackageRead(BaseModel):
     cover_letter_md: str
     email_draft: str
     cl_template_used: str
+    tokens_used: Optional[int] = None
+    cost_inr: Optional[float] = None
 
 
 class TailorChangeRead(BaseModel):
@@ -48,6 +50,10 @@ class TailorApplyResult(BaseModel):
     s3_status: str  # green | amber | blocked
     s3_flags: List[str]
     cl_template_used: str
+    tokens_used: Optional[int] = None
+    cost_inr: Optional[float] = None
+    session_tokens: Optional[int] = None
+    session_cost_inr: Optional[float] = None
 
 
 class RegenerateCLRequest(BaseModel):

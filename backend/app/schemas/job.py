@@ -148,11 +148,15 @@ class JDParseResult(BaseModel):
 
     # Pre-filter result
     pre_filter_passed: bool
-    pre_filter_reason: str
+    pre_filter_reason: Optional[str] = None
 
     # Dedup flag
     is_duplicate: bool = False
     existing_job_id: Optional[uuid.UUID] = None
+
+    # Usage for this parse (None if not scored)
+    s1_tokens: Optional[int] = None
+    s1_cost_inr: Optional[float] = None
 
 
 # ── Email thread ──────────────────────────────────────────────────────────────
