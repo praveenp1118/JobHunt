@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -136,7 +136,11 @@ async def get_analysis(user: User = Depends(current_active_user), session: Async
 
 
 @router.post("/analyse", dependencies=[Depends(require_active_subscription)])
-async def analyse(user: User = Depends(current_active_user), session: AsyncSession = Depends(get_db)):
+async def analyse(response: Response, user: User = Depends(current_active_user),
+                  session: AsyncSession = Depends(get_db)):
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "career_analyse", session)
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
     return await _run_analysis(user, session)
 
 

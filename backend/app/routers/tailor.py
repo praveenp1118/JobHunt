@@ -10,7 +10,7 @@ Flow:
 import uuid
 from typing import Optional, List
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -126,6 +126,7 @@ async def jd_highlights(
              dependencies=[Depends(require_active_subscription)])
 async def generate_tailor(
     body: TailorRequest,
+    response: Response,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
@@ -139,6 +140,10 @@ async def generate_tailor(
     Creates a TailoredCV record in 'pending' state.
     User then reviews the change log before hitting Apply.
     """
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "tailor_generate", session)
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
+
     # Load job
     job_result = await session.execute(
         select(Job).where(Job.id == body.job_id, Job.user_id == user.id)
@@ -527,6 +532,18 @@ async def apply_tailor(
             DomainCVTemplateOverride.user_id == user.id))).scalar_one_or_none()
     overflow = check_overflow(final_cv_md, get_effective_template(gtpl, dovr))
 
+    # Anti-hallucination guard — flag any metric in the tailored CV not present in the master.
+    from app.utils.cv_validator import validate_no_hallucination
+    hallucination = validate_no_hallucination(final_cv_md, master.content_md if master else "")
+    if not hallucination["valid"]:
+        import logging
+        logging.getLogger("jobhunt").warning(
+            f"Hallucination check flagged tailored CV (job {tailored.job_id}): {hallucination['violations']}")
+        from app.utils.audit_logger import audit_log
+        await audit_log(session, "hallucination_flagged", user_id=user.id,
+                        details={"job_id": str(tailored.job_id),
+                                 "values": [v["value"] for v in hallucination["violations"]]}, commit=True)
+
     return TailorApplyResult(
         tailored_cv_id=tailored.id,
         tailored_cv_md=final_cv_md,
@@ -543,6 +560,7 @@ async def apply_tailor(
         session_tokens=sess_tokens or None,
         session_cost_inr=sess_inr or None,
         overflow=overflow,
+        hallucination_check=hallucination,
     )
 
 

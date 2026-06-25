@@ -31,21 +31,38 @@ router = APIRouter()
 @router.post("/login", response_model=LoginResponse)
 async def login(
     credentials: LoginRequest,
+    request: Request,
     user_manager: UserManager = Depends(get_user_manager),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Login with email + password.
     remember_me=True issues a 30-day token instead of 7-day.
+    Locks out after 5 failed attempts per email for 15 minutes.
     """
+    from app.utils.login_security import is_locked_out, record_failure, clear_attempts
+    from app.utils.audit_logger import audit_log
+
+    if await is_locked_out(credentials.email):
+        await audit_log(session, "login_failure", request=request,
+                        details={"email": credentials.email, "reason": "locked_out"}, commit=True)
+        raise HTTPException(status_code=429,
+                            detail="Too many failed attempts. Please try again in 15 minutes.")
+
     # Authenticate user
     user = await user_manager.authenticate(
         type("Creds", (), {"username": credentials.email, "password": credentials.password})()
     )
     if user is None or not user.is_active:
+        await record_failure(credentials.email)
+        await audit_log(session, "login_failure", user_id=(user.id if user else None), request=request,
+                        details={"email": credentials.email}, commit=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect email or password",
         )
+
+    await clear_attempts(credentials.email)
 
     # Issue token with appropriate lifetime
     if credentials.remember_me:
@@ -54,6 +71,8 @@ async def login(
     else:
         strategy = get_jwt_strategy()
         token = await strategy.write_token(user)
+
+    await audit_log(session, "login_success", user_id=user.id, request=request, commit=True)
 
     return LoginResponse(
         access_token=token,
@@ -66,11 +85,16 @@ async def login(
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 async def register(
     user_create: UserCreate,
+    request: Request,
     user_manager: UserManager = Depends(get_user_manager),
+    session: AsyncSession = Depends(get_db),
 ):
     """Register a new user."""
     try:
         user = await user_manager.create(user_create, safe=True)
+        from app.utils.audit_logger import audit_log
+        await audit_log(session, "register", user_id=user.id, request=request,
+                        details={"email": user.email}, commit=True)
         return UserRead.model_validate(user)
     except Exception as e:
         error = str(e)
@@ -140,6 +164,18 @@ async def change_password(
     return {"message": "Password changed successfully"}
 
 
+@router.post("/logout")
+async def logout(
+    request: Request,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Audit the logout (JWT is stateless — the client discards the token)."""
+    from app.utils.audit_logger import audit_log
+    await audit_log(session, "logout", user_id=user.id, request=request, commit=True)
+    return {"ok": True}
+
+
 # ── Current user ──────────────────────────────────────────────────────────────
 @router.get("/me", response_model=UserRead)
 async def get_me(user: User = Depends(current_active_user)):
@@ -165,10 +201,13 @@ async def record_consent(
 @router.patch("/me/profile", response_model=UserRead)
 async def update_profile(
     update: ProfileUpdate,
+    request: Request,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
     """Update display name and profile fields."""
+    from app.utils.audit_logger import audit_log
+    await audit_log(session, "profile_update", user_id=user.id, request=request)
     if update.name is not None:
         user.name = update.name
     if update.linkedin_url is not None:
@@ -218,6 +257,8 @@ async def get_credentials(
         has_anthropic_key=bool(creds.anthropic_api_key_enc),
         has_apify_token=bool(creds.apify_token_enc),
         has_gmail_password=bool(creds.gmail_app_password_enc),
+        anthropic_key_updated_at=creds.anthropic_key_updated_at,
+        apify_token_updated_at=creds.apify_token_updated_at,
     )
 
 
@@ -225,10 +266,13 @@ async def get_credentials(
 @router.put("/me/credentials")
 async def update_credentials(
     update: CredentialsUpdate,
+    request: Request,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
     """Save encrypted credentials (API keys, Gmail password)."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
     result = await session.execute(
         select(UserCredentials).where(UserCredentials.user_id == user.id)
     )
@@ -237,18 +281,28 @@ async def update_credentials(
         creds = UserCredentials(user_id=user.id)
         session.add(creds)
 
+    updated_fields = []
     if update.gmail_address is not None:
         creds.gmail_address = update.gmail_address
     if update.gmail_app_password is not None:
         creds.gmail_app_password_enc = encrypt_if_present(update.gmail_app_password)
+        updated_fields.append("gmail_password")
     if update.notification_email is not None:
         creds.notification_email = update.notification_email
     if update.anthropic_api_key is not None:
         creds.anthropic_api_key_enc = encrypt_if_present(update.anthropic_api_key)
+        creds.anthropic_key_updated_at = now
+        updated_fields.append("anthropic_key")
     if update.apify_token is not None:
         creds.apify_token_enc = encrypt_if_present(update.apify_token)
+        creds.apify_token_updated_at = now
+        updated_fields.append("apify_token")
 
     await session.commit()
+    if updated_fields:
+        from app.utils.audit_logger import audit_log
+        await audit_log(session, "key_update", user_id=user.id, request=request,
+                        details={"fields": updated_fields}, commit=True)
     return {"message": "Credentials saved"}
 
 

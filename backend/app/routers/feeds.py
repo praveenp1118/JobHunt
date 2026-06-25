@@ -4,7 +4,7 @@ Feeds router — manage RSS and Apify feeds, trigger manual scans.
 import uuid
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -388,6 +388,7 @@ async def run_single_feed(
 
 @router.post("/scanner/run", dependencies=[Depends(require_active_subscription)])
 async def trigger_scan(
+    response: Response,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
@@ -395,6 +396,9 @@ async def trigger_scan(
     Manually trigger weekly scan.
     Runs async via Celery — returns immediately with task ID.
     """
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "scanner_run_manual", session)
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
     from app.tasks.scanner_tasks import weekly_job_scan
     task = weekly_job_scan.delay()
     return {

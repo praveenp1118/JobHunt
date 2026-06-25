@@ -55,6 +55,7 @@ class TailorApplyResult(BaseModel):
     session_tokens: Optional[int] = None
     session_cost_inr: Optional[float] = None
     overflow: Optional[dict] = None  # page-budget check vs the user's CV template
+    hallucination_check: Optional[dict] = None  # {valid, violations} — invented-metric guard
 
 
 class RegenerateCLRequest(BaseModel):

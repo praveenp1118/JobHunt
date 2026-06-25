@@ -106,7 +106,8 @@ async def get_subscription(user: User = Depends(current_active_user)):
         "plan": user.subscription_plan,
         "status": user.subscription_status,
         "subscription_end": user.subscription_end,
-        "stripe_customer_id": user.stripe_customer_id,
+        # stripe_customer_id is intentionally NOT exposed to the frontend.
+        "has_customer": bool(user.stripe_customer_id),
         "is_active": user.subscription_status == "active",
     }
 

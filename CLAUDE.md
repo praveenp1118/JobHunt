@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (67 tests, all passing):
+- Current coverage (79 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -113,6 +113,11 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     **7-day cache** (`is_fresh` true for future `expires_at`, false when expired); roadmap completion
     **+impact_pct** updates readiness (70→73→70 on toggle); community **warming_up** when < 2 contributors;
     career questions save + read back. DB-seeded (no live Claude — the analysis pipeline is live-verified).
+  - `test_governance.py` (12): rate limit blocks after limit + resets after the window; hallucination
+    validator catches an invented metric / passes a valid CV; prompt-injection hardening present (XML tags
+    + SECURITY INSTRUCTION in jd/tailor/career agents); data export returns a ZIP; deletion request schedules
+    +30d / cancel clears it; **login lockout after 5 failures (429)**; **user isolation** (other user's job →
+    404); **credentials never return key values**; audit log records login_success.
   - `test_templates.py` (6): `get_effective_template` merge (override wins where not null, global kept where
     null); `build_content_rules_prompt` includes the word budget + never-modify sections; `check_overflow`
     detects excess (750 words vs 600 → 2.5 pages); `_TRIM_PRIORITY` order (reorder→keyword→rephrase, never
@@ -206,7 +211,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_career_insights → v3_cv_template → v3_gdpr_consent
+│   │   └── versions/        # chain tip: … → v3_cv_template → v3_gdpr_consent → v3_governance
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -368,6 +373,14 @@ D:\JobHunt\
 - **DomainCVTemplateOverride** (one per domain CV, unique): all fields **nullable** — null = "use global".
   `get_effective_template(global, override)` merges (override wins where not null).
 
+### Governance (V3 — `models/governance.py`, migration `v3_governance`)
+- **User** + `gdpr_consent_at` (v3_gdpr_consent), `marketing_consent`, `data_deletion_requested_at`,
+  `data_deletion_scheduled_at` (+30-day grace). **UserCredentials** + `anthropic_key_updated_at`/
+  `apify_token_updated_at` (90-day rotation reminder).
+- **RateLimitLog**: `user_id`, `action`, `count`, `window_start`/`window_end`. Limiter sums `count` in the
+  rolling window. **AuditLog**: `user_id` (SET NULL on purge), `action`, `ip_address`, `user_agent`,
+  `details` (JSONB), `created_at`. Immutable security trail.
+
 ---
 
 ## Core Business Rules (NEVER CHANGE)
@@ -491,6 +504,30 @@ S3 = factual integrity % — computed after Apply
 
 ### Admin (`/api/admin/`)
 - `GET /stats` — platform stats (admin only, locked behind require_admin)
+
+### Privacy / Governance (`/api/privacy/`, `/api/admin/governance`) — V3, security-first
+- **`GET /api/privacy/summary`** — counts of the user's data + deletion schedule. **`GET /export`** — a ZIP
+  (profile.json / master_cv.md / domain_cvs/ / jobs.json / tailored_cvs/ / applications.json / usage_log.json)
+  → audit `export_data`. **`POST /delete-request`** `{confirm}` → sets `data_deletion_scheduled_at` +30d,
+  cancels Stripe sub (best-effort), audit `delete_account_request`. **`POST /cancel-deletion`**. **`GET
+  /rate-limits`** — remaining calls per action (read-only). Daily Celery **`tasks.purge_deleted_accounts`**
+  purges accounts past the grace window (storage → Stripe customer → User row CASCADE).
+- **`GET /api/admin/governance`** (admin) → audit_events_today, rate_limit_violations, failed_logins (24h),
+  data_exports_today, hallucination_violations (7d), pending_deletions[], audit_logs (last 100). **`POST
+  /api/admin/governance/cancel-deletion/{user_id}`** — admin override. Admin **Governance tab**; Settings
+  **Privacy tab** (9th) — data summary / export / legal links / rate-limit transparency / delete-account.
+- **Security utilities** (`utils/`): `rate_limiter` (per-user/action limits: tailor_generate 20/d,
+  domain_generate 5/d, career_analyse 3/d, jd_parse 50/d, gmail_poll_manual 3/h, scanner_run_manual 2/h;
+  wired to those 6 endpoints + `X-RateLimit-Remaining` header), `cv_validator` (anti-hallucination — every
+  metric in the tailored CV must exist in the master; `apply` returns `hallucination_check`),
+  `audit_logger` (fire-and-forget; logs login/register/logout/profile/key_update/application_sent/
+  export/delete + rate_limit_exceeded + hallucination_flagged), `login_security` (Redis: 5 failures →
+  15-min lockout), `input_validator` (file-type/size on CV + chat uploads). **Prompt-injection hardening:**
+  jd/tailor/career agents wrap user content in `<cv_content>`/`<job_description>`/`<jd_n>` XML tags + a
+  SECURITY INSTRUCTION. **Security headers** middleware (X-Content-Type-Options/X-Frame-Options/XSS/
+  Referrer-Policy/Permissions-Policy), CORS pinned to `frontend_url`, **global error handler** (no internals
+  leaked). **Masking:** `stripe_customer_id` no longer returned to the frontend (→ `has_customer`); keys only
+  surface as `has_*` booleans.
 
 ### Settings (`/api/settings/`)
 - `GET /mode` — send-mode visibility → `{mode: "test"|"production", notification_email}` (where an outgoing application email will actually go; surfaced as a banner in the Tailor Email Draft tab)
@@ -1025,7 +1062,17 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Legal pages + GDPR consent**: static **Privacy / Terms / Cookies** HTML in
+*Last updated: June 26, 2026 — **Governance & security-first build** (`v3_governance` migration: User
+deletion/marketing fields + Creds key-rotation timestamps + `rate_limit_log` + `audit_logs`): per-user
+**rate limiting** on 6 paid endpoints (+ `X-RateLimit-Remaining`), **anti-hallucination** validator on
+tailor apply (`hallucination_check`), **prompt-injection hardening** (XML-tagged user content + SECURITY
+INSTRUCTION in jd/tailor/career agents), **security-headers middleware** + **global error handler** + CORS
+pinned to `frontend_url`, **login lockout** (Redis, 5 fails → 15 min), **audit logging** across auth/key/
+send/export/delete + 429s + hallucination flags, **input validation** on uploads, **masking** fix
+(`stripe_customer_id` no longer exposed), **GDPR self-service** (`/api/privacy` summary/export-ZIP/
+delete-request[+30d grace]/cancel + daily `purge_deleted_accounts` task), **Settings → Privacy tab** (9th),
+**admin Governance tab** + `/api/admin/governance`, **90-day key-rotation reminders**. 79 tests, live-verified
+(security headers, rate-limit 429, login lockout, export ZIP, isolation, masking). **Legal pages + GDPR consent**: static **Privacy / Terms / Cookies** HTML in
 `/docs` (styled like index.html, cross-linked, served at `…/JobHunt/privacy.html` — Pages serves from `/docs`
 so **no `/docs/` in the URL**, contrary to the original spec); `config.py` + `.env.example` hold the 3 URLs;
 **`GET /api/settings/legal-urls`** (public) drives the **AppLayout footer** + Login/Register links; **Register**
@@ -1094,4 +1141,4 @@ by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category b
 row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. **Community follow-ups:** insights on the Add-Job parse screen
 (compact card, decide before tailoring), Contributions "View →" deep-link fixed (`/jobs?open={id}` →
 JobsPage opens the detail panel), and **`normalize_company`** matching so company-name casing/punctuation
-no longer splits buckets. All 67 smoke tests passing*
+no longer splits buckets. All 79 smoke tests passing*

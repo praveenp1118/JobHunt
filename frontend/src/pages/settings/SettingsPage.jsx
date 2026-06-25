@@ -7,6 +7,7 @@ import PreferencesTab from './PreferencesTab'
 import ErrorLogTab from './ErrorLogTab'
 import FeedsTab from './FeedsTab'
 import UsageTab from './UsageTab'
+import PrivacyTab from './PrivacyTab'
 
 const TABS = [
   { key: 'profile',     label: 'Profile' },
@@ -17,6 +18,7 @@ const TABS = [
   { key: 'feeds',       label: 'Feeds & Scanning' },
   { key: 'errors',      label: 'Error Log' },
   { key: 'usage',       label: 'API Usage' },
+  { key: 'privacy',     label: 'Privacy' },
 ]
 
 export default function SettingsPage() {
@@ -58,6 +60,7 @@ export default function SettingsPage() {
       {tab === 'feeds'       && <FeedsTab />}
       {tab === 'errors'      && <ErrorLogTab />}
       {tab === 'usage'       && <UsageTab />}
+      {tab === 'privacy'     && <PrivacyTab />}
     </div>
   )
 }

@@ -163,6 +163,7 @@ export default function PlanKeysTab() {
           value={anthropicKey}
           onChange={(e) => setAnthropicKey(e.target.value)}
         />
+        <KeyRotation when={creds.anthropic_key_updated_at} consoleUrl="https://console.anthropic.com/settings/keys" />
 
         {/* Typical cost estimates (static, informational) */}
         <div className="mt-4 rounded-xl bg-slate-50 border border-slate-100 p-4">
@@ -260,5 +261,18 @@ export default function PlanKeysTab() {
         </div>
       </div>
     </div>
+  )
+}
+
+// Key-rotation reminder — best practice is to rotate every 90 days.
+function KeyRotation({ when, consoleUrl }) {
+  if (!when) return null
+  const days = Math.floor((Date.now() - new Date(when).getTime()) / 86400000)
+  const stale = days > 90
+  return (
+    <p className={`mt-1.5 text-xs ${stale ? 'text-amber-700' : 'text-gray-400'}`}>
+      {stale ? '⚠️ ' : ''}Last updated {days} day{days === 1 ? '' : 's'} ago.
+      {stale && <> Consider rotating your API key (best practice: every 90 days). <a href={consoleUrl} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">Rotate →</a></>}
+    </p>
   )
 }

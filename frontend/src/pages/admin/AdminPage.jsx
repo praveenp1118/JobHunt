@@ -8,6 +8,7 @@ import { StatusBadge } from '../../components/ui/Badge'
 import { toast } from '../../store/toast'
 import useAuthStore from '../../store/auth'
 import { useNavigate } from 'react-router-dom'
+import { getGovernance, adminCancelDeletion } from '../../api/privacy'
 
 export default function AdminPage() {
   const { user } = useAuthStore()
@@ -47,6 +48,7 @@ function TabContent() {
     { key: 'users', label: 'Users' },
     { key: 'errors', label: 'Error Log' },
     { key: 'stats', label: 'Stats' },
+    { key: 'governance', label: 'Governance' },
   ]
 
   return (
@@ -64,6 +66,7 @@ function TabContent() {
       {tab === 'users' && <UsersTab />}
       {tab === 'errors' && <ErrorsTab />}
       {tab === 'stats' && <StatsTab />}
+      {tab === 'governance' && <GovernanceTab />}
     </div>
   )
 }
@@ -243,6 +246,76 @@ function StatsTab() {
           <p className={`text-2xl font-bold ${color}`}>{value}</p>
         </div>
       ))}
+    </div>
+  )
+}
+
+// ── Governance tab (admin) ──
+function GovernanceTab() {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({ queryKey: ['admin-governance'], queryFn: getGovernance, refetchInterval: 60000 })
+  const g = data?.data
+  if (isLoading) return <div className="flex justify-center py-12"><Spinner /></div>
+  if (!g) return null
+
+  const stats = [
+    ['Audit events today', g.audit_events_today],
+    ['Rate-limit 429s', g.rate_limit_violations],
+    ['Failed logins (24h)', g.failed_logins],
+    ['Data exports today', g.data_exports_today],
+    ['Hallucination flags (7d)', g.hallucination_violations],
+    ['Pending deletions', (g.pending_deletions || []).length],
+  ]
+
+  const cancelDel = async (uid) => {
+    try { await adminCancelDeletion(uid); toast.success('Deletion cancelled'); qc.invalidateQueries({ queryKey: ['admin-governance'] }) }
+    catch { toast.error('Failed') }
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {stats.map(([k, v]) => (
+          <div key={k} className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-2xl font-bold text-gray-900">{v ?? 0}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{k}</p>
+          </div>
+        ))}
+      </div>
+
+      {(g.pending_deletions || []).length > 0 && (
+        <div className="bg-white rounded-xl border border-red-200 p-4">
+          <h3 className="text-sm font-semibold text-red-700 mb-2">Pending account deletions</h3>
+          {g.pending_deletions.map((p) => (
+            <div key={p.user_id} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+              <span className="text-sm text-gray-700">{p.email} <span className="text-xs text-gray-400">· {p.scheduled_at ? new Date(p.scheduled_at).toLocaleDateString() : ''}</span></span>
+              <button onClick={() => cancelDel(p.user_id)} className="text-xs text-emerald-600 hover:underline font-medium">Cancel deletion</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <h3 className="text-sm font-semibold text-gray-900 px-4 py-3 border-b border-gray-100">Audit log (last 100)</h3>
+        <div className="max-h-[60vh] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-gray-50 text-gray-500">
+              <tr><th className="text-left px-3 py-2">Time</th><th className="text-left px-3 py-2">Action</th><th className="text-left px-3 py-2">User</th><th className="text-left px-3 py-2">IP</th><th className="text-left px-3 py-2">Details</th></tr>
+            </thead>
+            <tbody>
+              {(g.audit_logs || []).map((l) => (
+                <tr key={l.id} className="border-t border-gray-50">
+                  <td className="px-3 py-1.5 text-gray-400 whitespace-nowrap">{l.created_at ? new Date(l.created_at).toLocaleString() : ''}</td>
+                  <td className="px-3 py-1.5"><span className={`font-medium ${l.action.includes('fail') || l.action.includes('rate') || l.action.includes('hallucinat') ? 'text-amber-700' : 'text-gray-700'}`}>{l.action}</span></td>
+                  <td className="px-3 py-1.5 text-gray-400 font-mono">{l.user_id ? l.user_id.slice(0, 8) : '—'}</td>
+                  <td className="px-3 py-1.5 text-gray-400">{l.ip || '—'}</td>
+                  <td className="px-3 py-1.5 text-gray-400 max-w-[200px] truncate">{l.details ? JSON.stringify(l.details) : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

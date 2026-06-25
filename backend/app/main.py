@@ -49,6 +49,27 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
+# ── Security headers ──────────────────────────────────────────────────────────
+import logging
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("jobhunt")
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
@@ -56,7 +77,19 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-RateLimit-Remaining"],
 )
+
+
+# ── Global error handler — never leak internals ───────────────────────────────
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    logger.error(f"Unhandled error on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal error occurred. Please try again or contact support.",
+                 "code": "internal_error"},
+    )
 
 # ── Auth routers ──────────────────────────────────────────────────────────────
 from app.auth.config import fastapi_users, auth_backend, auth_backend_long, google_oauth_client
@@ -146,6 +179,9 @@ app.include_router(career_router, prefix="/api/career", tags=["career"])
 from app.routers.templates import router as templates_router
 app.include_router(templates_router, prefix="/api/templates", tags=["templates"])
 
+from app.routers.privacy import router as privacy_router
+app.include_router(privacy_router, prefix="/api/privacy", tags=["privacy"])
+
 # ── Health check ─────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
@@ -224,3 +260,68 @@ async def admin_stats(
         "total_domain_cvs": total_domain_cvs,
         "total_tailored": total_tailored,
     }
+
+
+# ── Admin governance dashboard ────────────────────────────────────────────────
+@app.get("/api/admin/governance")
+async def admin_governance(session=Depends(get_db), admin: User = Depends(require_admin)):
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import func, select
+    from app.models.user import User as U
+    from app.models.governance import AuditLog
+
+    now = datetime.now(timezone.utc)
+    day_ago = now - timedelta(hours=24)
+    week_ago = now - timedelta(days=7)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    async def _count(action, since):
+        return (await session.execute(select(func.count(AuditLog.id)).where(
+            AuditLog.action == action, AuditLog.created_at >= since))).scalar() or 0
+
+    logs = (await session.execute(
+        select(AuditLog).order_by(AuditLog.created_at.desc()).limit(100))).scalars().all()
+    pending = (await session.execute(
+        select(U).where(U.data_deletion_scheduled_at.isnot(None)))).scalars().all()
+
+    return {
+        "audit_events_today": await _count_any(session, midnight),
+        "rate_limit_violations": await _count("rate_limit_exceeded", midnight),
+        "failed_logins": await _count("login_failure", day_ago),
+        "data_exports_today": await _count("export_data", midnight),
+        "hallucination_violations": await _count("hallucination_flagged", week_ago),
+        "pending_deletions": [
+            {"user_id": str(u.id), "email": u.email,
+             "scheduled_at": u.data_deletion_scheduled_at.isoformat() if u.data_deletion_scheduled_at else None}
+            for u in pending
+        ],
+        "audit_logs": [
+            {"id": str(l.id), "user_id": str(l.user_id) if l.user_id else None, "action": l.action,
+             "ip": l.ip_address, "details": l.details,
+             "created_at": l.created_at.isoformat() if l.created_at else None}
+            for l in logs
+        ],
+    }
+
+
+async def _count_any(session, since):
+    from sqlalchemy import func, select
+    from app.models.governance import AuditLog
+    return (await session.execute(select(func.count(AuditLog.id)).where(
+        AuditLog.created_at >= since))).scalar() or 0
+
+
+@app.post("/api/admin/governance/cancel-deletion/{user_id}")
+async def admin_cancel_deletion(user_id: str, session=Depends(get_db), admin: User = Depends(require_admin)):
+    """Admin override — clear a user's scheduled deletion."""
+    import uuid as _uuid
+    from sqlalchemy import select
+    from app.models.user import User as U
+    u = (await session.execute(select(U).where(U.id == _uuid.UUID(user_id)))).scalar_one_or_none()
+    if not u:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="User not found")
+    u.data_deletion_requested_at = None
+    u.data_deletion_scheduled_at = None
+    await session.commit()
+    return {"cancelled": True}

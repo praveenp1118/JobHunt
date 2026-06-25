@@ -11,7 +11,7 @@ import hashlib
 from typing import Optional, List
 from datetime import datetime, timezone
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_
 
@@ -109,6 +109,7 @@ async def _enrich_job(job: Job, session: AsyncSession) -> JobRead:
 @router.post("/parse/text", response_model=JDParseResult)
 async def parse_jd_from_text(
     body: JobFromText,
+    response: Response,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
@@ -117,6 +118,9 @@ async def parse_jd_from_text(
     Returns structured parse result + S1 score for user to review.
     Does NOT save yet — user confirms with POST /jobs/confirm/{temp_id}.
     """
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "jd_parse", session)
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
     return await _parse_raw_text(
         raw_text=body.raw_text,
         source=JobSource.manual,
@@ -133,6 +137,7 @@ async def parse_jd_from_text(
 @router.post("/parse/url", response_model=JDParseResult)
 async def parse_jd_from_url(
     body: JobFromURL,
+    response: Response,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
@@ -140,6 +145,9 @@ async def parse_jd_from_url(
     Step 1: Fetch JD from URL and parse it.
     Falls back gracefully if fetch fails.
     """
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "jd_parse", session)
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
     try:
         raw_text = await fetch_url_content(body.url)
     except Exception as e:

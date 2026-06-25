@@ -4,7 +4,7 @@ Gmail router — poll, send, reply, status.
 import uuid
 from typing import Optional, List
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -358,6 +358,7 @@ async def _process_inbox_emails(
 @router.post("/poll", response_model=PollResult,
              dependencies=[Depends(require_active_subscription)])
 async def poll_gmail(
+    response: Response,
     since_hours: int = 24,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
@@ -368,6 +369,10 @@ async def poll_gmail(
 
     since_hours: how far back to look (default 24h)
     """
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "gmail_poll_manual", session)
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
+
     gmail_address, app_password = await _get_gmail_creds(user, session)
     anthropic_key = await _get_anthropic_key(user, session)
     since_dt = datetime.now(timezone.utc) - timedelta(hours=since_hours)
@@ -392,6 +397,7 @@ async def poll_gmail(
 @router.post("/send-application", dependencies=[Depends(require_active_subscription)])
 async def send_application(
     body: SendApplicationRequest,
+    request: Request,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
@@ -400,6 +406,9 @@ async def send_application(
     Test mode → redirects to notification_email.
     Prod mode → sends to recruiter.
     """
+    from app.utils.audit_logger import audit_log
+    await audit_log(session, "application_sent", user_id=user.id, request=request,
+                    details={"job_id": str(body.job_id)}, commit=True)
     gmail_address, app_password = await _get_gmail_creds(user, session)
 
     # Load job

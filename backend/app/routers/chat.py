@@ -466,6 +466,9 @@ async def upload_attachment(
     ctype = (file.content_type or "").lower()
     if ctype not in ALLOWED_UPLOAD_TYPES:
         raise HTTPException(status_code=415, detail=f"Unsupported file type: {ctype or 'unknown'}")
+    from app.utils.input_validator import validate_file_type, CHAT_ALLOWED_TYPES
+    if not validate_file_type(file.filename or "", CHAT_ALLOWED_TYPES):
+        raise HTTPException(status_code=415, detail="Unsupported file extension")
 
     import re as _re
     from app.utils.storage import save_binary_file

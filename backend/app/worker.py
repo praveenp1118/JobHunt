@@ -8,6 +8,7 @@ celery_app = Celery(
     include=[
         "app.tasks.gmail_tasks",
         "app.tasks.scanner_tasks",
+        "app.tasks.governance_tasks",
     ],
 )
 
@@ -38,6 +39,11 @@ celery_app.conf.beat_schedule = {
     # Daily ghosting check
     "check-ghosted-daily": {
         "task": "tasks.check_ghosted_jobs",
+        "schedule": 86400.0,
+    },
+    # Daily purge of accounts past their 30-day deletion grace window
+    "purge-deleted-accounts-daily": {
+        "task": "tasks.purge_deleted_accounts",
         "schedule": 86400.0,
     },
 }

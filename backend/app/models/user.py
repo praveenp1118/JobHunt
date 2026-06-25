@@ -77,6 +77,10 @@ class User(SQLAlchemyBaseUserTableUUID, Base, TimestampMixin):
 
     # GDPR / terms consent (null = not yet consented → one-time banner on login)
     gdpr_consent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    marketing_consent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Right-to-erasure: 30-day grace window before purge
+    data_deletion_requested_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    data_deletion_scheduled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     credentials: Mapped[Optional["UserCredentials"]] = relationship(
@@ -115,6 +119,10 @@ class UserCredentials(Base, TimestampMixin):
     # API keys (Default plan) - encrypted
     anthropic_api_key_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     apify_token_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Key-rotation timestamps (for the 90-day rotation reminder)
+    anthropic_key_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    apify_token_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="credentials")

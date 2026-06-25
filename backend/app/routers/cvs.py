@@ -3,7 +3,7 @@ CV router — master CV, domain CVs, change log, S3 scoring.
 """
 import uuid
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -85,6 +85,11 @@ async def upload_master_cv(
     Claude converts to clean markdown.
     Previous version saved to history. Domain CVs flagged stale.
     """
+    from app.utils.input_validator import validate_file_type, CV_ALLOWED_TYPES, MAX_CV_SIZE
+    if not validate_file_type(file.filename or "", CV_ALLOWED_TYPES):
+        raise HTTPException(status_code=400,
+                            detail=f"Unsupported file type. Allowed: {', '.join(CV_ALLOWED_TYPES)}")
+
     anthropic_key = await _get_anthropic_key(user, session)
     from app.utils.usage_logger import set_usage_user, set_usage_entity, get_session_usage
     set_usage_user(user.id)
@@ -92,6 +97,8 @@ async def upload_master_cv(
 
     # Read and parse file
     file_bytes = await file.read()
+    if len(file_bytes) > MAX_CV_SIZE:
+        raise HTTPException(status_code=400, detail="File too large — maximum 10 MB.")
     raw_text, file_format = await parse_file_to_text(
         file_bytes, file.content_type or "", file.filename or ""
     )
@@ -303,6 +310,7 @@ async def get_domain_cv(
              dependencies=[Depends(require_active_subscription)])
 async def generate_domain_cv_changelog(
     body: DomainCVCreate,
+    response: Response,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
@@ -311,6 +319,10 @@ async def generate_domain_cv_changelog(
     Creates a DomainCV in 'regenerating' status with pending change log items.
     Returns the domain_cv_id and list of proposed changes.
     """
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "domain_generate", session)
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
+
     # Check master CV exists
     master_result = await session.execute(
         select(MasterCV).where(MasterCV.user_id == user.id, MasterCV.is_active == True)
