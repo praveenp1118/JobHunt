@@ -54,6 +54,14 @@ scraping (Apify) API keys.
   patterns (never CV content or PII); recipients spend **0 tokens**. Surfaces only at ≥2 contributors.
 - **Subscriptions** — Stripe-powered JobHunt Pro (₹500/mo); paid write actions are gated, with read-only
   access on expiry (admins bypass).
+- **Templates** — one global CV template (font / size / margins / accent / bullets → deterministic PDF
+  styling) plus content rules (never-modify sections, section order, page budget) injected into the tailor
+  prompt; per-domain overrides, live previews, and an overflow "trim to fit" guard.
+- **Security & governance** — AES-256 encryption, bcrypt + JWT, per-user **rate limiting**, **prompt-injection
+  hardening** (XML-tagged user content), an **anti-hallucination** check (no invented metrics), security-headers
+  middleware, Redis **login lockout**, and an immutable **audit log**.
+- **GDPR self-service** — Settings → Privacy: data summary, one-click **JSON/markdown export** (ZIP),
+  rate-limit transparency, and **right-to-erasure** with a 30-day grace period; admins get a Governance dashboard.
 
 ## Screenshots
 
@@ -130,6 +138,7 @@ See the full write-up in **[docs/architecture.md](docs/architecture.md)**.
 | Browser / PDF | Playwright (title pre-filter + HTML→PDF) |
 | Payments | Stripe (JobHunt Pro subscription) |
 | Real-time | WebSockets (support chat) |
+| Security | AES-256, bcrypt, JWT, security headers, per-user rate limiting, Redis login lockout, audit log |
 | Testing | pytest + pytest-asyncio (in-container live-server smoke tests) |
 
 ## Project structure
@@ -190,7 +199,9 @@ Postgres DB — smoke tests covering the API, scanner, Gmail alert parser, and m
 
 Active personal project. Core platform (V1–V3) is complete: CV management, AI tailoring,
 multi-domain scoring, feed scanning, Gmail alert parsing, the activity dashboard, Career Insights,
-API usage visibility, support chat, community insights, and Stripe subscriptions. **61 smoke tests passing.**
+API usage visibility, support chat, community insights, Stripe subscriptions, CV templates, and a
+security-first governance layer (rate limiting, prompt-injection hardening, audit logs, GDPR export/erasure).
+**79 smoke tests passing.**
 
 ## License
 

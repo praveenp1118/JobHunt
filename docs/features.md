@@ -125,12 +125,48 @@ The central pipeline for every opportunity.
 - **Zero-cost reuse** — recipients see aggregated insights on the Add-Job screen, Job Detail, the Tailor
   panel, and the tracker without spending any tokens.
 
+## CV Templates
+
+- **Two rule sets** — *aesthetic* rules (font, size, headings, margins, line-spacing, bullets, accent
+  colour) drive deterministic **PDF styling**; *content* rules (never-modify sections, section order, page
+  budget) are injected into the **tailor prompt** so Claude respects them.
+- **Global + per-domain overrides** — one template per user, with optional overrides per domain CV.
+- **Live previews** — the Master CV tab and each domain CV render with the chosen template.
+- **Overflow guard** — after tailoring, if the CV exceeds your page budget you get a warning with a
+  one-click **trim to fit** (removes the lowest-impact changes; never your bullet de-selections).
+
+## Security & Governance
+
+- **Encryption & auth** — AES-256 for CV content and API keys, bcrypt password hashing, JWT sessions;
+  API keys are never returned to the browser (only `has_*` flags).
+- **Rate limiting** — per-user, per-action daily/hourly limits on the paid AI endpoints, with an
+  `X-RateLimit-Remaining` header and an in-app transparency panel.
+- **Prompt-injection hardening** — all user-provided content (CVs, JDs) is wrapped in XML tags with an
+  explicit instruction to the model to treat it as data, never as commands.
+- **Anti-hallucination check** — every metric in a tailored CV is verified against the master CV; invented
+  figures are flagged (defence-in-depth alongside the S3 integrity gate).
+- **Login lockout** — five failed attempts per email triggers a 15-minute lockout (Redis-backed).
+- **Audit log** — an immutable trail of security events (logins, key updates, sends, exports, deletions,
+  rate-limit hits, hallucination flags) with IP + user-agent.
+- **Hardening** — security-headers middleware (no-sniff, frame-deny, referrer/permissions policy), CORS
+  pinned to the configured frontend origin, and a global error handler that never leaks internals.
+
+## Privacy & GDPR
+
+- **Data summary** — see exactly what JobHunt stores about you.
+- **Export** — download all your data (profile, CVs, jobs, applications, usage) as a ZIP.
+- **Right to erasure** — request account deletion with a **30-day grace period**; a daily task purges
+  scheduled accounts (storage → Stripe customer → database, CASCADE).
+- **Consent** — required Terms + Privacy agreement at sign-up, and a one-time consent banner for existing users.
+
 ## Admin Panel
 
 - **Users** — list, role and active-status management.
 - **Error log** — platform errors with resolve.
 - **Platform stats** — usage overview (admin-only, access-controlled).
 - **Support chat console** — see the Support Chat section above.
+- **Governance dashboard** — audit-event counts, rate-limit 429s, failed logins, data exports,
+  hallucination flags, pending deletions, and the last 100 audit-log entries (admin override to cancel a deletion).
 
 ---
 

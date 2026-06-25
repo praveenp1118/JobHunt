@@ -72,6 +72,12 @@ own AI and scraping API keys. There is no external SaaS dependency beyond the AI
   `require_active_subscription` gate (402) on paid write endpoints; admins bypass.
 - **Community Insights** — anonymised aggregation of scores + JD highlights + tailoring patterns
   (never CV/PII), surfaced once ≥2 members contribute. Company/role are normalised for bucket matching.
+- **Security & governance layer** — a `rate_limiter` (per-user/action limits, DB-backed), a `cv_validator`
+  (anti-hallucination — metrics must trace to the master CV), an `audit_logger` (immutable trail), Redis
+  `login_security` (5-failure lockout), an `input_validator` (upload type/size), prompt-injection hardening
+  (XML-tagged user content in every agent), a security-headers middleware, and a global error handler.
+- **Privacy / GDPR** — data summary, ZIP export, and right-to-erasure with a 30-day grace window enforced by
+  a daily `purge_deleted_accounts` Celery task (storage → Stripe customer → database CASCADE).
 
 ## Data flow
 
@@ -201,7 +207,8 @@ base → 7bad (initial) → f6a2 → a1b2 (user profile fields)
 → v3_gmail_job_alerts → v3_gmail_alert_prefs → v3_activity_log
 → v3_domain_cv_scores → v3_job_s1d → v3_partial_jd
 → v3_stripe_subscriptions → v3_chat → v3_api_usage_log
-→ v3_job_s1_tokens → v3_community → v3_career_insights  (head)
+→ v3_job_s1_tokens → v3_community → v3_career_insights
+→ v3_cv_template → v3_gdpr_consent → v3_governance  (head)
 ```
 
 ## Tech stack

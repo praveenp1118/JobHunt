@@ -118,6 +118,28 @@ implementation spec.
 | `POST /tickets`, `GET/PATCH …` (admin) | Tickets, presence, admin console |
 | `WS /ws/chat/{conversation_id}` | Real-time message push |
 
+## Templates — `/api/templates` (CV template)
+
+| Method & path | Purpose |
+|---|---|
+| `GET/PUT /cv`, `GET /cv/fonts` | Global CV template (aesthetic + content rules); `max_words` = pages × 300 |
+| `GET/PUT/DELETE /domain/{id}` | Per-domain-CV overrides (null = inherit global) |
+
+## Privacy — `/api/privacy` (GDPR self-service)
+
+| Method & path | Purpose |
+|---|---|
+| `GET /summary`, `GET /rate-limits` | Data summary + remaining rate-limit calls |
+| `GET /export` | Download all your data as a ZIP (audited) |
+| `POST /delete-request`, `POST /cancel-deletion` | Right-to-erasure with a 30-day grace period |
+
+## Governance — `/api/admin/governance` (admin)
+
+| Method & path | Purpose |
+|---|---|
+| `GET /` | Audit log + security stats (429s, failed logins, exports, hallucination flags, pending deletions) |
+| `POST /cancel-deletion/{user_id}` | Admin override to cancel a scheduled deletion |
+
 ## Wallet — `/api/wallet`
 
 | Method & path | Purpose |
