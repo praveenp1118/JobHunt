@@ -88,6 +88,7 @@ async def generate_tailor_package(
     recruiter_email: Optional[str] = None,
     user_anthropic_key: Optional[str] = None,
     model: Optional[str] = None,
+    content_rules: str = "",
 ) -> dict:
     """
     Single optimised call that produces:
@@ -167,7 +168,7 @@ PRESERVATION RULES (must be respected by every proposed change):
 - Preserve ALL metrics and numbers EXACTLY as written (never alter figures, %s, dates, or amounts).
 - Preserve the candidate's voice and writing style.
 - Keep the bullet-point format consistent throughout.
-
+{content_rules}
 ━━━ TASK 2: COVER LETTER ━━━
 Write a cover letter. Tone: {tone_desc}. {cl_instruction}
 - 3-4 paragraphs, 200-280 words

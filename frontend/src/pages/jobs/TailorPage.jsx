@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
   getJob, getJdHighlights, generateTailor, getTailorChangelog,
-  approveChange, rejectChange, editChange, applyTailor, regenerateCL,
+  approveChange, rejectChange, editChange, applyTailor, regenerateCL, trimTailor,
   sendApplication, updateJobStatus,
 } from '../../api/jobs'
 import { getDomainCVs } from '../../api/cvs'
@@ -65,6 +65,8 @@ export default function TailorPage() {
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
   const [applyResult, setApplyResult] = useState(null)
+  const [overflowInfo, setOverflowInfo] = useState(null)
+  const [trimming, setTrimming] = useState(false)
   const [genUsage, setGenUsage] = useState(null)
   const [rightTab, setRightTab] = useState('cv')
   const [editingChangeId, setEditingChangeId] = useState(null)
@@ -158,11 +160,25 @@ export default function TailorPage() {
       setEmailSubject(`Application: ${job?.role} — ${job?.company}`)
       setEmailBody(res.data.email_draft || '')
       setRightTab('cv')
+      if (res.data.overflow?.overflow) setOverflowInfo(res.data.overflow)
     } catch (e) {
       setError(e.response?.data?.detail || 'Apply failed')
     } finally {
       setApplying(false)
     }
+  }
+
+  const handleTrim = async () => {
+    setTrimming(true)
+    try {
+      const res = await trimTailor(tailoredCvId)
+      setApplyResult((p) => ({ ...p, tailored_cv_md: res.data.trimmed_cv_md }))
+      setOverflowInfo(null)
+      refetchChangelog()
+      toast.success(`Trimmed ${res.data.removed_changes?.length || 0} change(s) — now ~${Math.round(res.data.word_count / 300 * 10) / 10} pages`)
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Trim failed')
+    } finally { setTrimming(false) }
   }
 
   const handleRegenerateCL = async () => {
@@ -563,6 +579,32 @@ export default function TailorPage() {
           </div>
         </aside>
       </div>
+
+      {/* Overflow warning modal */}
+      {overflowInfo && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h2 className="text-lg font-semibold text-gray-900">⚠️ CV exceeds your page limit</h2>
+            <div className="mt-3 space-y-1 text-sm text-gray-600">
+              <div className="flex justify-between"><span>Your template</span><strong>{overflowInfo.max_pages} pages (~{overflowInfo.max_words} words)</strong></div>
+              <div className="flex justify-between"><span>Tailored CV</span><strong>{overflowInfo.current_pages} pages ({overflowInfo.word_count} words)</strong></div>
+              <div className="flex justify-between text-amber-700"><span>Excess</span><strong>~{overflowInfo.excess_words} words</strong></div>
+            </div>
+            <div className="mt-5 space-y-2">
+              <Button className="w-full" loading={trimming} onClick={handleTrim}>
+                Trim to fit {overflowInfo.max_pages} pages
+              </Button>
+              <Button variant="secondary" className="w-full" onClick={() => setOverflowInfo(null)}>
+                Allow {overflowInfo.current_pages} pages this time
+              </Button>
+              <button onClick={() => setOverflowInfo(null)} className="w-full text-xs text-gray-500 hover:text-gray-700 py-1">
+                Review changes manually
+              </button>
+            </div>
+            <p className="mt-3 text-[11px] text-gray-400">Trim removes the lowest-impact changes (reorder → keyword → rephrase) and never removes deselects.</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

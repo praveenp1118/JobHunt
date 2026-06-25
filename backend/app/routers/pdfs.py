@@ -30,6 +30,20 @@ def _pdf_response(pdf_bytes: bytes, filename: str) -> Response:
 
 # ── Master CV ─────────────────────────────────────────────────────────────────
 
+async def _user_pdf_styles(session, user_id, domain_cv_id=None) -> dict:
+    """Build PDF styles from the user's CV template (+ optional domain override)."""
+    from app.models.cv_template import CVTemplate, DomainCVTemplateOverride
+    from app.utils.cv_template import get_effective_template, build_pdf_styles
+    gtpl = (await session.execute(
+        select(CVTemplate).where(CVTemplate.user_id == user_id))).scalar_one_or_none()
+    dovr = None
+    if domain_cv_id:
+        dovr = (await session.execute(select(DomainCVTemplateOverride).where(
+            DomainCVTemplateOverride.domain_cv_id == domain_cv_id,
+            DomainCVTemplateOverride.user_id == user_id))).scalar_one_or_none()
+    return build_pdf_styles(get_effective_template(gtpl, dovr))
+
+
 @router.get("/master-cv")
 async def download_master_cv_pdf(
     user: User = Depends(current_active_user),
@@ -43,7 +57,7 @@ async def download_master_cv_pdf(
     if not cv:
         raise HTTPException(status_code=404, detail="No master CV found")
 
-    pdf = await cv_md_to_pdf(cv.content_md)
+    pdf = await cv_md_to_pdf(cv.content_md, await _user_pdf_styles(session, user.id))
     name = (user.name or "CV").replace(" ", "_")
     return _pdf_response(pdf, f"CV_{name}_Master.pdf")
 
@@ -66,7 +80,7 @@ async def download_domain_cv_pdf(
     if not cv.content_md:
         raise HTTPException(status_code=400, detail="Domain CV has no content — apply changes first")
 
-    pdf = await cv_md_to_pdf(cv.content_md)
+    pdf = await cv_md_to_pdf(cv.content_md, await _user_pdf_styles(session, user.id, domain_cv_id))
     name = (user.name or "CV").replace(" ", "_")
     return _pdf_response(pdf, f"CV_{name}_Domain_v{cv.version}.pdf")
 
@@ -89,7 +103,7 @@ async def download_tailored_cv_pdf(
     if not tailored.cv_md:
         raise HTTPException(status_code=400, detail="Tailored CV not generated yet — click Apply first")
 
-    pdf = await cv_md_to_pdf(tailored.cv_md)
+    pdf = await cv_md_to_pdf(tailored.cv_md, await _user_pdf_styles(session, user.id, tailored.domain_cv_id))
 
     # Save PDF path for email attachment
     from app.utils.storage import cv_pdf_path, save_binary_file

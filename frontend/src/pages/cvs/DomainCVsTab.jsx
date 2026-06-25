@@ -8,6 +8,7 @@ import {
   applyDomainCV,
 } from '../../api/cvs'
 import client from '../../api/client'
+import DomainTemplateOverride from './DomainTemplateOverride'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import { ScorePill } from '../../components/ui/ScorePill'
@@ -166,6 +167,7 @@ export default function DomainCVsTab() {
                     </div>
                   </div>
                 </div>
+                <DomainTemplateOverride domainCvId={cv.id} label={`${cv.industry_label || 'Industry'} × ${cv.country_code || ''}`} />
               </div>
             )
           })}

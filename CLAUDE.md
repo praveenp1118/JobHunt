@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (61 tests, all passing):
+- Current coverage (67 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -113,6 +113,10 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     **7-day cache** (`is_fresh` true for future `expires_at`, false when expired); roadmap completion
     **+impact_pct** updates readiness (70→73→70 on toggle); community **warming_up** when < 2 contributors;
     career questions save + read back. DB-seeded (no live Claude — the analysis pipeline is live-verified).
+  - `test_templates.py` (6): `get_effective_template` merge (override wins where not null, global kept where
+    null); `build_content_rules_prompt` includes the word budget + never-modify sections; `check_overflow`
+    detects excess (750 words vs 600 → 2.5 pages); `_TRIM_PRIORITY` order (reorder→keyword→rephrase, never
+    deselect); GET /templates/cv returns defaults (Calibri/600/2pg); PUT recomputes `max_words` (3pg→900).
 - NOT tested: `check_title_relevance` (live Playwright) and a true live end-to-end
   (real Gmail inbox + Anthropic).
 
@@ -202,7 +206,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_job_s1_tokens → v3_community → v3_career_insights
+│   │   └── versions/        # chain tip: … → v3_community → v3_career_insights → v3_cv_template
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -354,6 +358,15 @@ D:\JobHunt\
   `answer`. Unique (user_id, question_key).
 - **CommunityCareerInsight**: `role_category`, `insight_type` (keyword/skill/cert/project), `insight_value`,
   `frequency_pct`, `contributor_count`, `success_stories`. Surfaced only when ≥ 2 contributors (warming_up).
+
+### CV Template (V3 — `models/cv_template.py`)
+- **CVTemplate** (one per user, unique): **aesthetic** (`font_family`/`font_size`/`heading_font_family`/
+  `heading_font_size`/`heading_bold`/`margin_size` narrow|normal|wide/`line_spacing`/`bullet_style` •|–|▪|none/
+  `accent_color`), **page** (`max_pages`, `overflow_action` warn|auto_trim), **content** (`never_modify_sections`
+  JSONB, `section_order` JSONB, `max_words` = max_pages×300). Two rule sets: aesthetic → PDF (deterministic),
+  content → tailor prompt (Claude follows).
+- **DomainCVTemplateOverride** (one per domain CV, unique): all fields **nullable** — null = "use global".
+  `get_effective_template(global, override)` merges (override wins where not null).
 
 ---
 
@@ -542,9 +555,24 @@ S3 = factual integrity % — computed after Apply
 - `GET /community` → role-category insights or `{warming_up: true, contributor_count}` (< 2 contributors).
 - `POST /share` — opt in; copies anonymised keyword patterns to `community_career_insights` (no CV/PII).
 - **Agent:** `agents/career_agent.py::analyse_career_gaps` — sync Anthropic client, `max_tokens=8000`,
-  robust JSON parse (trims truncated tails). **CareerPage** has 7 tabs (Readiness radar-style bars /
-  Keywords / Skills / Experience / Certifications / Build / Roadmap), a 5-question modal, a TokenBadge after
-  analysis, and a Dashboard **CareerWidget** (readiness + mini-bars + top action + "⚡ ₹cost · Refresh").
+  robust JSON parse (trims truncated tails). **CareerPage** has 7 tabs (Readiness **recharts RadarChart** +
+  summary bars / Keywords / Skills / Experience / Certifications / Build / Roadmap), a 5-question modal, a
+  TokenBadge after analysis, and a Dashboard **CareerWidget** (readiness + mini-bars + top action + "⚡ ₹cost").
+
+### Templates (`/api/templates/`) — V3, CV template (aesthetic + content rules)
+- `GET /cv` — user's global `CVTemplate` (auto-creates a default row if missing). `PUT /cv` — create/update;
+  **`max_words` is recomputed from `max_pages`** (×300), never set directly. `GET /cv/fonts` — the 8-font list.
+- `GET /domain/{domain_cv_id}` → `{override}` (or null). `PUT /domain/{id}` — upsert (only non-null fields;
+  clearing `max_pages` clears `max_words`). `DELETE /domain/{id}` — revert to global.
+- **Wiring:** the tailor `generate` injects `build_content_rules_prompt(effective)` into the system prompt
+  (`generate_tailor_package(content_rules=…)`); PDF endpoints (master/domain/tailored) apply
+  `build_pdf_styles(effective)` via `cv_md_to_pdf(pdf_styles=…)` → a CSS-override block (font/size/margin/
+  accent/bullets); tailor `apply` returns **`overflow`** (`check_overflow` vs the effective `max_words`);
+  **`POST /tailor/{id}/trim`** removes the lowest-impact approved changes (reorder → keyword_injection →
+  rephrase; **never deselect**) in priority batches, re-applying until it fits → `{trimmed_cv_md,
+  removed_changes, word_count, max_words, fits}`. **Frontend:** My CVs **Template tab** (form + live preview),
+  per-domain-CV **"▸ Template overrides"** collapsible, and a TailorPage **overflow modal**
+  (Trim to fit / Allow this time / Review manually).
 
 ---
 
@@ -990,7 +1018,17 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Partial-JD UX + radar + non-LinkedIn auto-fetch**: Jobs Tracker now
+*Last updated: June 26, 2026 — **CV Template system** (My CVs → **Template tab**): one global `CVTemplate`
+per user + per-domain overrides, two rule sets — **aesthetic** (font/size/heading/margins/line-spacing/bullets/
+accent → deterministic **PDF styles** via `cv_md_to_pdf(pdf_styles)` CSS-override block on master/domain/tailored)
+and **content** (never-modify sections / section order / `max_words`=pages×300 → injected into the **tailor
+prompt** via `generate_tailor_package(content_rules)`). `v3_cv_template` migration (`cv_template` +
+`domain_cv_template_overrides`, nullable=use-global), `templates` router (cv/fonts/domain GET·PUT·DELETE),
+`utils/cv_template.py` (`get_effective_template`/`build_content_rules_prompt`/`build_pdf_styles`/`check_overflow`),
+TemplateTab (form + live preview) + per-domain "▸ Template overrides" collapsible. Tailor `apply` returns
+**`overflow`** (page-budget check) → TailorPage **overflow modal** (**Trim** via `POST /tailor/{id}/trim` removes
+lowest-impact changes reorder→keyword→rephrase, never deselect / Allow / Review). 67 tests, live-verified.
+**Partial-JD UX + radar + non-LinkedIn auto-fetch**: Jobs Tracker now
 **hides partial-JD (LinkedIn-gated, unscored) jobs by default** (`GET /jobs?hide_partial=true`; `partial_count`
 in stats; "Hide partial ✓ / Show partial (N)" toggle persisted in the URL). Shown partial rows render at 75%
 opacity with a **View →** (opens `portal_url`) instead of Tailor, and a tooltip on the "—" score cells. JobDetail
@@ -1043,4 +1081,4 @@ by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category b
 row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. **Community follow-ups:** insights on the Add-Job parse screen
 (compact card, decide before tailoring), Contributions "View →" deep-link fixed (`/jobs?open={id}` →
 JobsPage opens the detail panel), and **`normalize_company`** matching so company-name casing/punctuation
-no longer splits buckets. All 61 smoke tests passing*
+no longer splits buckets. All 67 smoke tests passing*

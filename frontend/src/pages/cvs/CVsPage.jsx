@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import MasterCVTab from './MasterCVTab'
 import DomainCVsTab from './DomainCVsTab'
+import TemplateTab from './TemplateTab'
 
 export default function CVsPage() {
   const [tab, setTab] = useState('master')
@@ -21,6 +22,7 @@ export default function CVsPage() {
         {[
           { key: 'master', label: 'Master CV' },
           { key: 'domains', label: 'Domain CVs' },
+          { key: 'template', label: 'Template' },
         ].map((t) => (
           <button
             key={t.key}
@@ -36,6 +38,7 @@ export default function CVsPage() {
 
       {tab === 'master' && <MasterCVTab />}
       {tab === 'domains' && <DomainCVsTab />}
+      {tab === 'template' && <TemplateTab />}
     </div>
   )
 }

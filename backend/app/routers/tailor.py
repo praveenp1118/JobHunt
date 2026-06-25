@@ -194,6 +194,16 @@ async def generate_tailor(
     from app.utils.usage_logger import set_usage_entity, get_session_usage
     set_usage_entity("job", job.id, f"{job.company} · {job.role}")
 
+    # CV template content rules → injected into the tailor system prompt (global + domain override)
+    from app.models.cv_template import CVTemplate, DomainCVTemplateOverride
+    from app.utils.cv_template import get_effective_template, build_content_rules_prompt
+    gtpl = (await session.execute(
+        select(CVTemplate).where(CVTemplate.user_id == user.id))).scalar_one_or_none()
+    dovr = (await session.execute(select(DomainCVTemplateOverride).where(
+        DomainCVTemplateOverride.domain_cv_id == domain_cv.id,
+        DomainCVTemplateOverride.user_id == user.id))).scalar_one_or_none()
+    content_rules = build_content_rules_prompt(get_effective_template(gtpl, dovr))
+
     # One batched Claude call
     jd_text = job.jd_md or job.jd_raw or ""
     package = await generate_tailor_package(
@@ -211,6 +221,7 @@ async def generate_tailor(
         recruiter_email=job.recruiter_email,
         user_anthropic_key=anthropic_key,
         model=user_model,
+        content_rules=content_rules,
     )
 
     # Determine which template was actually used
@@ -504,6 +515,18 @@ async def apply_tailor(
     sess_tokens = sum(r.total_tokens or 0 for r in job_rows)
     sess_inr = round(sum(r.estimated_cost_inr or 0 for r in job_rows), 2)
 
+    # Page-budget overflow check vs the user's CV template (global + domain override)
+    from app.models.cv_template import CVTemplate, DomainCVTemplateOverride
+    from app.utils.cv_template import get_effective_template, check_overflow
+    gtpl = (await session.execute(
+        select(CVTemplate).where(CVTemplate.user_id == user.id))).scalar_one_or_none()
+    dovr = None
+    if tailored.domain_cv_id:
+        dovr = (await session.execute(select(DomainCVTemplateOverride).where(
+            DomainCVTemplateOverride.domain_cv_id == tailored.domain_cv_id,
+            DomainCVTemplateOverride.user_id == user.id))).scalar_one_or_none()
+    overflow = check_overflow(final_cv_md, get_effective_template(gtpl, dovr))
+
     return TailorApplyResult(
         tailored_cv_id=tailored.id,
         tailored_cv_md=final_cv_md,
@@ -519,7 +542,87 @@ async def apply_tailor(
         cost_inr=round(this_usage["cost_inr"], 2) or None,
         session_tokens=sess_tokens or None,
         session_cost_inr=sess_inr or None,
+        overflow=overflow,
     )
+
+
+# ══════════════════════════════════════════════════════════════
+# TRIM TO FIT  (remove lowest-impact approved changes until within page budget)
+# ══════════════════════════════════════════════════════════════
+
+# Removal order — least content impact first. DESELECT is never removed (it shrinks the CV).
+_TRIM_PRIORITY = ["reorder", "keyword_injection", "rephrase"]
+
+
+@router.post("/{tailored_cv_id}/trim")
+async def trim_tailored_cv(
+    tailored_cv_id: uuid.UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Remove the lowest-impact approved changes (reorder → keyword_injection → rephrase;
+    never deselect) and re-apply until the CV fits the template's word budget.
+    Returns {trimmed_cv_md, removed_changes, word_count, max_words, fits}."""
+    from app.utils.cv_template import count_words, get_effective_template
+    from app.models.cv_template import CVTemplate, DomainCVTemplateOverride
+
+    tailored = (await session.execute(select(TailoredCV).where(
+        TailoredCV.id == tailored_cv_id, TailoredCV.user_id == user.id))).scalar_one_or_none()
+    if not tailored or not tailored.cv_md:
+        raise HTTPException(status_code=404, detail="Apply the tailored CV first")
+
+    domain_cv = (await session.execute(
+        select(DomainCV).where(DomainCV.id == tailored.domain_cv_id))).scalar_one_or_none() if tailored.domain_cv_id else None
+    master = (await session.execute(
+        select(MasterCV).where(MasterCV.user_id == user.id, MasterCV.is_active == True))).scalars().first()
+    base_cv = (domain_cv.content_md if domain_cv else None) or (master.content_md if master else "")
+
+    # Effective word budget
+    gtpl = (await session.execute(
+        select(CVTemplate).where(CVTemplate.user_id == user.id))).scalar_one_or_none()
+    dovr = None
+    if tailored.domain_cv_id:
+        dovr = (await session.execute(select(DomainCVTemplateOverride).where(
+            DomainCVTemplateOverride.domain_cv_id == tailored.domain_cv_id,
+            DomainCVTemplateOverride.user_id == user.id))).scalar_one_or_none()
+    max_words = get_effective_template(gtpl, dovr)["max_words"]
+
+    approved = (await session.execute(select(ChangeLog).where(
+        ChangeLog.tailored_cv_id == tailored_cv_id,
+        ChangeLog.status.in_([ChangeStatus.approved, ChangeStatus.approved_edited])))).scalars().all()
+
+    def _ct(c):
+        return c.change_type.value if hasattr(c.change_type, "value") else str(c.change_type)
+
+    anthropic_key = await _get_anthropic_key(user, session)
+    user_model = await get_user_model(user.id, session)
+
+    current_md = tailored.cv_md
+    removed = []
+    kept = list(approved)
+
+    for ctype in _TRIM_PRIORITY:
+        if count_words(current_md) <= max_words:
+            break
+        batch = [c for c in kept if _ct(c) == ctype]
+        if not batch:
+            continue
+        for c in batch:
+            c.status = ChangeStatus.rejected
+            removed.append({"change_type": ctype, "section": c.section,
+                            "text": c.final_text or c.proposed_text or c.original_text})
+        kept = [c for c in kept if _ct(c) != ctype]
+        kept_dicts = [{"change_type": _ct(c), "section": c.section, "original_text": c.original_text,
+                       "final_text": c.final_text or c.proposed_text, "reason": c.reason} for c in kept]
+        current_md = await apply_tailor_changes(
+            domain_cv_md=base_cv, approved_changes=kept_dicts, country_rules={},
+            user_anthropic_key=anthropic_key, model=user_model)
+
+    tailored.cv_md = current_md
+    await session.commit()
+    wc = count_words(current_md)
+    return {"trimmed_cv_md": current_md, "removed_changes": removed,
+            "word_count": wc, "max_words": max_words, "fits": wc <= max_words}
 
 
 # ══════════════════════════════════════════════════════════════

@@ -54,6 +54,7 @@ class TailorApplyResult(BaseModel):
     cost_inr: Optional[float] = None
     session_tokens: Optional[int] = None
     session_cost_inr: Optional[float] = None
+    overflow: Optional[dict] = None  # page-budget check vs the user's CV template
 
 
 class RegenerateCLRequest(BaseModel):

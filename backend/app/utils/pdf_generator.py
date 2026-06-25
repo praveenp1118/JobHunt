@@ -261,14 +261,48 @@ def _playwright_api_pdf(html: str) -> bytes:
         loop.close()
 
 
-async def cv_md_to_pdf(content_md: str) -> bytes:
-    """Convert markdown CV to PDF bytes."""
+def _style_overrides(pdf_styles: dict) -> str:
+    """Build a CSS override block from a template's pdf_styles dict (appended after
+    CV_CSS so its rules win). Tolerant of missing keys."""
+    if not pdf_styles:
+        return ""
+    s = pdf_styles
+    font = s.get("font_family", "Calibri")
+    heading_font = s.get("heading_font", font)
+    size = s.get("font_size", "11pt")
+    heading_size = s.get("heading_size", "14pt")
+    line_height = s.get("line_height", 1.15)
+    margin = s.get("margin", "1in")
+    accent = s.get("accent_color", "#1a1a1a")
+    heading_weight = "700" if s.get("heading_bold", True) else "400"
+    bullet = s.get("bullet", "•")
+
+    css = f"""
+/* ── Template overrides ── */
+body {{ font-family: '{font}', Arial, Helvetica, sans-serif; font-size: {size}; line-height: {line_height}; }}
+h1 {{ color: {accent}; }}
+h1, h2, h3 {{ font-family: '{heading_font}', Arial, Helvetica, sans-serif; }}
+h2 {{ font-size: {heading_size}; color: {accent}; font-weight: {heading_weight}; border-bottom-color: {accent}33; }}
+p, li {{ font-size: {size}; line-height: {line_height}; }}
+@page {{ margin: {margin}; size: A4; }}
+"""
+    if bullet == "none":
+        css += "ul { list-style: none; padding-left: 0; }\n"
+    elif bullet and bullet != "•":
+        css += (f"ul {{ list-style: none; padding-left: 16px; }}\n"
+                f"li::before {{ content: '{bullet} '; margin-left: -14px; }}\n")
+    return css
+
+
+async def cv_md_to_pdf(content_md: str, pdf_styles: dict = None) -> bytes:
+    """Convert markdown CV to PDF bytes. Optional pdf_styles (from the user's CV template)
+    override font / size / margins / accent colour / bullets."""
     # Convert markdown to HTML
     html_body = md_lib.markdown(
         content_md,
         extensions=['tables', 'extra', 'nl2br'],
     )
-    full_html = CV_TEMPLATE.format(css=CV_CSS, content=html_body)
+    full_html = CV_TEMPLATE.format(css=CV_CSS + _style_overrides(pdf_styles), content=html_body)
     return await _html_to_pdf(full_html)
 
 

@@ -63,6 +63,9 @@ export const editChange = (tailoredCvId, changeId, finalText) =>
 export const applyTailor = (tailoredCvId) =>
   client.post(`/tailor/${tailoredCvId}/apply`)
 
+export const trimTailor = (tailoredCvId) =>
+  client.post(`/tailor/${tailoredCvId}/trim`)
+
 export const regenerateCL = (tailoredCvId, excludeTemplate) =>
   client.post(`/tailor/${tailoredCvId}/regenerate-cl`, { exclude_template: excludeTemplate })
 
