@@ -8,6 +8,8 @@ import {
 } from '../../api/cvs'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
+import CVPreview from '../../components/cv/CVPreview'
+import { getCVTemplate } from '../../api/templates'
 import { toast } from '../../store/toast'
 
 async function downloadPDF(url, filename) {
@@ -44,6 +46,9 @@ export default function MasterCVTab() {
     queryFn: getMasterCVVersions,
     enabled: view === 'versions',
   })
+
+  const { data: tplData } = useQuery({ queryKey: ['cv-template'], queryFn: getCVTemplate })
+  const template = tplData?.data
 
   const cv = cvData?.data
   const versions = versionsData?.data || []
@@ -243,9 +248,26 @@ export default function MasterCVTab() {
             className="hidden"
             onChange={(e) => uploadFile(e.target.files[0])}
           />
-          <pre className="px-6 py-5 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed font-sans max-h-[65vh] overflow-y-auto">
-            {cv.content_md}
-          </pre>
+          <div className="grid grid-cols-1 lg:grid-cols-2 divide-x divide-gray-100">
+            {/* Left — live styled preview (uses your CV template) */}
+            <div className="max-h-[65vh] overflow-y-auto bg-gray-50">
+              <div className="px-3 py-2 text-[11px] font-medium text-gray-400 sticky top-0 bg-gray-50 border-b border-gray-100">
+                Live preview · your template ({template?.font_family || 'Calibri'})
+              </div>
+              <div className="p-4">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-100">
+                  <CVPreview contentMd={cv.content_md} template={template} />
+                </div>
+              </div>
+            </div>
+            {/* Right — raw markdown */}
+            <div className="max-h-[65vh] overflow-y-auto">
+              <div className="px-3 py-2 text-[11px] font-medium text-gray-400 sticky top-0 bg-white border-b border-gray-100">Markdown source</div>
+              <pre className="px-6 py-4 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed font-sans">
+                {cv.content_md}
+              </pre>
+            </div>
+          </div>
         </div>
       )}
     </div>

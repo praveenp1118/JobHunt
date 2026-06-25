@@ -1,16 +1,30 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getDomainOverride, updateDomainOverride, deleteDomainOverride, getFonts } from '../../api/templates'
+import { getDomainOverride, updateDomainOverride, deleteDomainOverride, getFonts, getCVTemplate } from '../../api/templates'
 import Button from '../../components/ui/Button'
+import CVPreview from '../../components/cv/CVPreview'
+import { mergeTemplate } from '../../utils/template'
 import { toast } from '../../store/toast'
 
-// Collapsible per-domain-CV template override. null fields = "use global".
-export default function DomainTemplateOverride({ domainCvId, label }) {
+// Collapsible per-domain-CV template override (+ live preview modal). null fields = "use global".
+export default function DomainTemplateOverride({ domainCvId, label, contentMd }) {
   const [open, setOpen] = useState(false)
   const [ov, setOv] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [effective, setEffective] = useState(null)
   const { data: fontsData } = useQuery({ queryKey: ['cv-fonts'], queryFn: getFonts })
+  const { data: globalTpl } = useQuery({ queryKey: ['cv-template'], queryFn: getCVTemplate })
   const fonts = fontsData?.data?.fonts || []
+
+  const openPreview = async () => {
+    let override = ov
+    if (override === null) {
+      try { const r = await getDomainOverride(domainCvId); override = r.data.override || {} } catch { override = {} }
+    }
+    setEffective(mergeTemplate(globalTpl?.data, override))
+    setPreviewOpen(true)
+  }
 
   const load = async () => {
     if (!open && ov === null) {
@@ -42,9 +56,14 @@ export default function DomainTemplateOverride({ domainCvId, label }) {
 
   return (
     <div className="mt-3 border-t border-gray-100 pt-2">
-      <button onClick={load} className="text-xs text-gray-500 hover:text-gray-700 font-medium">
-        {open ? '▾' : '▸'} Template overrides
-      </button>
+      <div className="flex items-center gap-4">
+        <button onClick={load} className="text-xs text-gray-500 hover:text-gray-700 font-medium">
+          {open ? '▾' : '▸'} Template overrides
+        </button>
+        <button onClick={openPreview} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">
+          👁 Live preview
+        </button>
+      </div>
       {open && ov && (
         <div className="mt-2 bg-gray-50 rounded-lg p-3 space-y-2">
           <p className="text-[11px] text-gray-400">Overrides for {label} — leave on “Use global” to inherit.</p>
@@ -80,6 +99,30 @@ export default function DomainTemplateOverride({ domainCvId, label }) {
           <div className="flex gap-2 pt-1">
             <Button size="sm" loading={saving} onClick={save}>Save overrides</Button>
             <Button size="sm" variant="ghost" onClick={remove}>Remove overrides</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Live preview modal — rendered domain CV with the effective (global + override) template */}
+      {previewOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setPreviewOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[88vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Live preview — {label}</p>
+                <p className="text-[11px] text-gray-400">Effective template: {effective?.font_family} · {effective?.max_pages} page{effective?.max_pages > 1 ? 's' : ''} · {ov && Object.values(ov).some((v) => v != null) ? 'with overrides' : 'inheriting global'}</p>
+              </div>
+              <button onClick={() => setPreviewOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+            <div className="overflow-y-auto p-5 bg-gray-50">
+              {contentMd ? (
+                <div className="bg-white rounded-lg shadow-sm border border-gray-100 mx-auto" style={{ maxWidth: 640 }}>
+                  <CVPreview contentMd={contentMd} template={effective} />
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 text-center py-8">This domain CV has no content yet — apply changes first.</p>
+              )}
+            </div>
           </div>
         </div>
       )}

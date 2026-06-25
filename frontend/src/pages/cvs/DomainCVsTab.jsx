@@ -167,7 +167,7 @@ export default function DomainCVsTab() {
                     </div>
                   </div>
                 </div>
-                <DomainTemplateOverride domainCvId={cv.id} label={`${cv.industry_label || 'Industry'} × ${cv.country_code || ''}`} />
+                <DomainTemplateOverride domainCvId={cv.id} label={`${cv.industry_label || 'Industry'} × ${cv.country_code || ''}`} contentMd={cv.content_md} />
               </div>
             )
           })}

@@ -573,6 +573,12 @@ S3 = factual integrity % — computed after Apply
   removed_changes, word_count, max_words, fits}`. **Frontend:** My CVs **Template tab** (form + live preview),
   per-domain-CV **"▸ Template overrides"** collapsible, and a TailorPage **overflow modal**
   (Trim to fit / Allow this time / Review manually).
+- **Live CV previews** (`components/cv/CVPreview.jsx` — dependency-free markdown→HTML + scoped template
+  CSS): the **Master CV tab** show-view is now 2-column (left = styled live preview using the global
+  template, right = markdown source); each **Domain CV card** has a **"👁 Live preview"** button → modal
+  rendering that domain CV with its **effective** template (global merged with the card's override, via
+  `utils/template.js::mergeTemplate`). Previews render the *real* CV content (the Template-tab preview
+  stays a sample mock for tweaking settings).
 
 ---
 
