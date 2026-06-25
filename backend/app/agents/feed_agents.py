@@ -7,6 +7,8 @@ Each domain CV gets a personalised feed profile with:
 import json
 from typing import Optional
 
+from app.utils.usage_logger import log_call
+
 # ── Domain-specific job boards per industry vertical ─────────────────────────
 
 DOMAIN_JOB_BOARDS = {
@@ -143,6 +145,7 @@ Respond ONLY with valid JSON, no markdown:
         max_tokens=200,
         messages=[{"role": "user", "content": prompt}],
     )
+    await log_call("generate_feed_keywords", "other", response, model)
 
     text = response.content[0].text.strip()
     # Strip markdown if present

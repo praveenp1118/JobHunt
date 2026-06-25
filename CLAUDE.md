@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (40 tests, all passing):
+- Current coverage (45 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -99,6 +99,9 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     (`sender_type=admin`); ticket create (`JH-###`); admin presence online; and presence **offline
     after the 5-min timeout** (backdated `last_seen`). Guest convs cleaned up by `guest_email`;
     admin paths use the owner token (skip if absent).
+  - `test_usage.py` (5): Anthropic cost math (sonnet 1000/500 → $0.0105 / ₹0.877); `log_anthropic_usage`
+    + `log_apify_usage` write correct token/run/cost rows (owner, cleaned up by tag); `GET /usage/logs`
+    returns `{logs, summary.anthropic, summary.apify}`; `GET /usage/export` returns a CSV with the header row.
 - NOT tested: `check_title_relevance` (live Playwright) and a true live end-to-end
   (real Gmail inbox + Anthropic).
 
@@ -141,6 +144,9 @@ D:\JobHunt\
 │   │   ├── (models) chat.py         # V3: ChatConversation, ChatMessage, ChatTicket, AdminPresence
 │   │   ├── (routers) chat.py        # V3: support chat REST + WebSocket (rule-based FAQ, NO Claude)
 │   │   ├── (utils) chat_faq.py      # V3: 12 keyword FAQ rules + match_faq() (NO Claude)
+│   │   ├── (models) usage.py        # V3: APIUsageLog (Anthropic + Apify call log)
+│   │   ├── (utils) usage_logger.py  # V3: log_call/log_anthropic_usage/log_apify_usage + set_usage_user contextvar
+│   │   ├── (routers) usage.py       # V3: GET /usage/logs + /usage/export (token + cost visibility)
 │   │   ├── mcp/             # External service clients
 │   │   │   ├── gmail_mcp.py         # IMAP poll + SMTP send
 │   │   │   ├── apify_mcp.py         # Apify actor runner
@@ -185,7 +191,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_partial_jd → v3_stripe_subscriptions → v3_chat
+│   │   └── versions/        # chain tip: … → v3_stripe_subscriptions → v3_chat → v3_api_usage_log
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -196,7 +202,8 @@ D:\JobHunt\
 │   │       ├── v3_domain_cv_scores.py         # V3: jobs.s1d + domain_cv_scores (JSONB) + best_domain_cv_id
 │   │       ├── v3_partial_jd.py               # V3: jobs.has_partial_jd (alert-email snippet flag)
 │   │       ├── v3_stripe_subscriptions.py     # V3: users.stripe_customer_id + subscription_* fields
-│   │       └── v3_chat.py                      # V3: chat_conversations/messages/tickets + admin_presence
+│   │       ├── v3_chat.py                      # V3: chat_conversations/messages/tickets + admin_presence
+│   │       └── v3_api_usage_log.py             # V3: api_usage_logs (Anthropic + Apify usage tracking)
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
@@ -229,7 +236,7 @@ D:\JobHunt\
 │           ├── activity/            # V3: ActivityPage (Job Alerts + System tabs)
 │           ├── jobs/                # JobsPage, AddJobModal, JobDetail, TailorPage (full-screen), TailorOverlay (legacy fallback)
 │           ├── cvs/                 # CVsPage, MasterCVTab, DomainCVsTab
-│           ├── settings/            # SettingsPage + 7 tabs; Feeds&Scanning tab (FeedsTab.jsx) is the single place for ALL feed management (RSS/Apify feeds, Target Companies, Scan History, add/edit modals, Apify Store search, per-feed run)
+│           ├── settings/            # SettingsPage + 8 tabs (Profile · Plan&Keys · Gmail · Auto · Preferences · Feeds&Scanning · Error Log · API Usage); UsageTab.jsx = token+cost visibility; Feeds&Scanning tab (FeedsTab.jsx) is the single place for ALL feed management (RSS/Apify feeds, Target Companies, Scan History, add/edit modals, Apify Store search, per-feed run)
 │           ├── wallet/              # WalletPage
 │           └── admin/               # AdminPage (users, errors, stats)
 ├── docker-compose.yml
@@ -307,6 +314,13 @@ D:\JobHunt\
   `message_type` (text/image/file/system), `attachment_*`, `is_internal_note`, `read_at`
 - **ChatTicket**: `conversation_id`, `ticket_number` (`JH-###`), `title`, `status`, `priority`, `resolved_at`
 - **AdminPresence**: `admin_id` (unique), `is_online`, `last_seen` (5-min auto-timeout = offline)
+
+### APIUsageLog (V3 usage tracking — `models/usage.py`)
+- One row per external API call. `provider` (anthropic/apify), `agent_name`, `category` (tailoring/
+  scoring/domain_cv/scanner/gmail/other), `entity_type`/`entity_id`/`entity_label`, `model`,
+  `input_tokens`/`output_tokens`/`total_tokens`, `estimated_cost_usd`/`estimated_cost_inr`,
+  Apify: `actor_id`/`runs_requested`/`runs_returned`/`jobs_saved`, `result_summary`, `created_at`.
+  Indexes on (user_id, created_at) / (user_id, provider) / (user_id, category).
 
 ---
 
@@ -445,6 +459,18 @@ S3 = factual integrity % — computed after Apply
 - `POST /upload` — optional auth; multipart (≤5 MB; image/PDF/doc/docx) → `{url, name, size, type}`
   · `GET /attachments/{filename}` — serve
 - **WS** `/ws/chat/{conversation_id}` — real-time message push + typing/read relay (`ConnectionManager`)
+
+### Usage (`/api/usage/`) — V3, API token + cost visibility
+- `GET /logs` — params `provider` (anthropic/apify/all), `category` (tailoring/scoring/domain_cv/scanner/
+  gmail/other/all), `days` (30), `limit` (100) → `{logs: [...], summary: {anthropic: {total_tokens,
+  total_cost_usd, total_cost_inr, call_count, by_category}, apify: {total_runs, total_cost_usd,
+  total_cost_inr, actor_count}}}` (summary covers the whole window)
+- `GET /export?days=` — CSV download (`date, provider, agent, category, for, tokens, cost_usd, cost_inr, model`)
+- **How rows get written:** `usage_logger.set_usage_user(user_id)` is called at the request boundary
+  (`get_user_model`) + in Celery tasks (scanner/gmail-poll/fetch); each agent calls `log_call(...)` right
+  after `client.messages.create` to read `.usage` off the response and log (contextvar attribution, own
+  session, fire-and-forget — never blocks/breaks the agent). Apify runs logged in the scanner via
+  `log_apify_usage`. Pricing per-model in `usage_logger.PRICING`; INR = USD × 83.5 (approximate).
 
 ---
 
@@ -889,4 +915,9 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 25, 2026 — **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. All 40 smoke tests passing*
+*Last updated: June 25, 2026 — **API Usage tab** (Settings → API Usage, 8th tab): per-call token + cost
+visibility over `api_usage_logs` (`v3_api_usage_log` migration). `usage_logger` logs every Anthropic
+`client.messages.create` (13 agent call-sites add `log_call`) via a contextvar set at the request boundary
+(`get_user_model`) + Celery tasks; Apify runs logged in the scanner. `GET /api/usage/logs` (summary +
+by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category bar chart, sub-tabs,
+row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. All 45 smoke tests passing*

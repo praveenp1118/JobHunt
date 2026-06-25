@@ -12,6 +12,7 @@ import re
 from typing import Optional
 
 from app.config import settings
+from app.utils.usage_logger import log_call
 
 
 def _get_client(user_anthropic_key: Optional[str] = None):
@@ -61,6 +62,7 @@ Return ONLY JSON: {{"matches": ["..."], "gaps": ["..."]}}"""
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )
+        await log_call("extract_jd_highlights", "tailoring", response, model or settings.anthropic_model)
         data = _parse_json_safe(response.content[0].text)
         return {"matches": (data.get("matches") or [])[:6], "gaps": (data.get("gaps") or [])[:3]}
     except Exception as e:
@@ -215,6 +217,8 @@ Return ONLY JSON:
         max_tokens=3000,
         messages=[{"role": "user", "content": prompt}],
     )
+    await log_call("generate_tailor_package", "tailoring", response, model or settings.anthropic_model,
+                   entity_type="job", entity_label=f"{company} · {role}")
 
     try:
         result = _parse_json_safe(response.content[0].text)
@@ -285,6 +289,7 @@ Return the final tailored CV markdown."""
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
+    await log_call("apply_tailor_changes", "tailoring", response, model or settings.anthropic_model)
     return response.content[0].text.strip()
 
 
@@ -349,6 +354,7 @@ Return ONLY the cover letter text (no subject, no metadata)."""
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
+    await log_call("regenerate_cover_letter", "tailoring", response, model or settings.anthropic_model)
     return response.content[0].text.strip(), chosen
 
 
@@ -388,4 +394,5 @@ Return ONLY the email body."""
         max_tokens=300,
         messages=[{"role": "user", "content": prompt}],
     )
+    await log_call("generate_followup_email", "other", response, model or settings.anthropic_model)
     return response.content[0].text.strip()

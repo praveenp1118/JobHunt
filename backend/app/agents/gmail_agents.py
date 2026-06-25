@@ -10,6 +10,7 @@ import re
 from typing import Optional
 
 from app.config import settings
+from app.utils.usage_logger import log_call
 
 
 def _get_client(user_anthropic_key: Optional[str] = None):
@@ -175,6 +176,7 @@ needs_hitl = true for: genuine_recruiter, interview_invite, offer"""
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
+        await log_call("classify_emails_batch", "gmail", response, settings.anthropic_model)
         text = response.content[0].text
         text = re.sub(r"```json\s*", "", text)
         text = re.sub(r"```\s*", "", text)

@@ -134,6 +134,9 @@ from app.routers.chat import router as chat_router, chat_websocket
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.add_api_websocket_route("/ws/chat/{conversation_id}", chat_websocket)
 
+from app.routers.usage import router as usage_router
+app.include_router(usage_router, prefix="/api/usage", tags=["usage"])
+
 # ── Health check ─────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():

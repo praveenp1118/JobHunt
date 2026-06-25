@@ -372,6 +372,8 @@ async def poll_gmail(
     anthropic_key = await _get_anthropic_key(user, session)
     since_dt = datetime.now(timezone.utc) - timedelta(hours=since_hours)
 
+    from app.utils.usage_logger import set_usage_user
+    set_usage_user(user.id)
     summary = await _process_inbox_emails(
         user=user,
         gmail_address=gmail_address,

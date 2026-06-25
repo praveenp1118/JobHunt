@@ -14,6 +14,7 @@ from typing import Optional
 
 from anthropic import Anthropic
 from app.config import settings
+from app.utils.usage_logger import log_call
 
 
 # ── Client helper ─────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ RAW TEXT:
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
+    await log_call("text_to_markdown_cv", "other", response, model or settings.anthropic_model)
     return response.content[0].text.strip()
 
 
@@ -155,6 +157,7 @@ For country adaptations (remove phone, add relocation note), include those as se
         max_tokens=2048,
         messages=[{"role": "user", "content": prompt}],
     )
+    await log_call("generate_domain_changelog", "domain_cv", response, model or settings.anthropic_model)
 
     try:
         changes = _parse_json(response.content[0].text)
@@ -230,6 +233,7 @@ Apply all changes and return the final CV markdown."""
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
+    await log_call("apply_changes", "domain_cv", response, model or settings.anthropic_model)
     return response.content[0].text.strip()
 
 
@@ -288,6 +292,7 @@ Return ONLY JSON, no explanation:
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
+    await log_call("compute_s3_score", "domain_cv", response, model or settings.anthropic_model)
 
     try:
         result = _parse_json(response.content[0].text)

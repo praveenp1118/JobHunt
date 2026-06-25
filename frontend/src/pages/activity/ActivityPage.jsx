@@ -344,6 +344,8 @@ function ScannerCard({ run }) {
   const [open, setOpen] = useState(false)
   const [running, setRunning] = useState(false)
   const feeds = run.details?.feeds_summary || []
+  const u = run.details?.usage_summary
+  const fmtK = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n ?? 0))
 
   const handleScan = async (e) => {
     e.stopPropagation()
@@ -364,6 +366,12 @@ function ScannerCard({ run }) {
           {run.jobs_found} found · <span className="text-emerald-600 font-medium">{run.jobs_added} added</span>
           {feeds.length > 0 && <span className="text-xs text-gray-400"> · {feeds.length} feed{feeds.length > 1 ? 's' : ''} {open ? '▲' : '▼ Details'}</span>}
         </p>
+        {u && (u.anthropic_tokens > 0 || u.apify_runs > 0) && (
+          <p className="text-[11px] text-gray-400 mt-1">
+            ⚡ Anthropic: {fmtK(u.anthropic_tokens)} tokens · ₹{(u.anthropic_inr || 0).toFixed(2)}
+            {u.apify_runs > 0 && ` | Apify: ${u.apify_runs} runs · $${(u.apify_usd || 0).toFixed(2)}`}
+          </p>
+        )}
         {run.error_message && <p className="text-xs text-red-400 mt-1 truncate">{run.error_message}</p>}
       </div>
       {open && feeds.length > 0 && (

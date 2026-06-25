@@ -29,8 +29,13 @@ async def get_user_model(
     """
     Get the effective model string for a user.
     Returns their preferred_model if set and valid, otherwise settings default.
+
+    Also marks this user as the current usage-attribution subject — every
+    agent call in this request task logs against them (see usage_logger).
     """
     from app.models.user import UserPreferences
+    from app.utils.usage_logger import set_usage_user
+    set_usage_user(user_id)
 
     result = await session.execute(
         select(UserPreferences).where(UserPreferences.user_id == user_id)

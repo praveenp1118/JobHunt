@@ -124,6 +124,8 @@ async def suggest_feed(
     country_code = cv.country_code or "NL"
 
     # Generate keywords with Claude (graceful fallback so the modal never blocks)
+    from app.utils.usage_logger import set_usage_user
+    set_usage_user(user.id)
     api_key = await _get_anthropic_key(user, session)
     search_keywords = f"head of product {industry_label.lower()}"
     feed_name = f"{industry_label} × {function_label}"

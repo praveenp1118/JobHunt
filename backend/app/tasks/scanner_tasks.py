@@ -114,7 +114,19 @@ async def _weekly_scan_async():
             run_log.status = RunStatus.success if not errors else RunStatus.partial
             run_log.jobs_found = total_found
             run_log.jobs_added = total_added
-            run_log.details = {"feeds_run": len(all_feed_stats), "feeds_summary": all_feed_stats}
+            # Accumulate this run's API usage (rows logged since the scan started).
+            from app.models.usage import APIUsageLog
+            urows = (await session.execute(
+                select(APIUsageLog).where(APIUsageLog.created_at >= run_log.started_at)
+            )).scalars().all()
+            usage_summary = {
+                "anthropic_tokens": sum(r.total_tokens or 0 for r in urows if r.provider == "anthropic"),
+                "anthropic_inr": round(sum(r.estimated_cost_inr or 0 for r in urows if r.provider == "anthropic"), 2),
+                "apify_runs": sum(r.runs_returned or 0 for r in urows if r.provider == "apify"),
+                "apify_usd": round(sum(r.estimated_cost_usd or 0 for r in urows if r.provider == "apify"), 3),
+            }
+            run_log.details = {"feeds_run": len(all_feed_stats), "feeds_summary": all_feed_stats,
+                               "usage_summary": usage_summary}
             run_log.completed_at = datetime.now(timezone.utc)
             run_log.duration_seconds = (run_log.completed_at - run_log.started_at).total_seconds()
             if errors:
@@ -141,6 +153,8 @@ async def _weekly_scan_async():
 
 async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session):
     """Scan all feeds for a single user."""
+    from app.utils.usage_logger import set_usage_user
+    set_usage_user(user.id)  # attribute all agent calls in this scan to this user
     from app.mcp.apify_mcp import run_actor, normalise_job, build_linkedin_input, build_google_jobs_input
     from app.mcp.rss_mcp import fetch_rss_feed
     from app.agents.jd_agents import pre_filter_jd, compute_jd_hash, build_user_keywords
@@ -239,6 +253,16 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                         all_raw_jobs.append(normalised)
                         count += 1
                 stats[fid]["raw_results"] += count
+                try:
+                    from app.utils.usage_logger import log_apify_usage
+                    req = input_data.get("count") or input_data.get("num_results") or input_data.get("maxItems") or 0
+                    # Apify cost is approximate (PAY_PER_EVENT actors ~ $0.005 / result).
+                    await log_apify_usage(
+                        session, user.id, actor_id=actor_id, feed_label=feed.name,
+                        runs_requested=req, runs_returned=len(raw_items), jobs_saved=count,
+                        cost_usd=round(len(raw_items) * 0.005, 4), entity_id=str(feed.id))
+                except Exception as e:
+                    print(f"⚠️ apify usage log failed: {e}")
                 if count == 0:
                     stats[fid]["note"] = "Apify actor returned no usable results"
 

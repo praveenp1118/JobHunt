@@ -54,6 +54,8 @@ async def _poll_all_users_async():
         user_creds = result.all()
 
         for user, creds in user_creds:
+            from app.utils.usage_logger import set_usage_user
+            set_usage_user(user.id)  # attribute classify/score calls to this user
             # A RunLog per user-poll — its id is passed down so EmailAlertLog rows
             # can link back to this poll (Activity dashboard).
             started = datetime.now(timezone.utc)
@@ -236,6 +238,8 @@ async def _fetch_partial_jd_async(job_id: str, user_id: str):
         )).scalar_one_or_none()
         model = (prefs.preferred_model if prefs and getattr(prefs, "preferred_model", None)
                  else settings.anthropic_model)
+        from app.utils.usage_logger import set_usage_user
+        set_usage_user(user.id)
         result = await fetch_and_rescore_partial_job(uuid.UUID(job_id), user, session, anthropic_key, model)
         print(f"🔁 fetch_partial_jd {job_id}: {result.get('status')}")
         return result

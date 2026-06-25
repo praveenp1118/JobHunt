@@ -7,6 +7,7 @@ import re
 from typing import Optional
 
 from app.config import settings
+from app.utils.usage_logger import log_call
 
 
 def _get_client(api_key: Optional[str] = None):
@@ -89,6 +90,8 @@ Return ONLY JSON array, one entry per job:
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
+        await log_call("batch_score_s1", "scanner", response, model or settings.anthropic_model,
+                       entity_label=f"Scanner run · {len(jobs)} jobs")
         text = response.content[0].text
         text = re.sub(r"```json\s*", "", text)
         text = re.sub(r"```\s*", "", text)

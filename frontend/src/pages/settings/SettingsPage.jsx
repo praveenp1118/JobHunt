@@ -6,6 +6,7 @@ import AutoModeTab from './AutoModeTab'
 import PreferencesTab from './PreferencesTab'
 import ErrorLogTab from './ErrorLogTab'
 import FeedsTab from './FeedsTab'
+import UsageTab from './UsageTab'
 
 const TABS = [
   { key: 'profile',     label: 'Profile' },
@@ -15,6 +16,7 @@ const TABS = [
   { key: 'preferences', label: 'Preferences' },
   { key: 'feeds',       label: 'Feeds & Scanning' },
   { key: 'errors',      label: 'Error Log' },
+  { key: 'usage',       label: 'API Usage' },
 ]
 
 export default function SettingsPage() {
@@ -25,7 +27,7 @@ export default function SettingsPage() {
   })
 
   return (
-    <div className={`p-6 mx-auto ${tab === 'feeds' ? 'max-w-5xl' : 'max-w-3xl'}`}>
+    <div className={`p-6 mx-auto ${tab === 'feeds' || tab === 'usage' ? 'max-w-5xl' : 'max-w-3xl'}`}>
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-900">Settings</h1>
         <p className="text-sm text-gray-500 mt-0.5">Manage your profile, API keys, and preferences</p>
@@ -55,6 +57,7 @@ export default function SettingsPage() {
       {tab === 'preferences' && <PreferencesTab />}
       {tab === 'feeds'       && <FeedsTab />}
       {tab === 'errors'      && <ErrorLogTab />}
+      {tab === 'usage'       && <UsageTab />}
     </div>
   )
 }

@@ -11,6 +11,7 @@ import re
 from typing import Optional
 
 from app.config import settings
+from app.utils.usage_logger import log_call
 
 
 def compute_jd_hash(text: str) -> str:
@@ -212,6 +213,7 @@ S1 scoring guide:
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
+    await log_call("parse_and_score_jd", "scoring", response, model or settings.anthropic_model)
 
     try:
         result = _parse_json_safe(response.content[0].text)
