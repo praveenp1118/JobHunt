@@ -8,6 +8,8 @@ import { StatusBadge, MarketBadge } from '../../components/ui/Badge'
 import { ThreeScores } from '../../components/ui/ScorePill'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
+import CommunityInsights from '../../components/community/CommunityInsights'
+import { getCommunityInsights } from '../../api/community'
 
 const STATUSES = [
   'new', 'bookmarked', 'applied', 'screening',
@@ -40,6 +42,14 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
 
   const job = jobData?.data
   const emails = emailData?.data || []
+
+  const { data: communityData } = useQuery({
+    queryKey: ['community', job?.company, job?.role, job?.market],
+    queryFn: () => getCommunityInsights(job.company, job.role, job.market, job.jd_hash),
+    enabled: !!(job?.company && job?.role),
+    retry: false,
+  })
+  const communityCount = communityData?.data?.available ? communityData.data.contributor_count : 0
 
   const handleStatusChange = async (newStatus) => {
     await updateJobStatus(jobId, newStatus)
@@ -160,7 +170,7 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
 
       {/* Tabs */}
       <div className="flex gap-0 border-b border-gray-100 bg-white px-4">
-        {['details', 'emails', 'jd'].map((t) => (
+        {['details', 'emails', 'jd', 'community'].map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -170,10 +180,15 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {t === 'jd' ? 'JD' : t}
+            {t === 'jd' ? 'JD' : t === 'community' ? '💡 Community' : t}
             {t === 'emails' && emails.length > 0 && (
               <span className="ml-1.5 bg-gray-100 text-gray-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
                 {emails.length}
+              </span>
+            )}
+            {t === 'community' && communityCount > 0 && (
+              <span className="ml-1.5 bg-indigo-100 text-indigo-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+                {communityCount}
               </span>
             )}
           </button>
@@ -412,6 +427,20 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
                 </div>
               )
             })()}
+          </div>
+        )}
+
+        {tab === 'community' && (
+          <div className="p-5">
+            <CommunityInsights company={job.company} role={job.role} market={job.market} jdHash={job.jd_hash} jobId={jobId} />
+            {communityCount === 0 && (
+              <div className="text-center py-8">
+                <p className="text-sm text-gray-400">No community insights yet for this role.</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  They appear once 2+ members anonymously share for this company + role.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

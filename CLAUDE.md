@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (48 tests, all passing):
+- Current coverage (55 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -104,6 +104,11 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     returns `{logs, summary.anthropic, summary.apify}`; `GET /usage/export` returns a CSV with the header row.
     Plus 3 **live** (skip-if-owner-absent) tests: tailor `generate`, `parse/text`, and domain
     `generate-changelog` each return `tokens_used`/`cost_inr` (`s1_tokens` for parse) > 0 in the response.
+  - `test_community.py` (7): `normalize_role` (pure); `upsert` creates an insight (contributor_count=1,
+    avg scores, keyword pattern from an approved injection); a 2nd contributor merges (running average,
+    count=2); `get_community_insights` returns **None for 1 contributor** but data for **2** (privacy
+    floor) and strips the internal `_approved`; `POST /community/share/{job}` 200; `PATCH
+    /community/preferences` flips `community_sharing_enabled`. Real temp users/jobs, cleaned up.
 - NOT tested: `check_title_relevance` (live Playwright) and a true live end-to-end
   (real Gmail inbox + Anthropic).
 
@@ -193,7 +198,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_chat → v3_api_usage_log → v3_job_s1_tokens
+│   │   └── versions/        # chain tip: … → v3_api_usage_log → v3_job_s1_tokens → v3_community
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -325,6 +330,14 @@ D:\JobHunt\
   `input_tokens`/`output_tokens`/`total_tokens`, `estimated_cost_usd`/`estimated_cost_inr`,
   Apify: `actor_id`/`runs_requested`/`runs_returned`/`jobs_saved`, `result_summary`, `created_at`.
   Indexes on (user_id, created_at) / (user_id, provider) / (user_id, category).
+
+### Community (V3 — `models/community.py`)
+- **CommunityJobInsight**: `company`, `role_normalized` (lowercased/stripped), `market`, `jd_hash`,
+  `contributor_count`, `avg_s1`/`avg_s1d`, `best_domain_cv_label`, `jd_highlights`/`keyword_patterns`/
+  `tailoring_patterns` (JSONB), `response_data`. Surfaced only when `contributor_count ≥ 2`. NO CV/PII.
+- **CommunityContribution**: `user_id`, `job_id`, `insight_id`, `contributed_scores`/`highlights`/`tailoring`,
+  `is_anonymous` (default True). One per (user, job) — idempotent.
+- **UserPreferences** + `community_sharing_enabled` (bool, default False) — opt-in.
 
 ---
 
@@ -475,6 +488,19 @@ S3 = factual integrity % — computed after Apply
   after `client.messages.create` to read `.usage` off the response and log (contextvar attribution, own
   session, fire-and-forget — never blocks/breaks the agent). Apify runs logged in the scanner via
   `log_apify_usage`. Pricing per-model in `usage_logger.PRICING`; INR = USD × 83.5 (approximate).
+
+### Community (`/api/community/`) — V3, anonymised insight sharing (opt-in, ≥2 contributors)
+- `GET /insights?company=&role=&market=&jd_hash=` → aggregated insights **only if contributor_count ≥ 2**
+  (else `{available: false}`). Shape: `{available, contributor_count, avg_s1, avg_s1d, best_domain_cv_label,
+  jd_highlights:[{text,votes,category}], keyword_patterns:[{keyword,injection_count,approval_rate}],
+  tailoring_patterns:[{change_type,approval_count,total_count}], tokens_saved}`. Tries `jd_hash` then company+role.
+- `POST /share/{job_id}` — manually contribute a job's insights → `{shared, insight_id}`
+- `GET /my-contributions` — `[{job_id, company, role, contributor_count, contributed_at, insight_id}]`
+- `PATCH /preferences` — `{community_sharing_enabled}` (UserPreferences)
+- **Auto-share:** on `gmail/send-application` and on PATCH `jobs/{id}/status` → `applied`, if the user opted in,
+  `community.maybe_share_on_apply` contributes the job's anonymised data (fire-and-forget). **NO CV content/PII** —
+  only scores (running average), JD highlights + keyword/tailoring patterns derived from the **approved changelog**.
+  `GET /jobs` enriches each `JobSummary` with `community_available`/`community_contributors` (one batched query).
 
 ---
 
@@ -919,7 +945,13 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 25, 2026 — **Inline token badges** (`TokenBadge.jsx`, shared 10-colour scale): show
+*Last updated: June 26, 2026 — **Community Insights** (opt-in, anonymised, ≥2 contributors to surface): users
+share job scores + JD highlights + tailoring patterns (NO CV/PII) — `community` router/`utils`, `v3_community`
+migration (`community_job_insights`/`community_contributions` + `UserPreferences.community_sharing_enabled`),
+auto-share on apply (`maybe_share_on_apply`), `CommunityInsights.jsx` wired into Job Detail (💡 tab), Jobs
+Tracker (💡 badge via `JobSummary.community_available`), Tailor left panel (compact), Settings→Preferences
+toggle, `/community/contributions` page + Sidebar nav; recipients spend **0 tokens**. 55 tests.
+**Inline token badges** (`TokenBadge.jsx`, shared 10-colour scale): show
 "⚡ tokens · ₹cost" at the point of action. Backend exposes `tokens_used`/`cost_inr` on tailor
 generate/apply (apply also `session_tokens` = the job's full tailoring total)/regenerate-cl, cvs
 generate-changelog/apply, and `s1_tokens`/`s1_cost_inr` on `parse/text` — read off `response.usage` via
@@ -937,4 +969,4 @@ visibility over `api_usage_logs` (`v3_api_usage_log` migration). `usage_logger` 
 `client.messages.create` (13 agent call-sites add `log_call`) via a contextvar set at the request boundary
 (`get_user_model`) + Celery tasks; Apify runs logged in the scanner. `GET /api/usage/logs` (summary +
 by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category bar chart, sub-tabs,
-row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. All 48 smoke tests passing*
+row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. All 55 smoke tests passing*

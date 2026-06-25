@@ -13,6 +13,7 @@ import useAuthStore from '../../store/auth'
 import { MarketBadge } from '../../components/ui/Badge'
 import ScorePill from '../../components/ui/ScorePill'
 import TokenBadge from '../../components/ui/TokenBadge'
+import CommunityInsights from '../../components/community/CommunityInsights'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import { toast } from '../../store/toast'
@@ -296,6 +297,13 @@ export default function TailorPage() {
               </div>
             )}
           </div>
+
+          {/* Community patterns (shared insights, 0 token cost) */}
+          {job && (
+            <div className="px-4 pb-3">
+              <CommunityInsights company={job.company} role={job.role} market={job.market} jdHash={job.jd_hash} compact />
+            </div>
+          )}
 
           {/* Country rules */}
           {highlights?.country_rules?.length > 0 && (

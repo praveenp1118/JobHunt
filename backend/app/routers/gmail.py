@@ -490,6 +490,10 @@ async def send_application(
 
     await session.commit()
 
+    # Opt-in community insights (anonymised) — never blocks the send.
+    from app.utils.community import maybe_share_on_apply
+    await maybe_share_on_apply(session, user, job)
+
     return {
         "success": True,
         "sent_to": result["sent_to"],

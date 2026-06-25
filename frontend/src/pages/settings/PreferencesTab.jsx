@@ -1,16 +1,27 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getPreferences, updatePreferences } from '../../api/auth'
+import { updateCommunityPreferences } from '../../api/community'
 import Button from '../../components/ui/Button'
 import { toast } from '../../store/toast'
 
 export default function PreferencesTab() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
   const { data } = useQuery({ queryKey: ['preferences'], queryFn: getPreferences })
   const prefs = data?.data || {}
+
+  const toggleCommunity = async (value) => {
+    try {
+      await updateCommunityPreferences(value)
+      qc.invalidateQueries({ queryKey: ['preferences'] })
+      toast.success(value ? 'Community sharing enabled' : 'Community sharing disabled')
+    } catch { toast.error('Failed to update') }
+  }
 
   const update = async (field, value) => {
     setSaving(true)
@@ -124,6 +135,30 @@ export default function PreferencesTab() {
       </div>
 
       {saved && <p className="text-sm text-emerald-600">✓ Saved</p>}
+
+      {/* Community */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+        <h2 className="text-sm font-semibold text-gray-900 mb-4">🤝 Community</h2>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-gray-700">Share job insights with the JobHunt community</p>
+            <p className="text-xs text-gray-500 mt-1">
+              When ON, your <span className="font-medium">anonymised</span> job scores, JD highlights, and tailoring
+              patterns help other members — at no token cost to them. Your CV is never shared.
+            </p>
+          </div>
+          <button
+            onClick={() => toggleCommunity(!prefs.community_sharing_enabled)}
+            className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${prefs.community_sharing_enabled ? 'bg-emerald-500' : 'bg-gray-300'}`}
+          >
+            <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${prefs.community_sharing_enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+          </button>
+        </div>
+        <button onClick={() => navigate('/community/contributions')}
+          className="mt-4 text-xs font-medium text-emerald-600 hover:underline">
+          View my contributions →
+        </button>
+      </div>
     </div>
   )
 }

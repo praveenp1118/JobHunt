@@ -389,6 +389,17 @@ async def list_jobs(
     )).all()
     label_map = {str(did): f"{ind or 'Domain'} × {cc or '—'}" for did, ind, cc in dcv_rows}
 
+    # Community availability — one query for all shared insights (≥2 contributors),
+    # matched to the page's jobs by company + normalized role.
+    from app.models.community import CommunityJobInsight
+    from app.utils.community import normalize_role
+    comm_rows = (await session.execute(
+        select(CommunityJobInsight.company, CommunityJobInsight.role_normalized,
+               CommunityJobInsight.contributor_count)
+        .where(CommunityJobInsight.contributor_count >= 2)
+    )).all()
+    comm_map = {(c, r): cc for c, r, cc in comm_rows}
+
     summaries = []
     for j in jobs:
         s = JobSummary.model_validate(j)
@@ -397,6 +408,10 @@ async def list_jobs(
             ids.add(str(j.best_domain_cv_id))
         if ids:
             s.domain_cv_labels = {i: label_map.get(i, "Domain") for i in ids}
+        cc = comm_map.get(((j.company or "").strip(), normalize_role(j.role or "")))
+        if cc:
+            s.community_available = True
+            s.community_contributors = cc
         summaries.append(s)
     return {"jobs": summaries, "total_count": total_count, "unfiltered_count": unfiltered_count}
 
@@ -551,6 +566,12 @@ async def update_job_status(
         job.applied_at = datetime.now(timezone.utc)
 
     await session.commit()
+
+    # Opt-in community insights when a job is marked Applied (never blocks the update).
+    if body.status == JobStatus.applied:
+        from app.utils.community import maybe_share_on_apply
+        await maybe_share_on_apply(session, user, job)
+
     await session.refresh(job)
     return await _enrich_job(job, session)
 

@@ -299,6 +299,12 @@ export default function JobsPage() {
                       <div className="flex items-center gap-2">
                         {job.needs_hitl && <div className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0 animate-pulse" />}
                         <span className="text-sm font-medium text-gray-900 truncate max-w-[120px]">{job.company}</span>
+                        {job.community_available && (
+                          <span title={`${job.community_contributors} members shared insights`}
+                            className="shrink-0 text-[10px] font-medium bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-full px-1.5 py-0.5">
+                            💡 {job.community_contributors}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600 max-w-[180px]">

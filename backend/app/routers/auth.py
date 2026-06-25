@@ -271,6 +271,7 @@ async def get_preferences(
         "parse_job_alerts": prefs.parse_job_alerts,
         "job_alert_max_links": prefs.job_alert_max_links,
         "job_alert_title_filter": prefs.job_alert_title_filter,
+        "community_sharing_enabled": prefs.community_sharing_enabled,
     }
 
 

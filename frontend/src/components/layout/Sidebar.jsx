@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import useAuthStore from '../../store/auth'
 import { listConversations } from '../../api/chat'
+import { getPreferences } from '../../api/auth'
+import { getMyContributions } from '../../api/community'
 
 const NAV = [
   {
@@ -75,6 +77,25 @@ export default function Sidebar({ hitlCount = 0 }) {
   })
   const chatUnread = chatData?.data?.total_unread || 0
 
+  // Community nav appears once the user opts in or has contributed.
+  const { data: prefsData } = useQuery({ queryKey: ['preferences'], queryFn: getPreferences, retry: false })
+  const { data: contribData } = useQuery({ queryKey: ['my-contributions'], queryFn: getMyContributions, retry: false })
+  const showCommunity = !!prefsData?.data?.community_sharing_enabled || (contribData?.data?.length > 0)
+
+  const navItems = [...NAV]
+  if (showCommunity && !navItems.some((n) => n.to === '/community/contributions')) {
+    const idx = navItems.findIndex((n) => n.to === '/activity')
+    navItems.splice(idx + 1, 0, {
+      to: '/community/contributions',
+      label: 'Community',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-3-3" />
+        </svg>
+      ),
+    })
+  }
+
   const initials = user?.name
     ? user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
     : user?.email?.[0]?.toUpperCase() || 'U'
@@ -96,7 +117,7 @@ export default function Sidebar({ hitlCount = 0 }) {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {NAV.map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

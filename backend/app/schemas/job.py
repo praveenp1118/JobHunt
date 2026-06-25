@@ -60,6 +60,8 @@ class JobSummary(BaseModel):
     s1d: Optional[float] = None              # best domain CV fit
     s1_tokens: Optional[int] = None          # S1 scoring cost (manual/url parsed jobs only)
     s1_cost_inr: Optional[float] = None
+    community_available: bool = False        # ≥2 members shared insights for this company+role
+    community_contributors: Optional[int] = None
     s2: Optional[float]
     s3_master: Optional[float]
     needs_hitl: bool
