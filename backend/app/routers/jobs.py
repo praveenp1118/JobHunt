@@ -238,6 +238,8 @@ async def confirm_and_save_job(
         source=cached.get("source", JobSource.manual),
         status=JobStatus.new,
         s1=cached.get("s1_score"),
+        s1_tokens=cached.get("s1_tokens"),
+        s1_cost_inr=cached.get("s1_cost_inr"),
         salary_range_raw=parsed.get("comp_range"),
         notes=body.notes,
     )
@@ -762,6 +764,8 @@ async def _parse_raw_text(
         "jd_hash": jd_hash,
         "parsed": parsed_data,
         "s1_score": s1_score,
+        "s1_tokens": s1_tokens,
+        "s1_cost_inr": s1_cost_inr,
         "source": source,
     }
 

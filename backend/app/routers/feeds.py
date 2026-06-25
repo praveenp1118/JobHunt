@@ -144,12 +144,16 @@ async def suggest_feed(
         except Exception as e:
             print(f"⚠️ Feed keyword generation failed, using defaults: {e}")
 
+    from app.utils.usage_logger import get_session_usage
+    _u = get_session_usage()
     return FeedSuggestion(
         domain_cv_id=cv.id,
         feed_name=feed_name,
         search_keywords=search_keywords,
         rss_boards=get_rss_board_options(industry_code, country_code, search_keywords),
         apify_actors=KNOWN_APIFY_ACTORS,
+        tokens_used=_u["tokens"] or None,
+        cost_inr=round(_u["cost_inr"], 2) or None,
     )
 
 
@@ -367,7 +371,19 @@ async def run_single_feed(
     started = datetime.now(timezone.utc)
     found, added, _feed_stats = await _scan_feeds_for_user(user, [feed], apify_token, anthropic_key, session)
     duration = (datetime.now(timezone.utc) - started).total_seconds()
-    return {"jobs_found": found, "jobs_added": added, "duration_seconds": round(duration, 1)}
+
+    # Usage for this feed run (set_usage_user inside _scan_feeds_for_user reset the session).
+    from app.utils.usage_logger import get_session_usage
+    from app.models.usage import APIUsageLog
+    _u = get_session_usage()
+    apify_rows = (await session.execute(select(APIUsageLog).where(
+        APIUsageLog.user_id == user.id, APIUsageLog.provider == "apify",
+        APIUsageLog.created_at >= started))).scalars().all()
+    apify_runs = sum(r.runs_returned or 0 for r in apify_rows)
+    apify_cost = round(sum(r.estimated_cost_usd or 0 for r in apify_rows), 3)
+    return {"jobs_found": found, "jobs_added": added, "duration_seconds": round(duration, 1),
+            "tokens_used": _u["tokens"] or None, "cost_inr": round(_u["cost_inr"], 2) or None,
+            "apify_runs": apify_runs or None, "apify_cost": apify_cost or None}
 
 
 @router.post("/scanner/run", dependencies=[Depends(require_active_subscription)])

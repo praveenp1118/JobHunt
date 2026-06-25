@@ -58,6 +58,8 @@ class JobSummary(BaseModel):
     status: JobStatus
     s1: Optional[float]
     s1d: Optional[float] = None              # best domain CV fit
+    s1_tokens: Optional[int] = None          # S1 scoring cost (manual/url parsed jobs only)
+    s1_cost_inr: Optional[float] = None
     s2: Optional[float]
     s3_master: Optional[float]
     needs_hitl: bool

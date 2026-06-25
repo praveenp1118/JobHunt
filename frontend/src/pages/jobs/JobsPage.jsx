@@ -7,6 +7,7 @@ import { getDomainCVs } from '../../api/cvs'
 import { clsx } from 'clsx'
 import { StatusBadge, MarketBadge, SourceBadge } from '../../components/ui/Badge'
 import ScorePill from '../../components/ui/ScorePill'
+import TokenBadge from '../../components/ui/TokenBadge'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import AddJobModal from './AddJobModal'
@@ -315,7 +316,10 @@ export default function JobsPage() {
                       {job.market ? <MarketBadge market={job.market} /> : <span className="text-gray-300 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <ScorePill score={job.s1} />
+                      <div className="flex flex-col items-center gap-1">
+                        <ScorePill score={job.s1} />
+                        {job.s1_tokens != null && <TokenBadge tokens={job.s1_tokens} cost_inr={job.s1_cost_inr} />}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <BestFitCell job={job} />

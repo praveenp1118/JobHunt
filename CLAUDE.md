@@ -193,7 +193,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_stripe_subscriptions → v3_chat → v3_api_usage_log
+│   │   └── versions/        # chain tip: … → v3_chat → v3_api_usage_log → v3_job_s1_tokens
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -205,7 +205,8 @@ D:\JobHunt\
 │   │       ├── v3_partial_jd.py               # V3: jobs.has_partial_jd (alert-email snippet flag)
 │   │       ├── v3_stripe_subscriptions.py     # V3: users.stripe_customer_id + subscription_* fields
 │   │       ├── v3_chat.py                      # V3: chat_conversations/messages/tickets + admin_presence
-│   │       └── v3_api_usage_log.py             # V3: api_usage_logs (Anthropic + Apify usage tracking)
+│   │       ├── v3_api_usage_log.py             # V3: api_usage_logs (Anthropic + Apify usage tracking)
+│   │       └── v3_job_s1_tokens.py             # V3: jobs.s1_tokens + s1_cost_inr (manual-parse cost badge)
 │   └── requirements.txt
 ├── frontend/
 │   └── src/
@@ -923,11 +924,14 @@ Project root: D:\JobHunt
 generate/apply (apply also `session_tokens` = the job's full tailoring total)/regenerate-cl, cvs
 generate-changelog/apply, and `s1_tokens`/`s1_cost_inr` on `parse/text` — read off `response.usage` via
 per-request session contextvars in `usage_logger` (`set_usage_entity` tags rows by job/domain CV for
-queryable totals). Wired at 7 points: Tailor (changelog header, apply session total, regen-CL toast),
-Domain CVs (changelog + apply toasts), Add-Job parse result, Plan&Keys static cost-estimate panel.
-**Also fixed** a latent 500 in `parse/text` (`JDParseResult.pre_filter_reason` + `company`/`role`/`jd_language`
-could be `None` for a JD that *passes* the pre-filter). *(Deferred: persistent per-job tracker badge L1,
-Master-CV L7, Feeds L9–L11 — the badge component + token mechanism are in place to wire them later.)*
+queryable totals). Wired at **all 12 points**: Tailor (changelog header, apply session total, regen-CL toast),
+Domain CVs (changelog + apply toasts), Add-Job parse result, Plan&Keys static cost-estimate panel,
+**Jobs Tracker B-column badge** (manual/url-parsed jobs only — `jobs.s1_tokens`/`s1_cost_inr` persisted in
+the confirm step + exposed on `JobSummary`; batch-scanned jobs stay NULL → no badge, by design),
+**Master-CV file upload** (`MasterCVRead.tokens_used`), **Feeds** (per-feed Run toast + `feeds/{id}/run`
+returns `tokens_used`/`apify_runs`/`apify_cost`; `feeds/suggest` keyword-gen badge; Scan-History rows show
+the run's `usage_summary`). **Also fixed** a latent 500 in `parse/text` (`JDParseResult.pre_filter_reason`
++ `company`/`role`/`jd_language` could be `None` for a JD that *passes* the pre-filter).
 **API Usage tab** (Settings → API Usage, 8th tab): per-call token + cost
 visibility over `api_usage_logs` (`v3_api_usage_log` migration). `usage_logger` logs every Anthropic
 `client.messages.create` (13 agent call-sites add `log_call`) via a contextvar set at the request boundary

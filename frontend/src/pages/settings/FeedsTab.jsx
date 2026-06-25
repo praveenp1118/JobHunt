@@ -11,6 +11,7 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Spinner from '../../components/ui/Spinner'
 import ScanFeedBreakdown from '../../components/ui/ScanFeedBreakdown'
+import TokenBadge from '../../components/ui/TokenBadge'
 import { toast } from '../../store/toast'
 
 export default function FeedsTab() {
@@ -72,7 +73,11 @@ export default function FeedsTab() {
   // Run a single feed now (synchronous) and report the result
   const handleRunFeed = async (feed) => {
     const { data } = await runFeed(feed.id)
-    toast.success(`${feed.name}: ${data.jobs_found} found, ${data.jobs_added} added`)
+    const tk = data.tokens_used
+    let msg = `${feed.name}: ${data.jobs_found} found, ${data.jobs_added} added`
+    if (tk) msg += ` · ⚡ ${tk < 1000 ? tk : (tk / 1000).toFixed(1) + 'K'} · ₹${(data.cost_inr || 0).toFixed(2)}`
+    if (data.apify_runs) msg += ` · Apify ${data.apify_runs} runs $${(data.apify_cost || 0).toFixed(2)}`
+    toast.success(msg)
     qc.invalidateQueries({ queryKey: ['feeds'] })
   }
 
@@ -291,6 +296,7 @@ export default function FeedsTab() {
 function ScanHistoryRow({ scan }) {
   const [open, setOpen] = useState(false)
   const feeds = scan.details?.feeds_summary || []
+  const u = scan.details?.usage_summary
   const dur = scan.completed_at && scan.started_at
     ? `${Math.round((new Date(scan.completed_at) - new Date(scan.started_at)) / 1000)}s`
     : (scan.duration_seconds != null ? `${Math.round(scan.duration_seconds)}s` : scan.status === 'running' ? 'Running…' : '—')
@@ -320,6 +326,12 @@ function ScanHistoryRow({ scan }) {
       {open && feeds.length > 0 && (
         <tr>
           <td colSpan={6} className="px-4 py-3 bg-gray-50/50 border-t border-gray-100">
+            {u && (u.anthropic_tokens > 0 || u.apify_runs > 0) && (
+              <p className="text-[11px] text-gray-500 mb-2">
+                ⚡ Anthropic: {u.anthropic_tokens >= 1000 ? (u.anthropic_tokens / 1000).toFixed(1) + 'K' : u.anthropic_tokens} tokens · ₹{(u.anthropic_inr || 0).toFixed(2)}
+                {u.apify_runs > 0 && ` | Apify: ${u.apify_runs} runs · $${(u.apify_usd || 0).toFixed(2)}`}
+              </p>
+            )}
             <div className="space-y-3">
               {feeds.map((f, i) => <ScanFeedBreakdown key={i} f={f} />)}
             </div>
@@ -516,6 +528,7 @@ function AddFeedModal({ onClose, onSuccess }) {
 
   const [feedName, setFeedName] = useState('')
   const [keywords, setKeywords] = useState('')
+  const [keywordUsage, setKeywordUsage] = useState(null)
   const [feedType, setFeedType] = useState('rss')
 
   const [rssBoards, setRssBoards] = useState([])         // [{name, url, url_template}]
@@ -545,6 +558,7 @@ function AddFeedModal({ onClose, onSuccess }) {
       const { data } = await suggestFeed(id)
       setFeedName(data.feed_name)
       setKeywords(data.search_keywords)
+      setKeywordUsage(data.tokens_used ? { tokens: data.tokens_used, cost_inr: data.cost_inr } : null)
       setRssBoards(data.rss_boards || [])
       setBoardIdx(0)
       setUrl(data.rss_boards?.[0]?.url || '')
@@ -649,8 +663,9 @@ function AddFeedModal({ onClose, onSuccess }) {
 
               {/* Editable generated keywords */}
               <div>
-                <label className="text-sm font-medium text-gray-700 block mb-1.5">
+                <label className="text-sm font-medium text-gray-700 block mb-1.5 flex items-center gap-2">
                   Search keywords <span className="text-emerald-600 text-xs font-normal">✨ generated</span>
+                  {keywordUsage && <TokenBadge tokens={keywordUsage.tokens} cost_inr={keywordUsage.cost_inr} />}
                 </label>
                 <input
                   value={keywords}

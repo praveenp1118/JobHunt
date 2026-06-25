@@ -62,6 +62,8 @@ class FeedSuggestion(BaseModel):
     search_keywords: str
     rss_boards: list[BoardOption]
     apify_actors: list[ApifyActorOption]
+    tokens_used: Optional[int] = None
+    cost_inr: Optional[float] = None
 
 
 class ApifyStoreActor(BaseModel):

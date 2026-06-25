@@ -84,11 +84,13 @@ export default function MasterCVTab() {
     setUploading(true)
     setError('')
     try {
-      await uploadMasterCVFile(file)
+      const res = await uploadMasterCVFile(file)
       qc.invalidateQueries({ queryKey: ['master-cv'] })
       qc.invalidateQueries({ queryKey: ['domain-cvs'] })
       setView('show')
       setSuccess('CV uploaded!')
+      const tk = res?.data?.tokens_used
+      toast.success(tk ? `✅ CV saved · ⚡ ${tk < 1000 ? tk : (tk / 1000).toFixed(1) + 'K'} · ₹${(res.data.cost_inr || 0).toFixed(2)}` : '✅ CV saved')
       setTimeout(() => setSuccess(''), 3000)
     } catch (e) {
       setError(e?.response?.data?.detail || e?.message || 'Upload failed')

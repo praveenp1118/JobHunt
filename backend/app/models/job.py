@@ -130,6 +130,9 @@ class Job(Base, TimestampMixin):
     s2: Mapped[Optional[float]] = mapped_column(Float, nullable=True)          # tailored fit
     s3_domain: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # integrity vs domain
     s3_master: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # integrity vs master
+    # V3: S1 scoring cost — only set for individually-parsed jobs (manual/url), not batch scans
+    s1_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    s1_cost_inr: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # V3: fit against ALL active domain CVs at ingestion time
     # {domain_cv_id: score, ...} — lets the UI show which CV fits best before tailoring

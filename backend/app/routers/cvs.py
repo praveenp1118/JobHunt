@@ -86,6 +86,9 @@ async def upload_master_cv(
     Previous version saved to history. Domain CVs flagged stale.
     """
     anthropic_key = await _get_anthropic_key(user, session)
+    from app.utils.usage_logger import set_usage_user, set_usage_entity, get_session_usage
+    set_usage_user(user.id)
+    set_usage_entity("master_cv", None, "Master CV")
 
     # Read and parse file
     file_bytes = await file.read()
@@ -98,9 +101,13 @@ async def upload_master_cv(
     # Convert to clean markdown via Claude
     cv_md = await text_to_markdown_cv(raw_text, anthropic_key)
 
-    return await _save_master_cv(
+    result = await _save_master_cv(
         user, session, cv_md, change_summary or f"Uploaded from {file.filename}"
     )
+    _u = get_session_usage()
+    result.tokens_used = _u["tokens"] or None
+    result.cost_inr = round(_u["cost_inr"], 2) or None
+    return result
 
 
 @router.post("/master/text", response_model=MasterCVRead, status_code=status.HTTP_201_CREATED)

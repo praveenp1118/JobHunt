@@ -15,6 +15,9 @@ class MasterCVRead(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    # Set only when Claude was used (file upload → text_to_markdown_cv)
+    tokens_used: Optional[int] = None
+    cost_inr: Optional[float] = None
 
     class Config:
         from_attributes = True
