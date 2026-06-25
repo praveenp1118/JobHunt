@@ -25,6 +25,15 @@ def normalize_role(role: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def normalize_company(company: str) -> str:
+    """Lowercase, strip punctuation, collapse whitespace — so "Adyen", "adyen" and
+    "Adyen, Inc." collapse to one community bucket. "ADYEN" -> "adyen"."""
+    if not company:
+        return ""
+    s = re.sub(r"[^\w\s]", " ", company.lower())
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def _enum(v):
     return v.value if hasattr(v, "value") else (str(v) if v is not None else None)
 
@@ -51,7 +60,7 @@ async def upsert_community_insights(session, user_id, job, tailored_cv, changelo
     Idempotent per (user, job). Returns the insight id (or None if not enough data)."""
     from app.models.community import CommunityJobInsight, CommunityContribution
 
-    company = (job.company or "").strip()
+    company = normalize_company(job.company or "")
     role_norm = normalize_role(job.role or "")
     if not company or not role_norm:
         return None
@@ -159,7 +168,7 @@ async def get_community_insights(session, company, role, market=None, jd_hash=No
     """Return aggregated insights only if ≥ MIN_CONTRIBUTORS, else None (privacy)."""
     from app.models.community import CommunityJobInsight
 
-    company = (company or "").strip()
+    company = normalize_company(company or "")
     role_norm = normalize_role(role or "")
     insight = None
     if jd_hash:

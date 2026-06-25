@@ -18,16 +18,19 @@ export default function CommunityInsights({ company, role, market, jdHash, compa
   if (compact) {
     return (
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
-        <p className="text-xs font-semibold text-indigo-800 mb-1.5">
-          💡 Community patterns <span className="font-normal text-indigo-500">({d.contributor_count} members)</span>
+        <p className="text-xs font-semibold text-indigo-800 mb-1">
+          💡 {d.contributor_count} member{d.contributor_count === 1 ? '' : 's'} targeted this role
+        </p>
+        <p className="text-[11px] text-gray-600">
+          Avg fit: <strong className="tabular-nums">{d.avg_s1d ?? d.avg_s1 ?? '—'}</strong>
+          {d.best_domain_cv_label ? ` · Top domain CV: ${d.best_domain_cv_label}` : ''}
         </p>
         {keywords.length > 0 && (
-          <p className="text-[11px] text-gray-600">
-            Top keywords:{' '}
-            {keywords.map((k) => `"${k.keyword}"`).join(', ')}
+          <p className="text-[11px] text-gray-500 mt-1">
+            Top keywords: {keywords.map((k) => `"${k.keyword}"`).join(', ')}
           </p>
         )}
-        <p className="text-[11px] text-emerald-600 mt-1.5">⚡ 0 tokens spent</p>
+        <p className="text-[11px] text-emerald-600 mt-1.5">⚡ 0 tokens spent — decide before you tailor</p>
       </div>
     )
   }

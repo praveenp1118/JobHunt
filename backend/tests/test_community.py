@@ -7,7 +7,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
 from app.config import settings
-from app.utils.community import normalize_role, upsert_community_insights, get_community_insights
+from app.utils.community import normalize_role, normalize_company, upsert_community_insights, get_community_insights
 
 OWNER = uuid.UUID("fff12f28-0ee6-41df-85ad-490b1391c716")
 CO = "ZZTestCo"
@@ -46,7 +46,9 @@ async def _mk_user_job(session, s1, s1d):
 
 async def _cleanup(session):
     await session.execute(text("delete from community_contributions"))
-    await session.execute(text("delete from community_job_insights where company = :c"), {"c": CO})
+    # Insights store the normalized company key (e.g. "ZZTestCo" -> "zztestco").
+    await session.execute(text("delete from community_job_insights where company = :c"),
+                          {"c": normalize_company(CO)})
     await session.execute(text("delete from users where email like 'ctest_%'"))
     await session.commit()
 
@@ -55,6 +57,13 @@ async def _cleanup(session):
 def test_normalize_role():
     assert normalize_role("Head of Product - AI/ML") == "head of product ai ml"
     assert normalize_role("  VP, Product  &  Growth ") == "vp product growth"
+
+
+def test_normalize_company():
+    # "Adyen" = "adyen" = "ADYEN" = "Adyen, Inc." collapse to one bucket key.
+    assert normalize_company("Adyen") == "adyen"
+    assert normalize_company("ADYEN") == "adyen"
+    assert normalize_company("  Adyen, Inc. ") == "adyen inc"
 
 
 # ── Aggregation + privacy ──

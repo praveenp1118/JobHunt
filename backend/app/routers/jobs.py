@@ -392,7 +392,7 @@ async def list_jobs(
     # Community availability — one query for all shared insights (≥2 contributors),
     # matched to the page's jobs by company + normalized role.
     from app.models.community import CommunityJobInsight
-    from app.utils.community import normalize_role
+    from app.utils.community import normalize_role, normalize_company
     comm_rows = (await session.execute(
         select(CommunityJobInsight.company, CommunityJobInsight.role_normalized,
                CommunityJobInsight.contributor_count)
@@ -408,7 +408,7 @@ async def list_jobs(
             ids.add(str(j.best_domain_cv_id))
         if ids:
             s.domain_cv_labels = {i: label_map.get(i, "Domain") for i in ids}
-        cc = comm_map.get(((j.company or "").strip(), normalize_role(j.role or "")))
+        cc = comm_map.get((normalize_company(j.company or ""), normalize_role(j.role or "")))
         if cc:
             s.community_available = True
             s.community_contributors = cc

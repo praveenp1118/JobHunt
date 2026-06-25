@@ -4,6 +4,7 @@ import Input from '../../components/ui/Input'
 import Spinner from '../../components/ui/Spinner'
 import { ScorePill } from '../../components/ui/ScorePill'
 import TokenBadge from '../../components/ui/TokenBadge'
+import CommunityInsights from '../../components/community/CommunityInsights'
 import { parseJobFromText, parseJobFromURL, confirmJob } from '../../api/jobs'
 
 export default function AddJobModal({ onClose, onSuccess }) {
@@ -220,6 +221,13 @@ export default function AddJobModal({ onClose, onSuccess }) {
                       </ul>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Community insights — helps decide save/skip before spending tailoring tokens */}
+              {(company && role) && (
+                <div className="mb-5">
+                  <CommunityInsights company={company} role={role} market={market} compact />
                 </div>
               )}
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
@@ -134,6 +134,20 @@ export default function JobsPage() {
   // Backend sorts server-side (before pagination) and returns the page already in
   // order — including the created_at-DESC tiebreaker for equal scores — so render as-is.
   const displayJobs = jobs
+
+  // Deep-link: ?open={id} (Contributions "View →") or ?id={id} (Dashboard HITL/links)
+  // auto-opens that job's detail panel. JobDetail fetches by id, so the job need not be
+  // on the current page. Clear the param so refresh/back doesn't re-trigger.
+  useEffect(() => {
+    const openId = sp.get('open') || sp.get('id')
+    if (openId) {
+      setSelectedJobId(openId)
+      const next = new URLSearchParams(sp)
+      next.delete('open'); next.delete('id')
+      setSp(next, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId)
 
