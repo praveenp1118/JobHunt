@@ -147,6 +147,20 @@ async def get_me(user: User = Depends(current_active_user)):
     return UserRead.model_validate(user)
 
 
+@router.post("/consent")
+async def record_consent(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Record the user's agreement to the Terms of Service + Privacy Policy (GDPR).
+    Idempotent — only stamps `gdpr_consent_at` the first time."""
+    from datetime import datetime, timezone
+    if not user.gdpr_consent_at:
+        user.gdpr_consent_at = datetime.now(timezone.utc)
+        await session.commit()
+    return {"gdpr_consent_at": user.gdpr_consent_at}
+
+
 # ── Update profile ────────────────────────────────────────────────────────────
 @router.patch("/me/profile", response_model=UserRead)
 async def update_profile(

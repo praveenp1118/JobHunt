@@ -1,25 +1,35 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import AuthLayout from '../../components/layout/AuthLayout'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import useAuthStore from '../../store/auth'
 import { register, login } from '../../api/auth'
+import { getLegalUrls, recordConsent } from '../../api/legal'
 
 export default function Register() {
   const navigate = useNavigate()
-  const { login: storeLogin } = useAuthStore()
+  const { login: storeLogin, updateUser } = useAuthStore()
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const { data: legalData } = useQuery({ queryKey: ['legal-urls'], queryFn: getLegalUrls, staleTime: Infinity, retry: false })
+  const legal = legalData?.data || {}
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (password.length < 8) {
       setError('Password must be at least 8 characters')
+      return
+    }
+    if (!agreed) {
+      setError('Please agree to the Terms of Service and Privacy Policy')
       return
     }
 
@@ -31,6 +41,7 @@ export default function Register() {
       // Auto-login after register
       const { data } = await login(email, password)
       storeLogin(data.user, data.access_token)
+      try { const c = await recordConsent(); updateUser({ gdpr_consent_at: c.data.gdpr_consent_at }) } catch (_) {}
       navigate('/onboarding')
     } catch (err) {
       setError(
@@ -72,13 +83,23 @@ export default function Register() {
           required
         />
 
+        <label className="flex items-start gap-2 text-sm text-gray-600">
+          <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)}
+            className="mt-0.5 w-4 h-4 rounded accent-emerald-500" />
+          <span>
+            I agree to the{' '}
+            <a href={legal.terms_url} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">Terms of Service</a> and{' '}
+            <a href={legal.privacy_url} target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">Privacy Policy</a>.
+          </span>
+        </label>
+
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
             {error}
           </div>
         )}
 
-        <Button type="submit" fullWidth loading={loading} size="lg">
+        <Button type="submit" fullWidth loading={loading} size="lg" disabled={!agreed}>
           Create account
         </Button>
       </form>

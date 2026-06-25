@@ -75,6 +75,9 @@ class User(SQLAlchemyBaseUserTableUUID, Base, TimestampMixin):
     subscription_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     subscription_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
+    # GDPR / terms consent (null = not yet consented → one-time banner on login)
+    gdpr_consent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Relationships
     credentials: Mapped[Optional["UserCredentials"]] = relationship(
         back_populates="user", uselist=False, cascade="all, delete-orphan"

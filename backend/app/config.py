@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     stripe_pro_price_id: str = ""
     stripe_webhook_secret: str = ""
 
+    # ── Legal pages (GitHub Pages, served from /docs) ─────────────────────────
+    privacy_policy_url: str = "https://praveenp1118.github.io/JobHunt/privacy.html"
+    terms_url: str = "https://praveenp1118.github.io/JobHunt/terms.html"
+    cookies_url: str = "https://praveenp1118.github.io/JobHunt/cookies.html"
+
     # ── Scoring thresholds ────────────────────────────────────────────────────
     s1_min_threshold: int = 65
     s3_block_threshold: int = 85

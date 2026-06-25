@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import AuthLayout from '../../components/layout/AuthLayout'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import useAuthStore from '../../store/auth'
 import { login } from '../../api/auth'
 import { getMasterCV } from '../../api/cvs'
+import { getLegalUrls } from '../../api/legal'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -16,6 +18,9 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const { data: legalData } = useQuery({ queryKey: ['legal-urls'], queryFn: getLegalUrls, staleTime: Infinity, retry: false })
+  const legal = legalData?.data || {}
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -130,6 +135,14 @@ export default function Login() {
           Sign up
         </Link>
       </p>
+
+      <nav className="flex items-center justify-center gap-3 mt-6 text-xs text-gray-400">
+        <a href={legal.privacy_url} target="_blank" rel="noreferrer" className="hover:text-emerald-600">Privacy Policy</a>
+        <span>·</span>
+        <a href={legal.terms_url} target="_blank" rel="noreferrer" className="hover:text-emerald-600">Terms</a>
+        <span>·</span>
+        <a href={legal.cookies_url} target="_blank" rel="noreferrer" className="hover:text-emerald-600">Cookies</a>
+      </nav>
     </AuthLayout>
   )
 }

@@ -187,6 +187,16 @@ async def settings_mode(
         "notification_email": notification_email,
     }
 
+
+@app.get("/api/settings/legal-urls")
+async def legal_urls():
+    """Public — the hosted Privacy / Terms / Cookies page URLs (for footer + auth pages)."""
+    return {
+        "privacy_url": settings.privacy_policy_url,
+        "terms_url": settings.terms_url,
+        "cookies_url": settings.cookies_url,
+    }
+
 # ── Admin stats endpoint ──────────────────────────────────────────────────────
 @app.get("/api/admin/stats")
 async def admin_stats(

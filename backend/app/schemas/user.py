@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Optional
 from fastapi_users import schemas
 from pydantic import BaseModel, EmailStr
@@ -16,6 +17,7 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     salary_expectation: Optional[str] = None
     role: UserRole = UserRole.user
     plan: UserPlan = UserPlan.default
+    gdpr_consent_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

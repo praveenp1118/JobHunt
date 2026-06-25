@@ -206,7 +206,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_community → v3_career_insights → v3_cv_template
+│   │   └── versions/        # chain tip: … → v3_career_insights → v3_cv_template → v3_gdpr_consent
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -494,6 +494,7 @@ S3 = factual integrity % — computed after Apply
 
 ### Settings (`/api/settings/`)
 - `GET /mode` — send-mode visibility → `{mode: "test"|"production", notification_email}` (where an outgoing application email will actually go; surfaced as a banner in the Tailor Email Draft tab)
+- `GET /legal-urls` — **public, no auth** → `{privacy_url, terms_url, cookies_url}` (from `config.py`; drives the AppLayout footer + auth-page links). **Legal pages** are static HTML in `/docs` (`privacy.html`/`terms.html`/`cookies.html`, styled like index.html) → served at `https://praveenp1118.github.io/JobHunt/privacy.html` etc. (**Pages serves from `/docs`, so the URL has NO `/docs/` segment**). `POST /auth/consent` stamps `users.gdpr_consent_at` (idempotent); set on register (required checkbox) and via a one-time **GDPR banner** in AppLayout for existing users with `gdpr_consent_at = NULL`. `UserRead` exposes `gdpr_consent_at`. Migration `v3_gdpr_consent`.
 
 ### Chat (`/api/chat/`) — V3, support chat (**rule-based FAQ, NO Claude/AI**)
 - `POST /conversations` — optional auth (guests). `{guest_name?, guest_email?, first_message}` →
@@ -1024,7 +1025,13 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **CV Template system** (My CVs → **Template tab**): one global `CVTemplate`
+*Last updated: June 26, 2026 — **Legal pages + GDPR consent**: static **Privacy / Terms / Cookies** HTML in
+`/docs` (styled like index.html, cross-linked, served at `…/JobHunt/privacy.html` — Pages serves from `/docs`
+so **no `/docs/` in the URL**, contrary to the original spec); `config.py` + `.env.example` hold the 3 URLs;
+**`GET /api/settings/legal-urls`** (public) drives the **AppLayout footer** + Login/Register links; **Register**
+has a required "I agree to Terms + Privacy" checkbox; **`users.gdpr_consent_at`** (migration `v3_gdpr_consent`,
+exposed on `UserRead`) + **`POST /api/auth/consent`** → a one-time **GDPR banner** in AppLayout for existing
+users (NULL consent), and consent auto-recorded on register. 67 tests. **CV Template system** (My CVs → **Template tab**): one global `CVTemplate`
 per user + per-domain overrides, two rule sets — **aesthetic** (font/size/heading/margins/line-spacing/bullets/
 accent → deterministic **PDF styles** via `cv_md_to_pdf(pdf_styles)` CSS-override block on master/domain/tailored)
 and **content** (never-modify sections / section order / `max_words`=pages×300 → injected into the **tailor
