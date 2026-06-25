@@ -6,6 +6,7 @@ import {
   getCareerAnalysis, triggerAnalysis, saveAnswer, getAnswers,
   updateRoadmapItem, getCommunityCareer, shareInsights,
 } from '../../api/career'
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip } from 'recharts'
 import TokenBadge from '../../components/ui/TokenBadge'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
@@ -131,10 +132,25 @@ function Section({ title, children }) {
 
 function ReadinessTab({ a, navigate }) {
   const scores = a.scores || {}
+  const radarData = SCORE_LABELS.map(([k, label]) => ({ axis: label, score: scores[k] ?? 0 }))
   return (
     <div>
       <Section title="Overall readiness">
         <p className="text-4xl font-bold text-gray-900">{a.readiness_score ?? '—'}<span className="text-lg text-gray-400">%</span></p>
+
+        {/* Radar across the 5 dimensions */}
+        <div className="mt-4">
+          <ResponsiveContainer width="100%" height={300}>
+            <RadarChart data={radarData} outerRadius="72%">
+              <PolarGrid />
+              <PolarAngleAxis dataKey="axis" tick={{ fontSize: 12, fill: '#64748b' }} />
+              <Radar dataKey="score" stroke="#10b981" fill="#10b981" fillOpacity={0.3} />
+              <Tooltip formatter={(v) => [`${v}%`, 'Score']} />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Summary bars below the radar */}
         <div className="mt-3 space-y-2">
           {SCORE_LABELS.map(([k, label]) => (
             <div key={k} className="flex items-center gap-2">

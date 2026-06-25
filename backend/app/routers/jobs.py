@@ -10,6 +10,7 @@ import json
 import hashlib
 from typing import Optional, List
 from datetime import datetime, timezone
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_
@@ -307,6 +308,7 @@ async def list_jobs(
     min_s1: Optional[float] = None,
     score: Optional[float] = None,   # min effective score (coalesce s1d, s1)
     domain: Optional[str] = None,    # best_domain_cv_id
+    hide_partial: bool = True,       # hide partial-JD (LinkedIn-gated, unscored) jobs by default
     search: Optional[str] = None,
     sort: Optional[str] = None,       # best_fit | s1 | company | role | market | status | source | created_at
     order: str = "desc",             # asc | desc
@@ -342,6 +344,8 @@ async def list_jobs(
             filters.append(Job.best_domain_cv_id == uuid.UUID(domain))
         except (ValueError, TypeError):
             pass
+    if hide_partial:
+        filters.append(or_(Job.has_partial_jd == False, Job.has_partial_jd.is_(None)))
     if search:
         filters.append(or_(
             Job.company.ilike(f"%{search}%"),
@@ -514,10 +518,16 @@ async def get_job_stats(
         select(func.count(Job.id)).where(Job.user_id == user.id, Job.needs_hitl == True)
     )).scalar() or 0
 
+    # Partial-JD count (LinkedIn-gated, unscored — hidden from the tracker by default)
+    partial_count = (await session.execute(
+        select(func.count(Job.id)).where(Job.user_id == user.id, Job.has_partial_jd == True)
+    )).scalar() or 0
+
     return {
         "total": total,
         "by_status": {s.value: counts.get(s, 0) for s in JobStatus},
         "needs_hitl": needs_hitl,
+        "partial_count": partial_count,
         "from_scan": from_scan,
         "by_source": by_source,
         "by_domain_cv": by_domain_cv,
@@ -659,6 +669,36 @@ async def fetch_full_jd(
     from app.tasks.gmail_tasks import fetch_partial_jd
     fetch_partial_jd.delay(str(job_id), str(user.id))
     return {"status": "queued"}
+
+
+class AddFullJDBody(BaseModel):
+    jd_text: str
+
+
+@router.post("/{job_id}/add-full-jd")
+async def add_full_jd(
+    job_id: uuid.UUID,
+    body: AddFullJDBody,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """User pastes the full JD (read on LinkedIn/etc) for a partial-JD job. Saves it,
+    clears has_partial_jd, and queues background S1 + S1d scoring."""
+    job = (await session.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == user.id)
+    )).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    text = (body.jd_text or "").strip()
+    if len(text) < 100:
+        raise HTTPException(status_code=400, detail="Please paste the full job description (at least 100 characters)")
+    job.jd_raw = text[:50000]
+    job.jd_md = text[:50000]
+    job.has_partial_jd = False
+    await session.commit()
+    from app.tasks.gmail_tasks import score_pasted_jd
+    score_pasted_jd.delay(str(job_id), str(user.id))
+    return {"queued": True}
 
 
 @router.post("/{job_id}/score-s1")

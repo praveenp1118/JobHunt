@@ -77,8 +77,12 @@ async def test_partial_jd_flag_exposed_via_api(client, user_creds):
     finally:
         await engine.dispose()
 
-    r = await client.get("/api/jobs?limit=50", headers=user_creds["headers"])
+    # hide_partial defaults ON, so partial jobs are hidden unless explicitly requested.
+    r = await client.get("/api/jobs?limit=50&hide_partial=false", headers=user_creds["headers"])
     assert r.status_code == 200
     job = next((j for j in r.json()["jobs"] if j["id"] == str(job_id)), None)
     assert job is not None and job["has_partial_jd"] is True
+    # and it is hidden by default
+    r2 = await client.get("/api/jobs?limit=50", headers=user_creds["headers"])
+    assert not any(j["id"] == str(job_id) for j in r2.json()["jobs"])
     # cleanup via user_creds teardown (jobs.user_id ON DELETE CASCADE)

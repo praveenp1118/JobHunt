@@ -25,6 +25,10 @@ export const updateJobStatus = (id, status, notes) =>
 export const fetchJobJd = (id) =>
   client.post(`/jobs/${id}/fetch-jd`)
 
+// User pastes the full JD (read on LinkedIn/etc) → save + queue S1/S1d scoring.
+export const addFullJd = (id, jd_text) =>
+  client.post(`/jobs/${id}/add-full-jd`, { jd_text })
+
 export const updateJob = (id, data) =>
   client.patch(`/jobs/${id}`, data)
 

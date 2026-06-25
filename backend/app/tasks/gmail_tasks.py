@@ -243,3 +243,52 @@ async def _fetch_partial_jd_async(job_id: str, user_id: str):
         result = await fetch_and_rescore_partial_job(uuid.UUID(job_id), user, session, anthropic_key, model)
         print(f"🔁 fetch_partial_jd {job_id}: {result.get('status')}")
         return result
+
+
+@celery_app.task(name="tasks.score_pasted_jd", bind=True, max_retries=1)
+def score_pasted_jd(self, job_id: str, user_id: str):
+    """Background S1 + S1d scoring of a partial-JD job from user-pasted JD text
+    (already saved to job.jd_raw by POST /jobs/{id}/add-full-jd)."""
+    import asyncio
+    from app.database import engine
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(_score_pasted_jd_async(job_id, user_id))
+    finally:
+        loop.run_until_complete(engine.dispose())
+        loop.close()
+
+
+async def _score_pasted_jd_async(job_id: str, user_id: str):
+    import uuid
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from app.models.user import User, UserCredentials, UserPreferences
+    from app.utils.encryption import decrypt_if_present
+    from app.agents.gmail_alert_agent import rescore_partial_job_from_text
+    from app.config import settings
+
+    async with AsyncSessionLocal() as session:
+        user = (await session.execute(
+            select(User).where(User.id == uuid.UUID(user_id))
+        )).scalar_one_or_none()
+        if not user:
+            return {"status": "user_not_found"}
+        creds = (await session.execute(
+            select(UserCredentials).where(UserCredentials.user_id == user.id)
+        )).scalar_one_or_none()
+        anthropic_key = (
+            (decrypt_if_present(creds.anthropic_api_key_enc) if creds and creds.anthropic_api_key_enc else None)
+            or settings.platform_anthropic_api_key or settings.anthropic_api_key
+        )
+        prefs = (await session.execute(
+            select(UserPreferences).where(UserPreferences.user_id == user.id)
+        )).scalar_one_or_none()
+        model = (prefs.preferred_model if prefs and getattr(prefs, "preferred_model", None)
+                 else settings.anthropic_model)
+        from app.utils.usage_logger import set_usage_user
+        set_usage_user(user.id)
+        result = await rescore_partial_job_from_text(uuid.UUID(job_id), user, session, anthropic_key, model)
+        print(f"📝 score_pasted_jd {job_id}: {result.get('status')}")
+        return result

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow, format } from 'date-fns'
-import { getJob, getJobEmails, updateJobStatus, updateJob, deleteJob, draftFollowUp, fetchJobJd } from '../../api/jobs'
+import { getJob, getJobEmails, updateJobStatus, updateJob, deleteJob, draftFollowUp, fetchJobJd, addFullJd } from '../../api/jobs'
 import { sendReply } from '../../api/jobs'
 import { toast } from '../../store/toast'
 import { StatusBadge, MarketBadge } from '../../components/ui/Badge'
@@ -27,6 +27,8 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
   const [followUpDraft, setFollowUpDraft] = useState('')
   const [loadingFollowUp, setLoadingFollowUp] = useState(false)
   const [fetchingJd, setFetchingJd] = useState(false)
+  const [pastedJd, setPastedJd] = useState('')
+  const [savingJd, setSavingJd] = useState(false)
 
   const { data: jobData, isLoading } = useQuery({
     queryKey: ['job', jobId],
@@ -82,6 +84,30 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Could not fetch the full JD')
       setFetchingJd(false)
+    }
+  }
+
+  const handleAddFullJd = async () => {
+    if (pastedJd.trim().length < 100) {
+      toast.error('Please paste the full job description (at least 100 characters)')
+      return
+    }
+    setSavingJd(true)
+    try {
+      await addFullJd(jobId, pastedJd.trim())
+      toast.success('JD saved — scoring in the background (B/Best Fit will update shortly)')
+      setPastedJd('')
+      ;[6000, 14000, 24000].forEach((ms) =>
+        setTimeout(() => {
+          qc.invalidateQueries({ queryKey: ['job', jobId] })
+          qc.invalidateQueries({ queryKey: ['jobs'] })
+          onUpdate?.()
+        }, ms)
+      )
+      setTimeout(() => setSavingJd(false), 25000)
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Could not save the JD')
+      setSavingJd(false)
     }
   }
 
@@ -158,9 +184,11 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
         <div className="flex items-center justify-between mt-3">
           <ThreeScores s1={job.s1} s2={job.s2} s3Master={job.s3_master} />
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => onTailor?.(jobId)}>
-              Tailor →
-            </Button>
+            <span title={job.has_partial_jd ? 'Tailoring requires the full JD — add it in the JD tab first' : undefined}>
+              <Button size="sm" disabled={job.has_partial_jd} onClick={() => onTailor?.(jobId)}>
+                Tailor →
+              </Button>
+            </span>
             <Button size="sm" variant="secondary" onClick={handleDraftFollowUp} loading={loadingFollowUp}>
               Follow up
             </Button>
@@ -385,11 +413,31 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
                 </a>
               ) : null
 
+              const pasteBlock = (
+                <div className="mt-3">
+                  <label className="text-xs font-medium text-gray-600">Paste the full JD here</label>
+                  <textarea
+                    value={pastedJd}
+                    onChange={(e) => setPastedJd(e.target.value)}
+                    placeholder="Open the posting, copy the full job description, and paste it here. We'll score it (S1 + best domain fit) in the background."
+                    rows={5}
+                    className="mt-1 w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-emerald-400 resize-y"
+                  />
+                  <Button size="sm" loading={savingJd} disabled={pastedJd.trim().length < 100}
+                    onClick={handleAddFullJd} className="mt-2">
+                    Save JD + score →
+                  </Button>
+                </div>
+              )
+
               if (!jd && job.portal_url) {
                 return (
-                  <div className="text-center py-8">
-                    <p className="text-sm text-gray-400 mb-2">Full JD not stored — view on company site</p>
-                    {portalLink}
+                  <div className="py-4">
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-3">
+                      <p className="text-sm text-amber-700 mb-1">⚠️ Partial JD — scores unavailable. Read the full JD first.</p>
+                      {portalLink}
+                      {pasteBlock}
+                    </div>
                   </div>
                 )
               }
@@ -403,14 +451,15 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
                       <div className="flex items-start gap-2">
                         <span className="text-amber-500 text-sm leading-none mt-0.5">⚠️</span>
                         <p className="text-xs text-amber-700">
-                          Partial description — only the alert-email snippet was saved (unscored). {portalLink}
+                          <strong>Partial JD — scores unavailable.</strong> Read the full JD first. {portalLink}
                         </p>
                       </div>
                       {job.portal_url && (
-                        <Button size="sm" loading={fetchingJd} onClick={handleFetchJd} className="mt-2">
-                          ↻ Fetch full JD + score
+                        <Button size="sm" variant="secondary" loading={fetchingJd} onClick={handleFetchJd} className="mt-2">
+                          ↻ Try auto-fetch + score
                         </Button>
                       )}
+                      {pasteBlock}
                     </div>
                   )}
                   <div className={`text-sm text-gray-700 whitespace-pre-wrap leading-relaxed ${!jdExpanded ? 'line-clamp-20' : ''}`}>

@@ -59,6 +59,10 @@ def _is_gated_domain(url: str) -> bool:
     return any(d in u for d in GATED_DOMAINS)
 
 
+def _is_linkedin_url(url: str) -> bool:
+    return "linkedin.com" in (url or "").lower()
+
+
 async def extract_job_links(body_html: str, max_links: int = 10) -> list:
     """Pull job-looking careers links from an email HTML body (KEEP-list filter,
     SKIP-list exclusions, deduped, capped at max_links)."""
@@ -297,6 +301,18 @@ async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
             detected_domain_cv_id=None,
         ))
         saved_ids.append(str(new_id))
+        # Auto-queue a background fetch+score ONLY for non-LinkedIn (public ATS) URLs —
+        # LinkedIn needs a login, so fetching it just hits a sign-in wall. The countdown
+        # gives the caller time to commit the new job before the worker picks it up.
+        if _is_linkedin_url(url):
+            print(f"⏭️  Skipped auto-fetch — LinkedIn gated: {title}")
+        else:
+            try:
+                from app.tasks.gmail_tasks import fetch_partial_jd
+                fetch_partial_jd.apply_async(args=[str(new_id), str(user.id)], countdown=15)
+                print(f"🔁 Queued auto-fetch for public URL: {url}")
+            except Exception as e:
+                print(f"⚠️ could not queue auto-fetch for {url}: {e}")
         results.append({"url": url, "reason": "saved_unscored", "role": title,
                         "company": company, "gated": True, "partial_jd": True})
     return {"saved_ids": saved_ids, "results": results}
@@ -529,6 +545,56 @@ async def fetch_and_rescore_partial_job(job_id, user, session, anthropic_key, mo
 
     job.jd_raw = content[:50000]
     job.jd_md = content[:50000]
+    job.s1 = s1
+    job.s1d = best_s1d
+    job.domain_cv_scores = (dscores or None)
+    job.best_domain_cv_id = (uuid_module.UUID(best_id) if best_id else None)
+    if best_id:
+        job.detected_domain_cv_id = uuid_module.UUID(best_id)
+    if parsed.get("market"):
+        job.market = parsed.get("market")
+    job.has_partial_jd = False
+    await session.commit()
+    return {"status": "scored", "s1": s1, "s1d": best_s1d,
+            "best_domain_cv_id": best_id, "job_id": str(job_id)}
+
+
+async def rescore_partial_job_from_text(job_id, user, session, anthropic_key, model=None) -> dict:
+    """Score a partial-JD job from the JD text the user pasted (already saved to job.jd_raw —
+    no fetch, no login wall). Computes S1 (master CV) + S1d (all active domain CVs) +
+    best_domain_cv_id and clears has_partial_jd. Returns {"status": "scored"|...}."""
+    from app.agents.jd_agents import parse_and_score_jd
+    from app.models.job import Job
+    from app.models.cv import MasterCV
+
+    job = (await session.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == user.id)
+    )).scalar_one_or_none()
+    if not job:
+        return {"status": "not_found"}
+    content = (job.jd_raw or "").strip()
+    if len(content) < 100:
+        return {"status": "too_short", "message": "Pasted JD is too short to score"}
+
+    master = (await session.execute(
+        select(MasterCV).where(MasterCV.user_id == user.id, MasterCV.is_active == True)
+    )).scalars().first()
+    master_cv_md = master.content_md if master else ""
+
+    result = await parse_and_score_jd(content, master_cv_md, anthropic_key, model=model)
+    s1 = result.get("s1_score", 0) or 0
+    parsed = result.get("parsed", {})
+
+    domain_cv_list = await _load_domain_cvs_full(session, user.id)
+    job_input = [{"id": "j",
+                  "role": job.role or parsed.get("role") or "",
+                  "company": job.company or parsed.get("company") or "",
+                  "location": job.location or parsed.get("location") or "",
+                  "description": content[:500]}]
+    dscores = (await _score_jobs_vs_domain_cvs(
+        job_input, domain_cv_list, anthropic_key, model)).get("j", {})
+    best_id, best_s1d = _best_domain(dscores)
+
     job.s1 = s1
     job.s1d = best_s1d
     job.domain_cv_scores = (dscores or None)

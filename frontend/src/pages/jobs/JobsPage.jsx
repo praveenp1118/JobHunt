@@ -72,6 +72,7 @@ export default function JobsPage() {
   const scoreFilter = sp.get('score')
   const domainFilter = sp.get('domain')
   const needsHitl = sp.get('hitl') === '1'
+  const hidePartial = sp.get('hide_partial') !== 'false'  // default ON (hide partial-JD jobs)
   const [sortKey, sortDir] = sp.get('sort') ? sp.get('sort').split(':') : [null, null]
 
   const patchSp = (updates) => {
@@ -99,6 +100,7 @@ export default function JobsPage() {
     ...(search && { search }),
     ...(needsHitl && { needs_hitl: true }),
     ...(sortKey && { sort: sortKey, order: sortDir }),
+    hide_partial: hidePartial,
   }
 
   const { data, isLoading } = useQuery({
@@ -259,6 +261,19 @@ export default function JobsPage() {
                 </select>
               </FilterGroup>
             )}
+            <FilterGroup label="Partial">
+              <button
+                onClick={() => patchSp({ hide_partial: hidePartial ? 'false' : null })}
+                title="Partial-JD jobs (LinkedIn-gated) are unscored until you add the full JD"
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  hidePartial
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}
+              >
+                {hidePartial ? 'Hide partial ✓' : `Show partial (${stats.partial_count ?? 0})`}
+              </button>
+            </FilterGroup>
           </div>
         </div>
 
@@ -307,7 +322,9 @@ export default function JobsPage() {
                     onClick={() => setSelectedJobId(job.id === selectedJobId ? null : job.id)}
                     className={`cursor-pointer transition-colors hover:bg-gray-50 ${
                       job.id === selectedJobId ? 'bg-emerald-50' : ''
-                    } ${job.needs_hitl ? 'border-l-2 border-l-red-400' : ''}`}
+                    } ${job.needs_hitl ? 'border-l-2 border-l-red-400' : ''} ${
+                      job.has_partial_jd ? 'opacity-75' : ''
+                    }`}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -336,12 +353,14 @@ export default function JobsPage() {
                       {job.market ? <MarketBadge market={job.market} /> : <span className="text-gray-300 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-col items-center gap-1">
+                      <div className="flex flex-col items-center gap-1"
+                        title={job.has_partial_jd ? 'Score unavailable — LinkedIn requires login. Click View → to read the job description.' : undefined}>
                         <ScorePill score={job.s1} />
                         {job.s1_tokens != null && <TokenBadge tokens={job.s1_tokens} cost_inr={job.s1_cost_inr} />}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3"
+                      title={job.has_partial_jd ? 'Score unavailable — LinkedIn requires login. Click View → to read the job description.' : undefined}>
                       <BestFitCell job={job} />
                     </td>
                     <td className="px-4 py-3">
@@ -360,12 +379,27 @@ export default function JobsPage() {
                       {job.created_at ? formatDistanceToNow(new Date(job.created_at), { addSuffix: true }) : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); navigate(`/jobs/${job.id}/tailor`) }}
-                        className="text-xs text-emerald-600 hover:text-emerald-700 font-medium px-2 py-1 rounded hover:bg-emerald-50 transition-colors whitespace-nowrap"
-                      >
-                        Tailor →
-                      </button>
+                      {job.has_partial_jd ? (
+                        job.portal_url ? (
+                          <a
+                            href={job.portal_url} target="_blank" rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            title="Open the job posting to read the full description"
+                            className="text-xs text-amber-600 hover:text-amber-700 font-medium px-2 py-1 rounded hover:bg-amber-50 transition-colors whitespace-nowrap"
+                          >
+                            View →
+                          </a>
+                        ) : (
+                          <span title="No portal URL available" className="text-xs text-gray-300 px-2 py-1 whitespace-nowrap">No link</span>
+                        )
+                      ) : (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); navigate(`/jobs/${job.id}/tailor`) }}
+                          className="text-xs text-emerald-600 hover:text-emerald-700 font-medium px-2 py-1 rounded hover:bg-emerald-50 transition-colors whitespace-nowrap"
+                        >
+                          Tailor →
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

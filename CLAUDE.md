@@ -412,19 +412,24 @@ S3 = factual integrity % — computed after Apply
 - `GET /` — params: `status`, `source`, `market`, `needs_hitl`, **`score`** (min effective score =
   `coalesce(s1d, s1)`), **`domain`** (best_domain_cv_id), `search`, **`sort`** (`best_fit`→`s1d` |
   `s1` | `company` | `role` | `market` | `status` | `source` | `created_at`), **`order`** (`asc`|`desc`),
-  `skip`, `limit`. **Returns an object** `{jobs: [...], total_count, unfiltered_count}` — `total_count`
+  **`hide_partial`** (default **true** — hides partial-JD/LinkedIn-gated unscored jobs;
+  `has_partial_jd=false OR NULL`), `skip`, `limit`. **Returns an object** `{jobs: [...], total_count, unfiltered_count}` — `total_count`
   matches the current filters, `unfiltered_count` is all of the user's jobs. (All filters **and the sort**
   are server-side so counts stay accurate and the correct rows surface beyond the page limit. Score sorts
   push NULLs last; every non-date sort tiebreaks on `created_at DESC`.)
 - `GET /stats` — pipeline counts + analytics: `total`, `by_status`, **`needs_hitl`** (boolean-flag
   count, fixed), `by_source`, `by_domain_cv` (by detected feed CV), **`by_best_domain`** (by
   best_domain_cv_id — drives the Domain filter dropdown counts), **`by_score_bucket`**
-  (`{any, gte_70, gte_80, gte_90}` on `coalesce(s1d, s1)`), `score_distribution`, `avg_s1`
+  (`{any, gte_70, gte_80, gte_90}` on `coalesce(s1d, s1)`), `score_distribution`, `avg_s1`,
+  **`partial_count`** (jobs with `has_partial_jd=True` — drives the "Show partial (N)" toggle)
 - `POST /parse/text`, `POST /parse/url`
 - `POST /confirm/{temp_id}`
 - `GET /{id}`, `PATCH /{id}/status`, `GET /{id}/emails`
 - `POST /{id}/fetch-jd` — V3: queue a background fetch of the full JD (from `portal_url`) +
   re-score for a partial-JD job → `{status: "queued"}` (Celery `tasks.fetch_partial_jd`)
+- `POST /{id}/add-full-jd` — V3: user pastes the full JD (read on LinkedIn) → saves `jd_raw`,
+  sets `has_partial_jd=False`, queues S1+S1d scoring → `{queued: true}` (Celery `tasks.score_pasted_jd`
+  → `rescore_partial_job_from_text`, scores from the pasted text, no fetch)
 
 ### Tailor (`/api/tailor/`)
 - `POST /generate`, `GET /{id}/changelog`
@@ -985,7 +990,17 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Docs refresh** (README + GitHub Pages `/docs` fully updated; all features
+*Last updated: June 26, 2026 — **Partial-JD UX + radar + non-LinkedIn auto-fetch**: Jobs Tracker now
+**hides partial-JD (LinkedIn-gated, unscored) jobs by default** (`GET /jobs?hide_partial=true`; `partial_count`
+in stats; "Hide partial ✓ / Show partial (N)" toggle persisted in the URL). Shown partial rows render at 75%
+opacity with a **View →** (opens `portal_url`) instead of Tailor, and a tooltip on the "—" score cells. JobDetail
+gets an amber "⚠️ Partial JD — scores unavailable" banner, **Open job posting**, and a **Paste full JD** textarea →
+**`POST /jobs/{id}/add-full-jd`** (saves `jd_raw`, clears `has_partial_jd`, queues `tasks.score_pasted_jd` →
+`rescore_partial_job_from_text` = S1+S1d from the pasted text, no fetch); Tailor is **disabled** until the full JD
+is added. **Career Insights Readiness tab** now shows a **recharts RadarChart** (5 axes) above the summary bars.
+**Auto-fetch:** `_save_gated_cards` now **queues `fetch_partial_jd` (countdown 15s) for non-LinkedIn (public ATS)
+gated URLs only** — LinkedIn is skipped (login wall). Live-verified (hide/show, add-full-jd 200 → flag flips + JD
+saved + worker picks up `score_pasted_jd`). 61 tests. **Docs refresh** (README + GitHub Pages `/docs` fully updated; all features
 documented in `/docs`): new feature cards/sections for Career Insights / API Usage / Support Chat / Stripe /
 Community across index.html, features.md, architecture.md, api.md; hero stats band (61 tests · 40+ endpoints ·
 7-tab career · 12 token-badge spots); **architecture.md now has the 4 pipeline flows** (Scoring / Gmail Alert /
