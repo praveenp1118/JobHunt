@@ -985,9 +985,12 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Docs refresh** (README + GitHub Pages `/docs`: new feature cards/sections
-for Career Insights / API Usage / Support Chat / Stripe / Community across index.html, features.md,
-architecture.md, api.md; hero stats band: 61 tests · 40+ endpoints · 7-tab career · 12 token-badge spots) +
+*Last updated: June 26, 2026 — **Docs refresh** (README + GitHub Pages `/docs` fully updated; all features
+documented in `/docs`): new feature cards/sections for Career Insights / API Usage / Support Chat / Stripe /
+Community across index.html, features.md, architecture.md, api.md; hero stats band (61 tests · 40+ endpoints ·
+7-tab career · 12 token-badge spots); **architecture.md now has the 4 pipeline flows** (Scoring / Gmail Alert /
+Career Insights / Token Visibility) + the **full Alembic migration chain** (base → … → v3_career_insights head);
+api.md has all endpoint groups (career/usage/community/billing/chat) +
 **Gmail alert non-PM filter fix** (`_save_gated_cards` now applies `SKIP_WORDS`; expanded the list; confirmed
 the fetch task + score filter are not bugs — all 56 alert jobs are LinkedIn login-gated). **Career Insights**
 (`/career`, "Career Insights ✨" nav between Activity &

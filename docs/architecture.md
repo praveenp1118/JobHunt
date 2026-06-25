@@ -106,6 +106,104 @@ Send application  ──▶  Gmail SMTP (test mode redirects to a notification a
 Track  ──▶  status lifecycle + recruiter thread + follow-up drafting
 ```
 
+### Scoring pipeline
+
+```
+JD ingested
+   │
+   ▼
+S1  (master CV vs JD)
+   │
+   ▼
+keyword pre-filter  (rule-based, zero-cost — drops clearly non-product roles)
+   │
+   ▼
+S1d  (scored against ALL active domain CVs)  ──▶  best_domain_cv_id = highest
+   │
+   ▼
+threshold gate  (decision = s1d if domain CVs exist else s1; save if ≥ s1_min_threshold)
+   │
+   ▼
+saved to tracker
+   │
+   ▼
+S2  (tailored CV vs JD, after tailoring)
+   │
+   ▼
+S3  (factual-integrity check — % traceable to the master CV; hard send-gate)
+```
+
+### Gmail alert pipeline
+
+```
+hourly IMAP poll
+   │
+   ▼
+classify  (rule-based, no AI)  ──▶  job_alert detected
+   │
+   ▼
+extract links from the HTML body (cap raised to 200 KB)
+   ├── LinkedIn / gated  ──▶  parse job cards from the email body (no fetch — login wall)
+   │                            └─ SKIP_WORDS title filter → saved unscored, has_partial_jd=True
+   └── public ATS URLs   ──▶  Playwright title pre-filter → fetch → JD parse → multi-domain score
+                                └─ save if S1d ≥ threshold
+   │
+   ▼
+partial-JD jobs: optional background fetch_and_rescore_partial_job (manual button → Celery)
+```
+
+### Career Insights pipeline
+
+```
+user triggers analysis  (explicit — never auto-charges)
+   │
+   ▼
+fetch all the user's JDs (limit 50) + master CV + question answers
+   │
+   ▼
+ONE batch Claude call (analyse_career_gaps, max_tokens 8000)
+   │
+   ▼
+structured gap-analysis JSON  ──▶  save to career_analysis (readiness + per-axis scores)
+   │
+   ▼
+generate career_roadmap_items  +  cache for 7 days (expires_at)
+   │
+   ▼
+community insights  (anonymised, opt-in, surfaced at ≥2 contributors)
+```
+
+### Token visibility
+
+```
+every Claude call
+   │
+   ▼
+log_anthropic_usage()  ──▶  api_usage_logs  (one row per call)
+   │                          (contextvar set at the request boundary attributes the session/user)
+   ▼
+per-call cost in ₹ / $  (PRICING per model; INR = USD × 83.5)
+   │
+   ▼
+TokenBadge component (shared 10-colour scale) at 12 UI locations
+   │
+   ▼
+Settings → API Usage tab  ──▶  30-day log + category breakdown + CSV export
+```
+
+## Migration chain
+
+Alembic revisions, base → head:
+
+```
+base → 7bad (initial) → f6a2 → a1b2 (user profile fields)
+→ v2_feed_system → b2c3 (feed actor_name)
+→ v3_gmail_job_alerts → v3_gmail_alert_prefs → v3_activity_log
+→ v3_domain_cv_scores → v3_job_s1d → v3_partial_jd
+→ v3_stripe_subscriptions → v3_chat → v3_api_usage_log
+→ v3_job_s1_tokens → v3_community → v3_career_insights  (head)
+```
+
 ## Tech stack
 
 | Layer | Technology |
