@@ -112,8 +112,16 @@ export default function MasterCVTab() {
 
   if (isLoading) return <div className="flex justify-center py-12"><Spinner /></div>
 
+  const suggest = new URLSearchParams(window.location.search).get('suggest')
+
   return (
     <div>
+      {suggest && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-sm text-indigo-700 mb-4 flex items-center gap-2">
+          <span>✨</span>
+          <span>Career Insights suggests adding: <strong>{suggest}</strong> — edit your CV below if it applies. Re-analyse afterwards to see the impact.</span>
+        </div>
+      )}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-600 mb-4">
           {error}

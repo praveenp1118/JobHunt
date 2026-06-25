@@ -28,6 +28,7 @@ import ToastContainer from './components/ui/Toast'
 import AdminPage from './pages/admin/AdminPage'
 import ChatPage from './pages/admin/ChatPage'
 import ContributionsPage from './pages/community/ContributionsPage'
+import CareerPage from './pages/career/CareerPage'
 
 // Placeholder for pages not yet built
 const Placeholder = ({ name }) => (
@@ -80,6 +81,7 @@ export default function App() {
       <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/activity" element={<ActivityPage />} />
+        <Route path="/career" element={<CareerPage />} />
         <Route path="/jobs" element={<JobsPage />} />
         <Route path="/cvs" element={<CVsPage />} />
         <Route path="/wallet" element={<WalletPage />} />

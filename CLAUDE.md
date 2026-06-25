@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (55 tests, all passing):
+- Current coverage (60 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -109,6 +109,10 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     count=2); `get_community_insights` returns **None for 1 contributor** but data for **2** (privacy
     floor) and strips the internal `_approved`; `POST /community/share/{job}` 200; `PATCH
     /community/preferences` flips `community_sharing_enabled`. Real temp users/jobs, cleaned up.
+  - `test_career.py` (5): GET /career/analysis serialization (available/scores/roadmap_items/last_cost_inr);
+    **7-day cache** (`is_fresh` true for future `expires_at`, false when expired); roadmap completion
+    **+impact_pct** updates readiness (70→73→70 on toggle); community **warming_up** when < 2 contributors;
+    career questions save + read back. DB-seeded (no live Claude — the analysis pipeline is live-verified).
 - NOT tested: `check_title_relevance` (live Playwright) and a true live end-to-end
   (real Gmail inbox + Anthropic).
 
@@ -198,7 +202,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_api_usage_log → v3_job_s1_tokens → v3_community
+│   │   └── versions/        # chain tip: … → v3_job_s1_tokens → v3_community → v3_career_insights
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -338,6 +342,18 @@ D:\JobHunt\
 - **CommunityContribution**: `user_id`, `job_id`, `insight_id`, `contributed_scores`/`highlights`/`tailoring`,
   `is_anonymous` (default True). One per (user, job) — idempotent.
 - **UserPreferences** + `community_sharing_enabled` (bool, default False) — opt-in.
+
+### Career Insights (V3 — `models/career.py`)
+- **CareerAnalysis** (one per user, unique): `readiness_score` + `keywords_score`/`skills_score`/
+  `experience_score`/`certifications_score`, `analysis_json` (JSONB — full Claude output incl.
+  `last_cost_inr`/`last_tokens`), `jd_count`, `last_analysed_at`, `expires_at` (=+7 days). 7-day cache.
+- **CareerRoadmapItem**: `category` (keyword/skill/cert/project/experience), `title`, `impact_pct`,
+  `timeframe` (this_week/this_month/3_months), `is_completed`, `sort_order`. Completing an item adjusts
+  the readiness score by ±`impact_pct`.
+- **CareerQuestion**: `question_key` (manages_pms/github_public/b2c_experience/relocation/willing_to_do),
+  `answer`. Unique (user_id, question_key).
+- **CommunityCareerInsight**: `role_category`, `insight_type` (keyword/skill/cert/project), `insight_value`,
+  `frequency_pct`, `contributor_count`, `success_stories`. Surfaced only when ≥ 2 contributors (warming_up).
 
 ---
 
@@ -501,6 +517,23 @@ S3 = factual integrity % — computed after Apply
   `community.maybe_share_on_apply` contributes the job's anonymised data (fire-and-forget). **NO CV content/PII** —
   only scores (running average), JD highlights + keyword/tailoring patterns derived from the **approved changelog**.
   `GET /jobs` enriches each `JobSummary` with `community_available`/`community_contributors` (one batched query).
+
+### Career (`/api/career/`) — V3, cached gap analysis (7-day TTL)
+- `GET /analysis` → cached analysis or `{available: false, needs_analysis: true}`. **Never auto-charges**
+  (cost safety) — the frontend triggers explicitly. Shape: `{available, readiness_score, scores{keywords,
+  skills,experience,certifications,projects}, analysis (full JSON), roadmap_items[], is_fresh, jd_count,
+  last_analysed_at, expires_at, last_cost_inr, last_tokens}`.
+- `POST /analyse` — **subscription-gated** (402, admins bypass). One batch Claude call (`analyse_career_gaps`)
+  over the user's master CV + up to 50 JDs + question answers → saves CareerAnalysis (+7d) + roadmap items;
+  returns the same shape **plus `tokens_used`/`cost_inr`**. Logs usage with **category="career"**.
+- `POST /questions` `{question_key, answer}` · `GET /questions` — the 5 sharpening questions.
+- `PATCH /roadmap/{item_id}` `{is_completed}` → `{updated, new_readiness_score}` (±impact_pct).
+- `GET /community` → role-category insights or `{warming_up: true, contributor_count}` (< 2 contributors).
+- `POST /share` — opt in; copies anonymised keyword patterns to `community_career_insights` (no CV/PII).
+- **Agent:** `agents/career_agent.py::analyse_career_gaps` — sync Anthropic client, `max_tokens=8000`,
+  robust JSON parse (trims truncated tails). **CareerPage** has 7 tabs (Readiness radar-style bars /
+  Keywords / Skills / Experience / Certifications / Build / Roadmap), a 5-question modal, a TokenBadge after
+  analysis, and a Dashboard **CareerWidget** (readiness + mini-bars + top action + "⚡ ₹cost · Refresh").
 
 ---
 
@@ -945,7 +978,15 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Community Insights** (opt-in, anonymised, ≥2 contributors to surface): users
+*Last updated: June 26, 2026 — **Career Insights** (`/career`, "Career Insights ✨" nav between Activity &
+Settings w/ readiness % badge): ONE batch Claude call (`analyse_career_gaps`, category="career", 7-day cache)
+across the user's master CV + up to 50 JDs → readiness score + per-axis scores + missing keywords / skill gaps /
+experience reframes / cert + project suggestions / roadmap. `v3_career_insights` migration (`career_analysis`/
+`career_roadmap_items`/`career_questions`/`community_career_insights`), `career` router (analysis/analyse[gated
+402]/questions/roadmap/community/share), 7-tab CareerPage + 5-question modal + TokenBadge, Dashboard CareerWidget
+("⚡ ₹cost · Refresh"), roadmap completion adjusts readiness ±impact_pct, community warming-up (≥2 contributors),
+Add-to-CV nav hint (`/cvs?suggest=`), "Career" pill in UsageTab. Live-verified (readiness 72, 14.5K tokens ₹9). 60 tests.
+**Community Insights** (opt-in, anonymised, ≥2 contributors to surface): users
 share job scores + JD highlights + tailoring patterns (NO CV/PII) — `community` router/`utils`, `v3_community`
 migration (`community_job_insights`/`community_contributions` + `UserPreferences.community_sharing_enabled`),
 auto-share on apply (`maybe_share_on_apply`), `CommunityInsights.jsx` wired into Job Detail (💡 tab), Jobs
@@ -969,4 +1010,4 @@ visibility over `api_usage_logs` (`v3_api_usage_log` migration). `usage_logger` 
 `client.messages.create` (13 agent call-sites add `log_call`) via a contextvar set at the request boundary
 (`get_user_model`) + Celery tasks; Apify runs logged in the scanner. `GET /api/usage/logs` (summary +
 by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category bar chart, sub-tabs,
-row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. All 55 smoke tests passing*
+row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. All 60 smoke tests passing*

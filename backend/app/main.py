@@ -140,6 +140,9 @@ app.include_router(usage_router, prefix="/api/usage", tags=["usage"])
 from app.routers.community import router as community_router
 app.include_router(community_router, prefix="/api/community", tags=["community"])
 
+from app.routers.career import router as career_router
+app.include_router(career_router, prefix="/api/career", tags=["career"])
+
 # ── Health check ─────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():

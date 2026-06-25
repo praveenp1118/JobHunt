@@ -31,6 +31,7 @@ const CAT_PILLS = [
   { key: 'domain_cv', label: 'Domain CVs' },
   { key: 'scanner', label: 'Scanner' },
   { key: 'gmail', label: 'Gmail' },
+  { key: 'career', label: 'Career' },
 ]
 const APIFY_PILLS = [
   { key: 'all', label: 'All' },
@@ -40,7 +41,7 @@ const APIFY_PILLS = [
 ]
 const CAT_COLORS = {
   tailoring: '#6366f1', scoring: '#10b981', domain_cv: '#f59e0b',
-  scanner: '#3b82f6', gmail: '#ec4899', other: '#9ca3af',
+  scanner: '#3b82f6', gmail: '#ec4899', career: '#8b5cf6', other: '#9ca3af',
 }
 
 function TokenBadge({ n }) {

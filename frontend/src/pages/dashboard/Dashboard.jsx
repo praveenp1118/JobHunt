@@ -8,6 +8,7 @@ import { ThreeScores } from '../../components/ui/ScorePill'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import { toast } from '../../store/toast'
+import CareerWidget from '../../components/dashboard/CareerWidget'
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -165,6 +166,9 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
+
+              {/* Career readiness widget */}
+              <CareerWidget />
 
               {/* Scan summary row */}
               {stats.from_scan > 0 && (

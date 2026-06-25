@@ -5,6 +5,7 @@ import useAuthStore from '../../store/auth'
 import { listConversations } from '../../api/chat'
 import { getPreferences } from '../../api/auth'
 import { getMyContributions } from '../../api/community'
+import { getCareerAnalysis } from '../../api/career'
 
 const NAV = [
   {
@@ -40,6 +41,16 @@ const NAV = [
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
+    to: '/career',
+    label: 'Career Insights',
+    sparkle: true,
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
       </svg>
     ),
   },
@@ -81,6 +92,10 @@ export default function Sidebar({ hitlCount = 0 }) {
   const { data: prefsData } = useQuery({ queryKey: ['preferences'], queryFn: getPreferences, retry: false })
   const { data: contribData } = useQuery({ queryKey: ['my-contributions'], queryFn: getMyContributions, retry: false })
   const showCommunity = !!prefsData?.data?.community_sharing_enabled || (contribData?.data?.length > 0)
+
+  // Career readiness % badge on the nav item (if an analysis exists).
+  const { data: careerData } = useQuery({ queryKey: ['career'], queryFn: getCareerAnalysis, retry: false })
+  const readiness = careerData?.data?.available ? Math.round(careerData.data.readiness_score) : null
 
   const navItems = [...NAV]
   if (showCommunity && !navItems.some((n) => n.to === '/community/contributions')) {
@@ -131,11 +146,17 @@ export default function Sidebar({ hitlCount = 0 }) {
             }
           >
             {item.icon}
-            <span className="font-medium">{item.label}</span>
+            <span className="font-medium">{item.label}{item.sparkle ? ' ✨' : ''}</span>
             {/* Red dot for Jobs if HITL pending */}
             {item.to === '/jobs' && hitlCount > 0 && (
               <span className="ml-auto bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                 {hitlCount > 9 ? '9+' : hitlCount}
+              </span>
+            )}
+            {/* Career readiness % badge */}
+            {item.to === '/career' && readiness != null && (
+              <span className="ml-auto bg-slate-700 text-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {readiness}%
               </span>
             )}
           </NavLink>
