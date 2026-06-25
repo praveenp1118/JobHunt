@@ -252,7 +252,7 @@ async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
     anthropic_key / min_s1 / model are accepted for signature stability but unused now.)
 
     Returns {"saved_ids": [...], "results": [{url, reason, ...}]}."""
-    from app.agents.jd_agents import compute_jd_hash, detect_market_from_text
+    from app.agents.jd_agents import compute_jd_hash, detect_market_from_text, SKIP_WORDS
     from app.models.job import Job, JobSource, JobStatus
 
     saved_ids, results = [], []
@@ -261,6 +261,12 @@ async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
         company = c.get("company") or "Unknown"
         url = c.get("url")
         snippet = c.get("snippet") or ""
+        # Drop clearly non-product roles by title (gated cards have no JD to S1-score,
+        # so this is the only filter — e.g. "Head of Surveillance", "Sales Director").
+        tl = title.lower()
+        if any(sw in tl for sw in SKIP_WORDS):
+            results.append({"url": url, "reason": "skipped_non_product", "role": title, "company": company})
+            continue
         jd_hash = compute_jd_hash(f"{title} {company} {url}")
         existing = (await session.execute(
             select(Job.id).where(Job.jd_hash == jd_hash, Job.user_id == user.id)

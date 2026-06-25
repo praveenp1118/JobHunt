@@ -78,6 +78,46 @@ implementation spec.
 |---|---|
 | `GET /master-cv`, `/domain-cv/{id}`, `/tailored-cv/{id}`, `/cover-letter/{id}` | Render to PDF |
 
+## Career — `/api/career`
+
+| Method & path | Purpose |
+|---|---|
+| `GET /analysis` | Cached gap analysis (or `available: false`) — never auto-charges |
+| `POST /analyse` | Run a fresh batch analysis (subscription-gated; returns tokens + cost) |
+| `GET/POST /questions` | The 5 sharpening questions |
+| `PATCH /roadmap/{id}` | Toggle a roadmap item → updates readiness |
+| `GET /community`, `POST /share` | Anonymised role-level insights (≥2 contributors) |
+
+## Usage — `/api/usage`
+
+| Method & path | Purpose |
+|---|---|
+| `GET /logs` | Token + cost log with summary and category breakdown |
+| `GET /export` | CSV export of usage |
+
+## Community — `/api/community`
+
+| Method & path | Purpose |
+|---|---|
+| `GET /insights` | Aggregated job insights (only at ≥2 contributors) |
+| `POST /share/{job_id}`, `GET /my-contributions` | Contribute / list contributions |
+| `PATCH /preferences` | Toggle community sharing |
+
+## Billing — `/api/billing` (Stripe)
+
+| Method & path | Purpose |
+|---|---|
+| `POST /create-checkout-session`, `GET /subscription`, `POST /cancel` | Subscription lifecycle |
+| `POST /webhook`, `GET /verify-session` | Stripe event sync + post-checkout activation |
+
+## Chat — `/api/chat`
+
+| Method & path | Purpose |
+|---|---|
+| `POST /conversations`, `POST /conversations/{id}/messages` | Guest/user chat + FAQ bot |
+| `POST /tickets`, `GET/PATCH …` (admin) | Tickets, presence, admin console |
+| `WS /ws/chat/{conversation_id}` | Real-time message push |
+
 ## Wallet — `/api/wallet`
 
 | Method & path | Purpose |

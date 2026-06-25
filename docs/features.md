@@ -78,11 +78,59 @@ The central pipeline for every opportunity.
 - **Manual controls** — "run now" at every level (scan all, scan one feed, poll Gmail).
 - **Auto-refresh & error log** with one-click resolve.
 
+## Career Insights ✨
+
+- **One batch analysis** — a single cached (7-day) Claude call across your master CV and up to 50
+  tracked JDs produces a readiness score and a structured gap analysis.
+- **Seven tabs** — *Readiness* (overall + per-axis bars across Keywords / Skills / Experience /
+  Certifications / Projects), *Keywords* (missing vs present, by JD frequency), *Skills*, *Experience*
+  (with reframe suggestions), *Certifications*, *Build* (existing + suggested projects), and *Roadmap*.
+- **Actionable roadmap** — checkable items grouped *This week / This month / Next 3 months*; completing
+  one adjusts your readiness score by its impact %.
+- **Sharpening questions** — five optional questions refine the analysis.
+- **Dashboard widget** — readiness %, mini per-axis bars, the top action, and the last analysis cost.
+- **Community benchmark** — anonymised, opt-in role-level patterns (shown once ≥2 members contribute).
+- **Cost transparency** — the token + ₹ cost of each analysis is shown via a token badge.
+
+## API Usage Visibility
+
+- **Every external call logged** — each Anthropic and Apify call is recorded with token counts,
+  model, category, and an estimated cost in ₹ and $.
+- **Inline token badges** — a shared 10-colour badge ("⚡ tokens · ₹cost") appears at the point of
+  action in 12 places (tailoring, domain CVs, scoring, parse, feeds, career, …).
+- **Settings → API Usage** — a 30-day rolling log with a category breakdown, row expansion, a
+  "verify on the Anthropic Console" link per row, and **CSV export**.
+
+## Support Chat
+
+- **On every page** — a widget (bottom-right) available to guests and logged-in users alike.
+- **Rule-based FAQ bot** — 12 keyword categories answer common questions with **no AI cost**.
+- **Live hand-off** — when an admin is online, messages route over a **WebSocket** in real time;
+  when offline, a support **ticket** is created and the admin is emailed.
+- **Attachments** — image / PDF / doc up to 5 MB.
+- **Admin console** — `/admin/chat` with presence heartbeat, canned replies, internal notes, and tickets.
+
+## Subscriptions & Billing
+
+- **JobHunt Pro** — a Stripe subscription (₹500/mo); each user brings their own Anthropic + Apify keys.
+- **Gated writes** — paid actions (tailoring, scanning, sending, career analysis) require an active
+  subscription and return **402** otherwise; **admins bypass**. Read, auth, and billing stay open.
+- **Lifecycle** — checkout, cancel (at period end), resubscribe, and a webhook-driven status sync.
+
+## Community Insights
+
+- **Anonymised sharing** — opt-in pooling of job scores, JD highlights, and tailoring patterns.
+  **Never** CV content or PII. Company + role are normalised so casing/punctuation can't split buckets.
+- **Privacy floor** — insights surface only once **≥2 members** have contributed.
+- **Zero-cost reuse** — recipients see aggregated insights on the Add-Job screen, Job Detail, the Tailor
+  panel, and the tracker without spending any tokens.
+
 ## Admin Panel
 
 - **Users** — list, role and active-status management.
 - **Error log** — platform errors with resolve.
 - **Platform stats** — usage overview (admin-only, access-controlled).
+- **Support chat console** — see the Support Chat section above.
 
 ---
 

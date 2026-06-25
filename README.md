@@ -43,6 +43,17 @@ scraping (Apify) API keys.
   job-alert timelines, error logs, and manual "run now" controls.
 - **Application tracking** — full pipeline (`new → applied → interview → offer → ghosted`), recruiter
   email threads, human-in-the-loop reply approval, and automatic follow-up drafting.
+- **Career Insights ✨** — one cached (7-day) batch Claude call across all your tracked JDs produces a
+  readiness score and a 7-tab gap analysis (Readiness · Keywords · Skills · Experience · Certifications ·
+  Build · Roadmap) with a checkable improvement roadmap and a Dashboard readiness widget.
+- **API usage visibility** — every Claude + Apify call is logged with token counts and ₹/$ cost; inline
+  token badges appear at the point of action (12 locations) plus a Settings → API Usage tab with CSV export.
+- **Support chat** — an in-app widget on every page: a rule-based FAQ bot (12 categories, **no AI cost**)
+  with live WebSocket hand-off to an admin when online, or a ticket + email when offline.
+- **Community insights** — opt-in, fully anonymised sharing of job scores + JD highlights + tailoring
+  patterns (never CV content or PII); recipients spend **0 tokens**. Surfaces only at ≥2 contributors.
+- **Subscriptions** — Stripe-powered JobHunt Pro (₹500/mo); paid write actions are gated, with read-only
+  access on expiry (admins bypass).
 
 ## Screenshots
 
@@ -114,9 +125,11 @@ See the full write-up in **[docs/architecture.md](docs/architecture.md)**.
 | Frontend | React (Vite) + Tailwind CSS, Zustand, TanStack Query |
 | AI | Anthropic Claude (each user's own API key) |
 | Task queue | Celery + Redis + Celery Beat |
-| Email | Gmail IMAP (poll) + SMTP (send) |
+| Email | Gmail IMAP (poll) + SMTP (send), BeautifulSoup HTML parsing |
 | Job scanning | RSS feeds + Apify actors |
 | Browser / PDF | Playwright (title pre-filter + HTML→PDF) |
+| Payments | Stripe (JobHunt Pro subscription) |
+| Real-time | WebSockets (support chat) |
 | Testing | pytest + pytest-asyncio (in-container live-server smoke tests) |
 
 ## Project structure
@@ -176,7 +189,8 @@ Postgres DB — smoke tests covering the API, scanner, Gmail alert parser, and m
 ## Status
 
 Active personal project. Core platform (V1–V3) is complete: CV management, AI tailoring,
-multi-domain scoring, feed scanning, Gmail alert parsing, and the activity dashboard.
+multi-domain scoring, feed scanning, Gmail alert parsing, the activity dashboard, Career Insights,
+API usage visibility, support chat, community insights, and Stripe subscriptions. **61 smoke tests passing.**
 
 ## License
 

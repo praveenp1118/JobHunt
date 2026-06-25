@@ -37,6 +37,11 @@ SKIP_WORDS = [
     "graphic designer", "nurse", "doctor", "driver", "lawyer",
     "accountant", "sales representative", "recruiter",
     "customer service", "warehouse", "chef", "teacher",
+    # Non-product senior roles that were slipping through alert-email cards.
+    "surveillance", "security officer", "commercial operations",
+    "sales director", "finance director", "legal counsel",
+    "operations director", "supply chain director",
+    "procurement", "logistics", "customer success", "account manager",
 ]
 
 # Used only when a user has no target_roles / feed keywords configured.

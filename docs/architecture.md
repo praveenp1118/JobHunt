@@ -61,6 +61,17 @@ own AI and scraping API keys. There is no external SaaS dependency beyond the AI
 - **Gmail Parser** — detects job-alert digest emails (rule-based), extracts job cards directly
   from the email body for login-gated sources (LinkedIn/Indeed), and scores/saves matches.
 - **PDF Generator** — renders CVs and cover letters to PDF via Playwright (HTML template → PDF).
+- **Career Analyser** — a single cached (7-day) batch Claude call over the master CV + up to 50 tracked
+  JDs that returns a readiness score and a structured gap analysis (keywords, skills, experience,
+  certifications, projects, roadmap). Drives the 7-tab Career Insights page and the Dashboard widget.
+- **Usage Logger** — records every Anthropic + Apify call (tokens, model, category, ₹/$ cost) via a
+  per-request contextvar, powering the inline token badges and the API Usage tab.
+- **Support Chat** — a rule-based FAQ engine (no AI) plus a **WebSocket** server for real-time admin
+  hand-off; falls back to a ticket + email when no admin is online.
+- **Billing** — Stripe subscription lifecycle (checkout / cancel / webhook / verify) with a
+  `require_active_subscription` gate (402) on paid write endpoints; admins bypass.
+- **Community Insights** — anonymised aggregation of scores + JD highlights + tailoring patterns
+  (never CV/PII), surfaced once ≥2 members contribute. Company/role are normalised for bucket matching.
 
 ## Data flow
 
@@ -105,10 +116,12 @@ Track  ──▶  status lifecycle + recruiter thread + follow-up drafting
 | State / data | Zustand, TanStack Query |
 | AI | Anthropic Claude (each user's own API key) |
 | Task queue | Celery + Redis + Celery Beat |
-| Email | Gmail IMAP (poll) + SMTP (send) |
+| Email | Gmail IMAP (poll) + SMTP (send), BeautifulSoup HTML parsing |
 | Job scanning | RSS feeds + Apify actors |
 | Browser automation | Playwright (title pre-filter + PDF rendering) |
 | PDF | Playwright HTML template → PDF |
+| Payments | Stripe (JobHunt Pro subscription) |
+| Real-time | WebSockets (support chat) |
 | Storage | Local filesystem (S3 migration planned) |
 | Testing | pytest + pytest-asyncio (in-container, live-server smoke tests) |
 
