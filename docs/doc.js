@@ -33,7 +33,9 @@
   document.body.appendChild(main);
   document.body.insertAdjacentHTML('beforeend', footer);
 
-  fetch(md)
+  // Always revalidate the markdown with the server so doc edits show up without a
+  // hard refresh (GitHub Pages otherwise serves a cached copy for ~10 min).
+  fetch(md, { cache: 'no-cache' })
     .then(function (r) { return r.text(); })
     .then(function (t) {
       // Drop the in-markdown footer nav line (the HTML wrapper provides nav).
