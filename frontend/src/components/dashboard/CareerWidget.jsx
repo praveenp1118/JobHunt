@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useState } from 'react'
 import { format } from 'date-fns'
 import { getCareerAnalysis, triggerAnalysis } from '../../api/career'
+import { filterToParams } from './JobFilterSelect'
 import { toast } from '../../store/toast'
 
 const MINI = [['keywords', 'Keywords'], ['skills', 'Skills'], ['experience', 'Experience'], ['certifications', 'Certs']]
@@ -17,15 +18,23 @@ function color(v) {
 export default function CareerWidget() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const [sp] = useSearchParams()
+  const filter = sp.get('filter') || ''
+  const params = filterToParams(filter)
   const [refreshing, setRefreshing] = useState(false)
-  const { data, isLoading } = useQuery({ queryKey: ['career'], queryFn: getCareerAnalysis, retry: false })
+  const { data, isLoading } = useQuery({ queryKey: ['career', filter], queryFn: () => getCareerAnalysis(params), retry: false })
   const d = data?.data
+
+  // When a dashboard filter is active, also pull the "all jobs" analysis for the "(vs overall)" comparison.
+  const { data: overallData } = useQuery({ queryKey: ['career', ''], queryFn: () => getCareerAnalysis(), retry: false, enabled: !!filter })
+  const overall = overallData?.data
+  const overallReadiness = filter && overall?.available ? Math.round(overall.readiness_score) : null
 
   const refresh = async () => {
     setRefreshing(true)
     try {
-      const res = await triggerAnalysis()
-      qc.setQueryData(['career'], res)
+      const res = await triggerAnalysis(params)
+      qc.setQueryData(['career', filter], res)
       toast.success('Career analysis refreshed')
     } catch (e) { toast.error(e.response?.data?.detail || 'Analysis failed') }
     finally { setRefreshing(false) }
@@ -38,7 +47,7 @@ export default function CareerWidget() {
       <div className="bg-gradient-to-br from-indigo-50 to-emerald-50 rounded-xl p-5 border border-indigo-100 mb-4">
         <p className="text-sm font-medium text-gray-800">✨ Get your career readiness score</p>
         <p className="text-xs text-gray-500 mt-1 mb-3">One analysis across all your tracked JDs.</p>
-        <button onClick={() => navigate('/career')} className="text-sm font-medium text-indigo-600 hover:underline">Analyse now →</button>
+        <button onClick={() => navigate(`/career${filter ? '?filter=' + encodeURIComponent(filter) : ''}`)} className="text-sm font-medium text-indigo-600 hover:underline">Analyse now →</button>
       </div>
     )
   }
@@ -49,8 +58,14 @@ export default function CareerWidget() {
     <div className="bg-white rounded-xl p-5 border border-gray-200 mb-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Career readiness ✨</span>
-        <button onClick={() => navigate('/career')} className="text-xs text-emerald-600 hover:underline font-medium">Full report →</button>
+        <button onClick={() => navigate(`/career${filter ? '?filter=' + encodeURIComponent(filter) : ''}`)} className="text-xs text-emerald-600 hover:underline font-medium">Full report →</button>
       </div>
+      {filter && d.filter_label && (
+        <p className="text-xs text-indigo-600 font-medium mb-1">
+          {d.filter_label}: {Math.round(d.readiness_score)}%
+          {overallReadiness != null && <span className="text-gray-400 font-normal"> (vs {overallReadiness}% overall)</span>}
+        </p>
+      )}
       <div className="flex items-end gap-3 mb-3">
         <p className="text-3xl font-bold text-gray-900 leading-none">{Math.round(d.readiness_score)}<span className="text-base text-gray-400">%</span></p>
         <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden mb-1.5">

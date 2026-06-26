@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import JobFilterSelect, { filterToParams } from '../../components/dashboard/JobFilterSelect'
 import { format } from 'date-fns'
 import {
   getCareerAnalysis, triggerAnalysis, saveAnswer, getAnswers,
@@ -33,28 +34,37 @@ function barColor(v) {
 export default function CareerPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const [sp, setSp] = useSearchParams()
   const [tab, setTab] = useState('Readiness')
   const [analysing, setAnalysing] = useState(false)
   const [lastUsage, setLastUsage] = useState(null)
   const [showQuestions, setShowQuestions] = useState(false)
 
-  const { data, isLoading } = useQuery({ queryKey: ['career'], queryFn: getCareerAnalysis, retry: false })
+  const filter = sp.get('filter') || ''
+  const params = filterToParams(filter)
+  const setFilter = (v) => {
+    const next = new URLSearchParams(sp)
+    if (v) next.set('filter', v); else next.delete('filter')
+    setSp(next, { replace: true })
+  }
+
+  const { data, isLoading } = useQuery({ queryKey: ['career', filter], queryFn: () => getCareerAnalysis(params), retry: false })
   const d = data?.data
   const available = d?.available
   const a = d?.analysis || {}
 
-  // First visit with no analysis → offer the questions intro.
+  // First visit (the "all" view) with no analysis → offer the questions intro.
   useEffect(() => {
-    if (!isLoading && d && !available) setShowQuestions(true)
-  }, [isLoading, d, available])
+    if (!isLoading && d && !available && !filter) setShowQuestions(true)
+  }, [isLoading, d, available, filter])
 
   const runAnalysis = async () => {
     setAnalysing(true)
     setShowQuestions(false)
     try {
-      const res = await triggerAnalysis()
+      const res = await triggerAnalysis(params)
       setLastUsage(res.data.tokens_used ? { tokens: res.data.tokens_used, cost_inr: res.data.cost_inr } : null)
-      qc.setQueryData(['career'], res)
+      qc.setQueryData(['career', filter], res)
       qc.invalidateQueries({ queryKey: ['career'] })
       toast.success('Career analysis complete')
     } catch (e) {
@@ -75,14 +85,22 @@ export default function CareerPage() {
         </div>
         <div className="flex items-center gap-3">
           {lastUsage && <TokenBadge tokens={lastUsage.tokens} cost_inr={lastUsage.cost_inr} />}
-          {available && d.expires_at && (
-            <span className="text-xs text-gray-400">
-              Refreshes {format(new Date(d.expires_at), 'MMM d')}
-            </span>
-          )}
+          <JobFilterSelect value={filter} onChange={setFilter} />
           <Button size="sm" loading={analysing} onClick={runAnalysis}>{available ? 'Re-analyse' : 'Analyse now'}</Button>
         </div>
       </div>
+
+      {/* Filter context banner */}
+      {available && (
+        <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mb-4 text-xs text-indigo-700 flex items-center justify-between gap-2">
+          <span>
+            Analysis based on <strong>{d.jd_count}</strong> jobs · <strong>{d.filter_label || 'All jobs'}</strong>
+            {d.last_analysed_at ? ` · Last updated ${format(new Date(d.last_analysed_at), 'MMM d')}` : ''}
+            {d.expires_at ? ` · refreshes ${format(new Date(d.expires_at), 'MMM d')}` : ''}
+          </span>
+          {filter && <button onClick={() => setFilter('')} className="text-indigo-500 hover:underline shrink-0">Clear ✕</button>}
+        </div>
+      )}
 
       {analysing && (
         <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 mb-4 text-sm text-indigo-700">

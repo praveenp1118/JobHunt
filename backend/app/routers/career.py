@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, Query
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +37,54 @@ async def _anthropic_key(user, session):
     return key or settings.platform_anthropic_api_key or settings.anthropic_api_key
 
 
+SOURCE_LABELS = {"rss": "RSS feeds", "apify": "LinkedIn / Apify", "gmail_alert": "Gmail Alerts", "manual": "Manual"}
+MARKET_LABELS = {"NL": "Netherlands", "EU": "EU", "Dubai": "Dubai", "SG": "Singapore", "IN": "India"}
+
+
+async def _domain_label(session, dcv_id) -> str:
+    from app.models.cv import DomainCV
+    from app.models.domain import IndustryVertical
+    row = (await session.execute(
+        select(IndustryVertical.label, DomainCV.country_code).select_from(DomainCV)
+        .outerjoin(IndustryVertical, IndustryVertical.id == DomainCV.industry_id)
+        .where(DomainCV.id == dcv_id))).first()
+    return f"{row[0] or 'Domain'} × {row[1] or '—'}" if row else "Domain CV"
+
+
+async def _resolve_filter(session, source, feed_id, domain_cv_id, market):
+    """Return (job_clauses, filter_hash, filter_label, fields). Only one filter is active
+    at a time (matches the single-select dropdown)."""
+    from app.models.job import JobSource
+    fields = {"filter_source": None, "filter_feed_id": None, "filter_domain_cv_id": None, "filter_market": None}
+    if source:
+        try:
+            js = JobSource(source)
+            fields["filter_source"] = source
+            return [Job.source == js], f"source:{source}", SOURCE_LABELS.get(source, source), fields
+        except ValueError:
+            pass
+    if feed_id:
+        try:
+            fid = uuid.UUID(feed_id)
+            from app.models.domain import UserFeed
+            f = (await session.execute(select(UserFeed).where(UserFeed.id == fid))).scalar_one_or_none()
+            fields["filter_feed_id"] = fid
+            return [Job.source_feed_id == fid], f"feed:{feed_id}", (f.name if f else "Feed"), fields
+        except (ValueError, TypeError):
+            pass
+    if domain_cv_id:
+        try:
+            did = uuid.UUID(domain_cv_id)
+            fields["filter_domain_cv_id"] = did
+            return [Job.best_domain_cv_id == did], f"domain:{domain_cv_id}", await _domain_label(session, did), fields
+        except (ValueError, TypeError):
+            pass
+    if market:
+        fields["filter_market"] = market
+        return [Job.market == market], f"market:{market}", f"{MARKET_LABELS.get(market, market)} market", fields
+    return [], "all", "All jobs", fields
+
+
 def _road(r: CareerRoadmapItem) -> dict:
     return {
         "id": str(r.id), "category": r.category, "title": r.title, "description": r.description,
@@ -62,21 +110,26 @@ def _resp(ca: CareerAnalysis, roadmap, is_fresh: bool, usage=None) -> dict:
         "expires_at": ca.expires_at.isoformat() if ca.expires_at else None,
         "last_cost_inr": (ca.analysis_json or {}).get("last_cost_inr"),
         "last_tokens": (ca.analysis_json or {}).get("last_tokens"),
+        "filter_hash": ca.filter_hash,
+        "filter_label": ca.filter_label,
     }
     if usage:
         out.update(usage)
     return out
 
 
-async def _run_analysis(user, session) -> dict:
+async def _run_analysis(user, session, source=None, feed_id=None, domain_cv_id=None, market=None) -> dict:
     master = (await session.execute(
         select(MasterCV).where(MasterCV.user_id == user.id, MasterCV.is_active == True))).scalars().first()
     if not master or not master.content_md:
         raise HTTPException(status_code=400, detail="Upload a master CV first to analyse your career readiness")
 
+    clauses, filter_hash, filter_label, fields = await _resolve_filter(session, source, feed_id, domain_cv_id, market)
     jobs = (await session.execute(
-        select(Job).where(Job.user_id == user.id, Job.jd_raw.isnot(None)).limit(50))).scalars().all()
+        select(Job).where(Job.user_id == user.id, Job.jd_raw.isnot(None), *clauses).limit(50))).scalars().all()
     jd_texts = [(j.jd_md or j.jd_raw) for j in jobs if (j.jd_md or j.jd_raw)]
+    if not jd_texts:
+        raise HTTPException(status_code=400, detail=f"No jobs match this filter ({filter_label}) — try a broader filter")
 
     answers = {q.question_key: q.answer for q in (await session.execute(
         select(CareerQuestion).where(CareerQuestion.user_id == user.id))).scalars().all()}
@@ -92,11 +145,16 @@ async def _run_analysis(user, session) -> dict:
     scores = analysis.get("scores", {}) or {}
 
     now = datetime.now(timezone.utc)
-    ca = (await session.execute(
-        select(CareerAnalysis).where(CareerAnalysis.user_id == user.id))).scalar_one_or_none()
+    ca = (await session.execute(select(CareerAnalysis).where(
+        CareerAnalysis.user_id == user.id, CareerAnalysis.filter_hash == filter_hash))).scalar_one_or_none()
     if not ca:
-        ca = CareerAnalysis(user_id=user.id)
+        ca = CareerAnalysis(user_id=user.id, filter_hash=filter_hash)
         session.add(ca)
+    ca.filter_label = filter_label
+    ca.filter_source = fields["filter_source"]
+    ca.filter_feed_id = fields["filter_feed_id"]
+    ca.filter_domain_cv_id = fields["filter_domain_cv_id"]
+    ca.filter_market = fields["filter_market"]
     ca.readiness_score = analysis.get("readiness_score")
     ca.keywords_score = scores.get("keywords")
     ca.skills_score = scores.get("skills")
@@ -109,39 +167,52 @@ async def _run_analysis(user, session) -> dict:
     ca.last_analysed_at = now
     ca.expires_at = now + timedelta(days=7)
 
-    await session.execute(delete(CareerRoadmapItem).where(CareerRoadmapItem.user_id == user.id))
+    await session.execute(delete(CareerRoadmapItem).where(
+        CareerRoadmapItem.user_id == user.id, CareerRoadmapItem.filter_hash == filter_hash))
     for i, r in enumerate(analysis.get("roadmap", []) or []):
         session.add(CareerRoadmapItem(
-            user_id=user.id, category=(r.get("category") or "keyword")[:30], title=(r.get("title") or "")[:255],
+            user_id=user.id, filter_hash=filter_hash,
+            category=(r.get("category") or "keyword")[:30], title=(r.get("title") or "")[:255],
             impact_pct=r.get("impact_pct"), timeframe=r.get("timeframe"), sort_order=r.get("sort_order", i)))
     await session.commit()
     await session.refresh(ca)
     roadmap = (await session.execute(
-        select(CareerRoadmapItem).where(CareerRoadmapItem.user_id == user.id)
+        select(CareerRoadmapItem).where(
+            CareerRoadmapItem.user_id == user.id, CareerRoadmapItem.filter_hash == filter_hash)
         .order_by(CareerRoadmapItem.sort_order))).scalars().all()
     return _resp(ca, roadmap, True, {"tokens_used": usage.get("tokens_used"), "cost_inr": usage.get("cost_inr")})
 
 
 @router.get("/analysis")
-async def get_analysis(user: User = Depends(current_active_user), session: AsyncSession = Depends(get_db)):
-    ca = (await session.execute(
-        select(CareerAnalysis).where(CareerAnalysis.user_id == user.id))).scalar_one_or_none()
+async def get_analysis(
+    source: Optional[str] = Query(None), feed_id: Optional[str] = Query(None),
+    domain_cv_id: Optional[str] = Query(None), market: Optional[str] = Query(None),
+    user: User = Depends(current_active_user), session: AsyncSession = Depends(get_db),
+):
+    _clauses, filter_hash, filter_label, _f = await _resolve_filter(session, source, feed_id, domain_cv_id, market)
+    ca = (await session.execute(select(CareerAnalysis).where(
+        CareerAnalysis.user_id == user.id, CareerAnalysis.filter_hash == filter_hash))).scalar_one_or_none()
     if not ca or not ca.analysis_json:
-        return {"available": False, "needs_analysis": True}
+        return {"available": False, "needs_analysis": True, "filter_hash": filter_hash, "filter_label": filter_label}
     roadmap = (await session.execute(
-        select(CareerRoadmapItem).where(CareerRoadmapItem.user_id == user.id)
+        select(CareerRoadmapItem).where(
+            CareerRoadmapItem.user_id == user.id, CareerRoadmapItem.filter_hash == filter_hash)
         .order_by(CareerRoadmapItem.sort_order))).scalars().all()
     fresh = bool(ca.expires_at and ca.expires_at > datetime.now(timezone.utc))
     return _resp(ca, roadmap, fresh)
 
 
 @router.post("/analyse", dependencies=[Depends(require_active_subscription)])
-async def analyse(response: Response, user: User = Depends(current_active_user),
-                  session: AsyncSession = Depends(get_db)):
+async def analyse(
+    response: Response,
+    source: Optional[str] = Query(None), feed_id: Optional[str] = Query(None),
+    domain_cv_id: Optional[str] = Query(None), market: Optional[str] = Query(None),
+    user: User = Depends(current_active_user), session: AsyncSession = Depends(get_db),
+):
     from app.utils.rate_limiter import enforce_rate_limit
     _rl = await enforce_rate_limit(user.id, "career_analyse", session)
     response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
-    return await _run_analysis(user, session)
+    return await _run_analysis(user, session, source, feed_id, domain_cv_id, market)
 
 
 class AnswerBody(BaseModel):
@@ -188,9 +259,9 @@ async def update_roadmap(item_id: uuid.UUID, body: RoadmapBody,
     item.is_completed = body.is_completed
     item.completed_at = datetime.now(timezone.utc) if body.is_completed else None
 
-    # Reflect completion in the readiness score (+impact when newly completing, − when un-completing).
-    ca = (await session.execute(
-        select(CareerAnalysis).where(CareerAnalysis.user_id == user.id))).scalar_one_or_none()
+    # Reflect completion in the readiness score of the analysis this item belongs to.
+    ca = (await session.execute(select(CareerAnalysis).where(
+        CareerAnalysis.user_id == user.id, CareerAnalysis.filter_hash == item.filter_hash))).scalar_one_or_none()
     new_score = ca.readiness_score if ca else None
     if ca and ca.readiness_score is not None and (item.impact_pct or 0) and was != body.is_completed:
         delta = (item.impact_pct or 0) * (1 if body.is_completed else -1)
@@ -202,9 +273,9 @@ async def update_roadmap(item_id: uuid.UUID, body: RoadmapBody,
 
 @router.get("/community")
 async def community(user: User = Depends(current_active_user), session: AsyncSession = Depends(get_db)):
-    # Role category from the user's analysis (best effort); blank-safe.
-    ca = (await session.execute(
-        select(CareerAnalysis).where(CareerAnalysis.user_id == user.id))).scalar_one_or_none()
+    # Role category from the user's "all jobs" analysis (best effort); blank-safe.
+    ca = (await session.execute(select(CareerAnalysis).where(
+        CareerAnalysis.user_id == user.id, CareerAnalysis.filter_hash == "all"))).scalar_one_or_none()
     role_category = ((ca.analysis_json or {}).get("role_category") if ca else None) or "Senior Product"
     rows = (await session.execute(
         select(CommunityCareerInsight).where(CommunityCareerInsight.role_category == role_category)
@@ -221,8 +292,8 @@ async def community(user: User = Depends(current_active_user), session: AsyncSes
 
 @router.post("/share")
 async def share(user: User = Depends(current_active_user), session: AsyncSession = Depends(get_db)):
-    ca = (await session.execute(
-        select(CareerAnalysis).where(CareerAnalysis.user_id == user.id))).scalar_one_or_none()
+    ca = (await session.execute(select(CareerAnalysis).where(
+        CareerAnalysis.user_id == user.id, CareerAnalysis.filter_hash == "all"))).scalar_one_or_none()
     if not ca or not ca.analysis_json:
         raise HTTPException(status_code=400, detail="Run an analysis first")
     role_category = ca.analysis_json.get("role_category") or "Senior Product"

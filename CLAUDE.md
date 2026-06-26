@@ -211,7 +211,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_cv_template → v3_gdpr_consent → v3_governance
+│   │   └── versions/        # chain tip: … → v3_gdpr_consent → v3_governance → v3_career_filters
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -353,9 +353,11 @@ D:\JobHunt\
 - **UserPreferences** + `community_sharing_enabled` (bool, default False) — opt-in.
 
 ### Career Insights (V3 — `models/career.py`)
-- **CareerAnalysis** (one per user, unique): `readiness_score` + `keywords_score`/`skills_score`/
-  `experience_score`/`certifications_score`, `analysis_json` (JSONB — full Claude output incl.
-  `last_cost_inr`/`last_tokens`), `jd_count`, `last_analysed_at`, `expires_at` (=+7 days). 7-day cache.
+- **CareerAnalysis** (one per **(user, filter)** — unique `(user_id, filter_hash)`): `readiness_score` +
+  `keywords_score`/`skills_score`/`experience_score`/`certifications_score`, `analysis_json` (JSONB — full
+  Claude output incl. `last_cost_inr`/`last_tokens`), `jd_count`, `last_analysed_at`, `expires_at` (=+7 days),
+  + **filter fields** (`filter_hash`/`filter_source`/`filter_feed_id`/`filter_domain_cv_id`/`filter_market`/
+  `filter_label`). 7-day cache **per filter combination** (migration `v3_career_filters`).
 - **CareerRoadmapItem**: `category` (keyword/skill/cert/project/experience), `title`, `impact_pct`,
   `timeframe` (this_week/this_month/3_months), `is_completed`, `sort_order`. Completing an item adjusts
   the readiness score by ±`impact_pct`.
@@ -591,12 +593,17 @@ S3 = factual integrity % — computed after Apply
 
 ### Career (`/api/career/`) — V3, cached gap analysis (7-day TTL)
 - `GET /analysis` → cached analysis or `{available: false, needs_analysis: true}`. **Never auto-charges**
-  (cost safety) — the frontend triggers explicitly. Shape: `{available, readiness_score, scores{keywords,
-  skills,experience,certifications,projects}, analysis (full JSON), roadmap_items[], is_fresh, jd_count,
-  last_analysed_at, expires_at, last_cost_inr, last_tokens}`.
-- `POST /analyse` — **subscription-gated** (402, admins bypass). One batch Claude call (`analyse_career_gaps`)
-  over the user's master CV + up to 50 JDs + question answers → saves CareerAnalysis (+7d) + roadmap items;
-  returns the same shape **plus `tokens_used`/`cost_inr`**. Logs usage with **category="career"**.
+  (cost safety) — the frontend triggers explicitly. **Accepts filter params** `source`/`feed_id`/
+  `domain_cv_id`/`market` → returns the cached analysis **for that filter** (each cached 7 days separately).
+  Shape: `{available, readiness_score, scores{...}, analysis, roadmap_items[], is_fresh, jd_count,
+  last_analysed_at, expires_at, last_cost_inr, last_tokens, filter_hash, filter_label}`.
+- `POST /analyse` — **subscription-gated** (402, admins bypass). **Accepts the same filter params** → analyses
+  only the filtered JDs (up to 50). One batch Claude call (`analyse_career_gaps`) over the master CV + filtered
+  JDs + answers → upserts CareerAnalysis by `(user_id, filter_hash)` + roadmap items (scoped by `filter_hash`);
+  returns the shape **plus `tokens_used`/`cost_inr`**. Logs usage with **category="career"**. **CareerPage** +
+  Dashboard **CareerWidget** share the grouped `JobFilterSelect` dropdown (`?filter=…`); the page shows
+  "Analysis based on N jobs · {filter_label} · Last updated {date}" and the widget shows
+  "{label} readiness: X% (vs Y% overall)".
 - `POST /questions` `{question_key, answer}` · `GET /questions` — the 5 sharpening questions.
 - `PATCH /roadmap/{item_id}` `{is_completed}` → `{updated, new_readiness_score}` (±impact_pct).
 - `GET /community` → role-category insights or `{warming_up: true, contributor_count}` (< 2 contributors).
@@ -1071,7 +1078,12 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Dashboard filter + Feed Performance card**: a grouped filter dropdown
+*Last updated: June 26, 2026 — **Career Insights filter** (same source/feed/domain/market dropdown as the
+Dashboard, shared `JobFilterSelect`): `GET/POST /api/career/analy*` accept `source`/`feed_id`/`domain_cv_id`/
+`market`, analyse only the filtered JDs, and **cache per filter combination** (`CareerAnalysis` is now one per
+`(user_id, filter_hash)` — migration `v3_career_filters`, roadmap items scoped by `filter_hash`); CareerPage
+shows "Analysis based on N jobs · {filter_label}", the Dashboard CareerWidget shows "{label} readiness: X% (vs
+Y% overall)" when a filter is active. **Dashboard filter + Feed Performance card**: a grouped filter dropdown
 (top-right, by Source / Feed / Domain CV / Market) drives `/dashboard?filter=source:rss|feed:{id}|domain:{id}|
 market:NL` — all pipeline stats, charts, and the recent-jobs table scope to it, with a "Showing N of M jobs"
 indicator; `GET /jobs/stats` accepts `source`/`feed_id`/`domain_cv_id`/`market` (facet counts stay unfiltered)

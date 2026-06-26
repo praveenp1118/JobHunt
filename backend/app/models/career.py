@@ -11,12 +11,12 @@ from app.models.base import TimestampMixin
 
 
 class CareerAnalysis(Base, TimestampMixin):
-    """One cached career-gap analysis per user (batch Claude call, 7-day TTL)."""
+    """Cached career-gap analysis — one per (user, filter combination), 7-day TTL."""
     __tablename__ = "career_analysis"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     readiness_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     keywords_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     skills_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -27,6 +27,16 @@ class CareerAnalysis(Base, TimestampMixin):
     last_analysed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Per-filter caching (one analysis per filter combination)
+    filter_hash: Mapped[str] = mapped_column(String(100), default="all", nullable=False)
+    filter_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    filter_feed_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    filter_domain_cv_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    filter_market: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    filter_label: Mapped[str] = mapped_column(String(100), default="All jobs", nullable=False)
+
+    __table_args__ = (Index("ix_career_analysis_user_filter", "user_id", "filter_hash", unique=True),)
+
 
 class CareerRoadmapItem(Base):
     __tablename__ = "career_roadmap_items"
@@ -34,6 +44,7 @@ class CareerRoadmapItem(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    filter_hash: Mapped[str] = mapped_column(String(100), default="all", nullable=False)
     category: Mapped[str] = mapped_column(String(30), nullable=False)  # keyword/skill/cert/project/experience
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
