@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 from app.config import settings
 
 celery_app = Celery(
@@ -9,6 +10,7 @@ celery_app = Celery(
         "app.tasks.gmail_tasks",
         "app.tasks.scanner_tasks",
         "app.tasks.governance_tasks",
+        "app.tasks.scoring_tasks",
     ],
 )
 
@@ -45,5 +47,10 @@ celery_app.conf.beat_schedule = {
     "purge-deleted-accounts-daily": {
         "task": "tasks.purge_deleted_accounts",
         "schedule": 86400.0,
+    },
+    # Nightly batch scoring of 'pending' jobs — 21:30 UTC = 02:00 AM IST
+    "night-batch-scoring": {
+        "task": "tasks.score_pending_jobs_batch",
+        "schedule": crontab(hour=21, minute=30),
     },
 }

@@ -29,6 +29,10 @@ export const fetchJobJd = (id) =>
 export const addFullJd = (id, jd_text) =>
   client.post(`/jobs/${id}/add-full-jd`, { jd_text })
 
+// Night-batch scoring: score one pending job now, or all of them.
+export const scoreNow = (id) => client.post(`/jobs/${id}/score-now`)
+export const scoreAllPending = () => client.post('/jobs/score-pending')
+
 export const updateJob = (id, data) =>
   client.patch(`/jobs/${id}`, data)
 

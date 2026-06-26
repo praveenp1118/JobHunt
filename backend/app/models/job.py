@@ -84,6 +84,8 @@ class Job(Base, TimestampMixin):
     # V3: True when the JD is only a snippet from an alert email (LinkedIn/gated cards) —
     # the user should open portal_url for the full description before tailoring.
     has_partial_jd: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Night-batch scoring: scored / pending (awaiting the nightly batch or "Score now") / failed
+    scoring_status: Mapped[str] = mapped_column(String(20), default="scored", nullable=False)
 
     # Detected domain
     industry_id: Mapped[Optional[uuid.UUID]] = mapped_column(

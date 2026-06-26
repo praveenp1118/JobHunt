@@ -208,6 +208,9 @@ class UserPreferences(Base, TimestampMixin):
     career_model: Mapped[str] = mapped_column(String(50), default="claude-sonnet-4-6", nullable=False)
     # Batch size
     scoring_batch_size: Mapped[int] = mapped_column(Integer, default=12, nullable=False)
+    # When to score scanned jobs: immediate / overnight (nightly batch) / manual ("Score now")
+    scoring_timing: Mapped[str] = mapped_column(String(20), default="immediate", nullable=False)
+    night_batch_time: Mapped[str] = mapped_column(String(10), default="02:00", nullable=False)  # IST
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="preferences")

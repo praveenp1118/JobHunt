@@ -353,15 +353,21 @@ export default function JobsPage() {
                       {job.market ? <MarketBadge market={job.market} /> : <span className="text-gray-300 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-col items-center gap-1"
-                        title={job.has_partial_jd ? 'Score unavailable — LinkedIn requires login. Click View → to read the job description.' : undefined}>
-                        <ScorePill score={job.s1} />
-                        {job.s1_tokens != null && <TokenBadge tokens={job.s1_tokens} cost_inr={job.s1_cost_inr} />}
-                      </div>
+                      {job.scoring_status === 'pending' ? (
+                        <span className="text-amber-500 text-base" title="Score pending — will be computed at 2:00 AM IST, or click the job → Score now">⏳</span>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1"
+                          title={job.has_partial_jd ? 'Score unavailable — LinkedIn requires login. Click View → to read the job description.' : undefined}>
+                          <ScorePill score={job.s1} />
+                          {job.s1_tokens != null && <TokenBadge tokens={job.s1_tokens} cost_inr={job.s1_cost_inr} />}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3"
                       title={job.has_partial_jd ? 'Score unavailable — LinkedIn requires login. Click View → to read the job description.' : undefined}>
-                      <BestFitCell job={job} />
+                      {job.scoring_status === 'pending'
+                        ? <span className="text-[11px] text-amber-500">⏳ pending</span>
+                        : <BestFitCell job={job} />}
                     </td>
                     <td className="px-4 py-3">
                       <ScorePill score={job.s2} />

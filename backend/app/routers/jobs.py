@@ -574,12 +574,18 @@ async def get_job_stats(
         select(func.count(Job.id)).where(*base_filters, Job.has_partial_jd == True)
     )).scalar() or 0
 
+    # Pending-scoring count (overnight/manual mode awaiting the night batch)
+    pending_count = (await session.execute(
+        select(func.count(Job.id)).where(Job.user_id == user.id, Job.scoring_status == "pending")
+    )).scalar() or 0
+
     return {
         "total": total,                       # filtered total
         "unfiltered_total": unfiltered_total,  # all of the user's jobs
         "by_status": {s.value: counts.get(s, 0) for s in JobStatus},
         "needs_hitl": needs_hitl,
         "partial_count": partial_count,
+        "pending_count": pending_count,
         "from_scan": from_scan,
         "by_source": by_source,
         "by_market": by_market,
@@ -752,6 +758,48 @@ async def add_full_jd(
     from app.tasks.gmail_tasks import score_pasted_jd
     score_pasted_jd.delay(str(job_id), str(user.id))
     return {"queued": True}
+
+
+async def _score_key_prefs(user, session):
+    creds = (await session.execute(
+        select(UserCredentials).where(UserCredentials.user_id == user.id))).scalar_one_or_none()
+    key = (decrypt_if_present(creds.anthropic_api_key_enc) if creds and creds.anthropic_api_key_enc else None) \
+        or settings.platform_anthropic_api_key or settings.anthropic_api_key
+    prefs = (await session.execute(
+        select(UserPreferences).where(UserPreferences.user_id == user.id))).scalars().first()
+    return key, prefs
+
+
+@router.post("/{job_id}/score-now")
+async def score_now(job_id: uuid.UUID, user: User = Depends(current_active_user),
+                    session: AsyncSession = Depends(get_db)):
+    """Score a single pending job immediately (3-stage RAG) — used by the 'Score now' button."""
+    job = (await session.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == user.id))).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.scoring_status != "pending":
+        return {"already_scored": True, "s1": job.s1, "s1d": job.s1d}
+    key, prefs = await _score_key_prefs(user, session)
+    if not key:
+        raise HTTPException(status_code=400, detail="No Anthropic key configured")
+    from app.tasks.scoring_tasks import score_pending_for_user
+    r = await score_pending_for_user(user, session, key, prefs, job_ids=[job_id])
+    await session.refresh(job)
+    return {"scored": True, "s1": job.s1, "s1d": job.s1d,
+            "best_domain_cv_id": str(job.best_domain_cv_id) if job.best_domain_cv_id else None,
+            "cost_inr": r["cost_inr"]}
+
+
+@router.post("/score-pending")
+async def score_all_pending(user: User = Depends(current_active_user),
+                            session: AsyncSession = Depends(get_db)):
+    """Score ALL of the user's pending jobs now (Dashboard 'Score all now')."""
+    key, prefs = await _score_key_prefs(user, session)
+    if not key:
+        raise HTTPException(status_code=400, detail="No Anthropic key configured")
+    from app.tasks.scoring_tasks import score_pending_for_user
+    return await score_pending_for_user(user, session, key, prefs)
 
 
 @router.post("/{job_id}/score-s1")

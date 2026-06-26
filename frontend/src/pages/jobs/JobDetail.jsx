@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow, format } from 'date-fns'
-import { getJob, getJobEmails, updateJobStatus, updateJob, deleteJob, draftFollowUp, fetchJobJd, addFullJd } from '../../api/jobs'
+import { getJob, getJobEmails, updateJobStatus, updateJob, deleteJob, draftFollowUp, fetchJobJd, addFullJd, scoreNow } from '../../api/jobs'
 import { sendReply } from '../../api/jobs'
 import { toast } from '../../store/toast'
 import { StatusBadge, MarketBadge } from '../../components/ui/Badge'
@@ -29,6 +29,7 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
   const [fetchingJd, setFetchingJd] = useState(false)
   const [pastedJd, setPastedJd] = useState('')
   const [savingJd, setSavingJd] = useState(false)
+  const [scoring, setScoring] = useState(false)
 
   const { data: jobData, isLoading } = useQuery({
     queryKey: ['job', jobId],
@@ -85,6 +86,20 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
       toast.error(e.response?.data?.detail || 'Could not fetch the full JD')
       setFetchingJd(false)
     }
+  }
+
+  const handleScoreNow = async () => {
+    setScoring(true)
+    try {
+      const r = await scoreNow(jobId)
+      toast.success(r.data.scored ? `Scored — B ${Math.round(r.data.s1 ?? 0)}${r.data.cost_inr ? ` · ⚡ ₹${r.data.cost_inr}` : ''}` : 'Already scored')
+      qc.invalidateQueries({ queryKey: ['job', jobId] })
+      qc.invalidateQueries({ queryKey: ['jobs'] })
+      qc.invalidateQueries({ queryKey: ['job-stats'] })
+      onUpdate?.()
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Scoring failed')
+    } finally { setScoring(false) }
   }
 
   const handleAddFullJd = async () => {
@@ -184,6 +199,9 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
         <div className="flex items-center justify-between mt-3">
           <ThreeScores s1={job.s1} s2={job.s2} s3Master={job.s3_master} />
           <div className="flex gap-2">
+            {job.scoring_status === 'pending' && (
+              <Button size="sm" loading={scoring} onClick={handleScoreNow}>⚡ Score now</Button>
+            )}
             <span title={job.has_partial_jd ? 'Tailoring requires the full JD — add it in the JD tab first' : undefined}>
               <Button size="sm" disabled={job.has_partial_jd} onClick={() => onTailor?.(jobId)}>
                 Tailor →

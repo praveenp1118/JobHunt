@@ -46,6 +46,8 @@ def _serialize(prefs) -> dict:
         "domain_score_min_s1": prefs.domain_score_min_s1,
         "career_model": prefs.career_model,
         "scoring_batch_size": prefs.scoring_batch_size,
+        "scoring_timing": prefs.scoring_timing,
+        "night_batch_time": prefs.night_batch_time,
     }
 
 
@@ -67,6 +69,8 @@ class ScoringUpdate(BaseModel):
     domain_score_min_s1: Optional[int] = None
     career_model: Optional[str] = None
     scoring_batch_size: Optional[int] = None
+    scoring_timing: Optional[str] = None
+    night_batch_time: Optional[str] = None
 
 
 @router.patch("/config")

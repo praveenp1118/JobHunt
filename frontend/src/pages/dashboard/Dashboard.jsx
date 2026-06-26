@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
-import { getJobStats, getJobs, pollGmail } from '../../api/jobs'
+import { getJobStats, getJobs, pollGmail, scoreAllPending } from '../../api/jobs'
 import { getFeedsWithCounts } from '../../api/feeds'
 import { getDomainCVs } from '../../api/cvs'
 import { StatusBadge, MarketBadge } from '../../components/ui/Badge'
@@ -43,6 +43,7 @@ export default function Dashboard() {
   const [sp, setSp] = useSearchParams()
   const [tab, setTab] = useState('overview')
   const [polling, setPolling] = useState(false)
+  const [scoringAll, setScoringAll] = useState(false)
 
   // Filter: ?filter=source:rss | feed:{uuid} | domain:{uuid} | market:NL
   const filter = sp.get('filter') || ''
@@ -98,6 +99,19 @@ export default function Dashboard() {
     } finally {
       setPolling(false)
     }
+  }
+
+  const handleScoreAll = async () => {
+    setScoringAll(true)
+    try {
+      const r = await scoreAllPending()
+      toast.success(`Scored ${r.data.scored} jobs${r.data.cost_inr ? ` · ⚡ ₹${r.data.cost_inr}` : ''}`)
+      qc.invalidateQueries({ queryKey: ['job-stats'] })
+      qc.invalidateQueries({ queryKey: ['recent-jobs'] })
+      qc.invalidateQueries({ queryKey: ['jobs'] })
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Scoring failed')
+    } finally { setScoringAll(false) }
   }
 
   // Chart data
@@ -173,6 +187,16 @@ export default function Dashboard() {
         <div className="-mt-3 mb-5 flex items-center gap-2 text-xs text-gray-500">
           <span>Showing <strong className="text-gray-800">{stats.total ?? 0}</strong> of {stats.unfiltered_total ?? 0} jobs</span>
           <button onClick={() => setFilter('')} className="text-emerald-600 hover:underline font-medium">Clear filter ✕</button>
+        </div>
+      )}
+
+      {/* Pending-scoring banner (overnight/manual mode) */}
+      {stats.pending_count > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5 flex items-center justify-between gap-3">
+          <p className="text-sm text-amber-800">
+            ⏳ <strong>{stats.pending_count}</strong> job{stats.pending_count > 1 ? 's' : ''} pending scoring — will score tonight at 2:00 AM IST
+          </p>
+          <Button size="sm" loading={scoringAll} onClick={handleScoreAll}>Score all now →</Button>
         </div>
       )}
 

@@ -236,6 +236,7 @@ function SystemTab() {
   const scanPg = usePagination(sys.scanner_runs || [], 10)
   const pollPg = usePagination(sys.gmail_polls || [], 10)
   const ghostPg = usePagination(sys.ghosted_checks || [], 10)
+  const nightPg = usePagination(sys.night_batches || [], 10)
   const errPg = usePagination(sys.recent_errors || [], 10)
 
   const handleResolve = async (id) => {
@@ -265,6 +266,11 @@ function SystemTab() {
       <CollapsibleSection title="Ghosted Check" runs={sys.ghosted_checks} empty="No ghosted checks run yet">
         {ghostPg.slice.map((r) => <GhostedCard key={r.id} run={r} />)}
         <Pagination currentPage={ghostPg.page} totalPages={ghostPg.totalPages} totalItems={ghostPg.total} itemsPerPage={10} onPageChange={ghostPg.setPage} label="checks" />
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Night Batch" runs={sys.night_batches} empty="No night-batch scoring runs yet">
+        {nightPg.slice.map((r) => <NightBatchCard key={r.id} run={r} />)}
+        <Pagination currentPage={nightPg.page} totalPages={nightPg.totalPages} totalItems={nightPg.total} itemsPerPage={10} onPageChange={nightPg.setPage} label="runs" />
       </CollapsibleSection>
 
       <div>
@@ -341,6 +347,23 @@ function GhostedCard({ run }) {
       <p className="text-sm text-gray-700 mt-2">
         {d.checked ?? run.jobs_found ?? 0} applied jobs checked · <span className="text-amber-600 font-medium">{d.ghosted ?? run.jobs_added ?? 0} ghosted</span>
       </p>
+      {run.error_message && <p className="text-xs text-red-400 mt-1 truncate">{run.error_message}</p>}
+    </div>
+  )
+}
+
+function NightBatchCard({ run }) {
+  const d = run.details || {}
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 px-4 py-3">
+      <RunHeader run={run} />
+      <p className="text-sm text-gray-700 mt-2">
+        <span className="text-emerald-600 font-medium">{d.jobs_scored ?? run.jobs_added ?? 0} jobs scored</span>
+        {d.users != null && <span className="text-xs text-gray-400"> · {d.users} user{d.users === 1 ? '' : 's'}</span>}
+      </p>
+      {(d.cost_inr != null || d.tokens != null) && (
+        <p className="text-[11px] text-gray-400 mt-1">⚡ {(d.tokens || 0) >= 1000 ? (d.tokens / 1000).toFixed(1) + 'K' : (d.tokens ?? 0)} tokens · ₹{d.cost_inr ?? 0}</p>
+      )}
       {run.error_message && <p className="text-xs text-red-400 mt-1 truncate">{run.error_message}</p>}
     </div>
   )

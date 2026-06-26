@@ -78,6 +78,39 @@ export default function ScoringSettings() {
       </div>
       {c.scoring_preset === 'custom' && <p className="text-[11px] text-amber-600">Custom — you’ve fine-tuned the settings below.</p>}
 
+      {/* Scoring timing */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Scoring timing</p>
+        <div className="space-y-2">
+          {[
+            ['immediate', 'Score immediately', 'Scores appear as soon as jobs are found (real-time, default).'],
+            ['overnight', 'Score overnight (cheapest)', 'Jobs are saved immediately; scores are computed at night in one optimized batch.'],
+            ['manual', 'Manual only', 'Jobs saved unscored — click “Score now” on each job.'],
+          ].map(([k, label, desc]) => (
+            <label key={k} className="flex items-start gap-2 cursor-pointer">
+              <input type="radio" name="timing" checked={c.scoring_timing === k} onChange={() => save({ scoring_timing: k })} className="mt-0.5 accent-emerald-500" />
+              <div>
+                <p className="text-sm text-gray-800">{label}</p>
+                <p className="text-[11px] text-gray-400">{desc}</p>
+                {k === 'overnight' && c.scoring_timing === 'overnight' && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="text-[11px] text-gray-500">Night batch time:</span>
+                    <select className={sel} value={c.night_batch_time} onChange={(e) => save({ night_batch_time: e.target.value })}>
+                      {['00:00', '01:00', '02:00', '03:00', '04:00', '05:00'].map((t) => <option key={t} value={t}>{t} IST</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </label>
+          ))}
+        </div>
+        {est && (
+          <p className="text-[11px] text-gray-500 mt-2">
+            Immediate: ~₹{est.estimated_cost_inr}/scan · Overnight: ~₹{Math.round(est.estimated_cost_inr * 0.72)}/scan <span className="text-emerald-600">(~28% cheaper, larger batches)</span>
+          </p>
+        )}
+      </div>
+
       {/* Stage settings */}
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Stage 1 — keyword pre-filter (free)</p>

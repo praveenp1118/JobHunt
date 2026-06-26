@@ -340,13 +340,32 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                             for did, c, e, _i, _cc in dcv_rows]
 
     rag_stats = {"total": len(new_jobs), "stage1_rejected": 0, "stage2_rejected": 0,
-                 "stage2_saved": 0, "stage3_scored": 0, "tokens_stage2": 0, "tokens_stage3": 0,
-                 "cost_inr": 0.0, "estimated_unoptimized_cost": 0.0, "savings_pct": 0.0}
+                 "stage2_saved": 0, "stage3_scored": 0, "pending": 0, "tokens_stage2": 0,
+                 "tokens_stage3": 0, "cost_inr": 0.0, "estimated_unoptimized_cost": 0.0, "savings_pct": 0.0}
     rag_jobs = new_jobs
-    if new_jobs and anthropic_key:
+    timing = (prefs.scoring_timing if prefs else "immediate")
+
+    if new_jobs and timing == "immediate" and anthropic_key:
+        # Real-time scoring — full 3-stage RAG.
         rag = await hybrid_rag_score(new_jobs, master_essence, master_cv_md,
                                      domain_cvs_input, config, anthropic_key)
         rag_jobs, rag_stats = rag["jobs"], rag["stats"]
+    elif new_jobs and timing in ("overnight", "manual"):
+        # Defer scoring — only the FREE Stage-1 keyword filter runs now; survivors saved 'pending'.
+        kw = [str(k).lower() for k in ((master_essence or {}).get("keywords") or [])]
+        thr = config["keyword_match_threshold"]
+        rej = 0
+        for job in new_jobs:
+            if kw:
+                jd = (job.get("jd_raw") or job.get("description") or "").lower()
+                if sum(1 for k in kw if k and k in jd) < thr:
+                    job["_stage"] = "stage1_rejected"
+                    job["_reject_reason"] = f"keyword(pending mode)"
+                    rej += 1
+                    continue
+            job["_stage"] = "pending"
+        rag_stats["stage1_rejected"] = rej
+        rag_stats["pending"] = len(new_jobs) - rej
 
     def _labelled(dscores):
         return {domain_cv_labels.get(k, k): v for k, v in (dscores or {}).items()}
@@ -366,6 +385,7 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
             if fid in stats:
                 stats[fid]["s1_scored"] += 1
             job_hash = job.get("jd_hash", "")
+            pending = stage == "pending"  # overnight/manual mode → saved unscored
             s1 = job.get("s1")
             feed = feed_by_id.get(fid)
 
@@ -377,12 +397,12 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
             has_domain = best_s1d is not None
             decision = best_s1d if has_domain else s1
 
-            # Gate by threshold (when we could score). No score → save (can't gate).
-            if decision is not None and decision < threshold:
+            # Gate by threshold (when we could score). Pending jobs aren't gated yet.
+            if not pending and decision is not None and decision < threshold:
                 _reject(fid, job, "below_threshold", s1=s1, s1d=best_s1d,
                         domain_scores=_labelled(dscores), best=domain_cv_labels.get(best_dcv_id_str))
                 continue
-            if decision is not None and fid in stats:
+            if not pending and decision is not None and fid in stats:
                 stats[fid]["above_threshold"] += 1
             if fid in stats and len(stats[fid]["saved_examples"]) < 12:
                 stats[fid]["saved_examples"].append({
@@ -418,6 +438,7 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                 status=JobStatus.new,
                 s1=s1,
                 s1d=best_s1d,
+                scoring_status=("pending" if pending else "scored"),
                 domain_cv_scores=(dscores or None),
                 best_domain_cv_id=(uuid.UUID(best_dcv_id_str) if best_dcv_id_str else None),
                 salary_range_raw=job.get("salary"),

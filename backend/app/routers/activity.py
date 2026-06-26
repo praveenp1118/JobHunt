@@ -105,6 +105,7 @@ async def get_system_activity(
     scanner_runs = await _runs(RunType.weekly_scan, user_scoped=False)
     gmail_polls = await _runs(RunType.gmail_poll, user_scoped=True)
     ghosted_checks = await _runs(RunType.ghost_check, user_scoped=False)
+    night_batches = await _runs(RunType.night_batch, user_scoped=False)
 
     err_q = select(ErrorLog).where(ErrorLog.created_at >= since)
     if user.role != UserRole.admin:
@@ -115,6 +116,7 @@ async def get_system_activity(
         "scanner_runs": scanner_runs,
         "gmail_polls": gmail_polls,
         "ghosted_checks": ghosted_checks,
+        "night_batches": night_batches,
         "error_count": len(errors),
         "recent_errors": [
             {

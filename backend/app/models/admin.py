@@ -20,6 +20,7 @@ class RunType(str, Enum):
     weekly_scan = "weekly_scan"
     gmail_poll = "gmail_poll"
     ghost_check = "ghost_check"
+    night_batch = "night_batch"
     stub_fetch = "stub_fetch"
     followup_check = "followup_check"
 

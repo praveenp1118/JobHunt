@@ -17,6 +17,7 @@ class JobRead(BaseModel):
     jd_raw: Optional[str] = None       # full scraped JD text (JD tab)
     jd_md: Optional[str] = None
     has_partial_jd: bool = False       # JD is only an alert-email snippet
+    scoring_status: str = "scored"     # scored / pending (night batch) / failed
     source: JobSource
     status: JobStatus
     s1: Optional[float]
@@ -66,6 +67,7 @@ class JobSummary(BaseModel):
     s3_master: Optional[float]
     needs_hitl: bool
     has_partial_jd: bool = False  # JD is only an alert-email snippet; full JD behind portal_url
+    scoring_status: str = "scored"  # scored / pending / failed
     detected_domain_cv_id: Optional[uuid.UUID] = None  # V2/V3: feed/alert domain match (frontend maps to label)
     # V3: fit against ALL active domain CVs at ingestion ({domain_cv_id: score})
     domain_cv_scores: Optional[dict] = None
