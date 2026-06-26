@@ -9,27 +9,74 @@ own AI and scraping API keys. There is no external SaaS dependency beyond the AI
 
 ## System diagram
 
-```
-   ┌───────────────────┐         ┌────────────────────────┐         ┌──────────────┐
-   │  React Frontend   │ ───────▶│   FastAPI Backend      │ ───────▶│  PostgreSQL  │
-   │  (Vite, :3000)    │  HTTPS  │   (:8000)              │  async  │              │
-   └───────────────────┘         └───────────┬────────────┘         └──────────────┘
-                                             │                        ┌──────────────┐
-                                             ├───────────────────────▶│    Redis     │
-                                             │   Anthropic Claude      │  (broker)    │
-                                             ▼                         └──────┬───────┘
-                                   ┌────────────────────┐                     │
-                                   │  Claude (user key) │                     ▼
-                                   └────────────────────┘            ┌──────────────────┐
-                                                                     │  Celery Worker   │
-                                                                     │  + Celery Beat   │
-        ┌──────────────────────────────────────────────────────────┴──────────────────┤
-        ▼                       ▼                        ▼                    ▼
-  ┌────────────┐         ┌────────────┐          ┌──────────────┐     ┌──────────────┐
-  │ Gmail IMAP │         │ RSS Feeds  │          │ Apify Actors │     │  Playwright  │
-  │ + SMTP     │         │            │          │              │     │              │
-  └────────────┘         └────────────┘          └──────────────┘     └──────────────┘
-```
+<div class="my-7 rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-5 sm:p-7">
+  <div class="flex justify-center">
+    <div class="w-72 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-center shadow-sm">
+      <div class="text-sm font-semibold text-sky-900">React Frontend</div>
+      <div class="text-[11px] text-sky-600" style="font-family:ui-monospace,Menlo,monospace">Vite · Tailwind · Recharts · :3000</div>
+    </div>
+  </div>
+  <div class="text-center text-slate-400 text-xs my-2">▲ &nbsp;HTTPS · REST + WebSocket&nbsp; ▼</div>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-stretch">
+    <div class="rounded-xl border border-slate-300 bg-white px-4 py-3 text-center shadow-sm flex flex-col justify-center">
+      <div class="text-sm font-semibold text-slate-800">PostgreSQL</div>
+      <div class="text-[11px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">jobs · CVs · feeds · logs</div>
+    </div>
+    <div class="rounded-xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3 text-center shadow-sm flex flex-col justify-center">
+      <div class="text-sm font-semibold text-emerald-900">FastAPI Backend</div>
+      <div class="text-[11px] text-emerald-600" style="font-family:ui-monospace,Menlo,monospace">async · auth · AI orchestration · :8000</div>
+    </div>
+    <div class="rounded-xl border border-slate-300 bg-white px-4 py-3 text-center shadow-sm flex flex-col justify-center">
+      <div class="text-sm font-semibold text-slate-800">Redis</div>
+      <div class="text-[11px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">Celery broker</div>
+    </div>
+  </div>
+  <div class="text-center text-slate-400 text-xs my-2">▼</div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+      <div class="text-sm font-semibold text-amber-900 text-center mb-2">🤖 AI engine — Claude (user's key)</div>
+      <div class="flex flex-wrap justify-center gap-1.5 text-[11px]">
+        <span class="rounded-full bg-white border border-amber-200 px-2 py-0.5 text-amber-700">3-stage RAG scorer</span>
+        <span class="rounded-full bg-white border border-amber-200 px-2 py-0.5 text-amber-700">Essence agent</span>
+        <span class="rounded-full bg-white border border-amber-200 px-2 py-0.5 text-amber-700">Tailor · JD parse</span>
+        <span class="rounded-full bg-white border border-amber-200 px-2 py-0.5 text-amber-700">Career analyser</span>
+        <span class="rounded-full bg-white border border-amber-200 px-2 py-0.5 text-amber-700">Tiered: Haiku ⇢ Sonnet</span>
+      </div>
+    </div>
+    <div class="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
+      <div class="text-sm font-semibold text-violet-900 text-center mb-2">⚙ Celery Worker + Beat</div>
+      <div class="flex flex-wrap justify-center gap-1.5 text-[11px]">
+        <span class="rounded-full bg-white border border-violet-200 px-2 py-0.5 text-violet-700">Feed scanner</span>
+        <span class="rounded-full bg-white border border-violet-200 px-2 py-0.5 text-violet-700">Gmail poll</span>
+        <span class="rounded-full bg-white border border-violet-200 px-2 py-0.5 text-violet-700">Night-batch · 2 AM</span>
+        <span class="rounded-full bg-white border border-violet-200 px-2 py-0.5 text-violet-700">Ghost check</span>
+      </div>
+    </div>
+  </div>
+  <div class="text-center text-slate-400 text-xs my-2">▼ &nbsp;external integrations&nbsp; ▼</div>
+  <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+    <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center shadow-sm">
+      <div class="text-[13px] font-semibold text-slate-700">Gmail</div>
+      <div class="text-[10px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">IMAP + SMTP</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center shadow-sm">
+      <div class="text-[13px] font-semibold text-slate-700">RSS Feeds</div>
+      <div class="text-[10px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">Jobicy …</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center shadow-sm">
+      <div class="text-[13px] font-semibold text-slate-700">Apify</div>
+      <div class="text-[10px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">LinkedIn · Google</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center shadow-sm">
+      <div class="text-[13px] font-semibold text-slate-700">Playwright</div>
+      <div class="text-[10px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">title · PDF</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center shadow-sm">
+      <div class="text-[13px] font-semibold text-slate-700">Stripe</div>
+      <div class="text-[10px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">subscriptions</div>
+    </div>
+  </div>
+</div>
 
 ### Services (`docker-compose`)
 
