@@ -1102,8 +1102,10 @@ funnel + "Saved ₹X vs unoptimized". Target ₹165→~₹28/scan (~82%, balance
 keywords; estimate 90.5% savings; preset switching). Graceful fallback: no essence → full-CV scoring (no
 savings, no quality loss). 93 tests. **Pagination + 3 bug fixes**: a reusable **`Pagination.jsx`** (`Pagination`
 component + `usePagination(items, perPage)` hook — "Showing X-Y of N", max-5 page buttons w/ ellipsis,
-prev/next) applied **client-side** (slices already-fetched arrays — no endpoint shape changes) to 11 list
-views: Activity Job-Alerts (10), Activity System Scanner/Polls/Ghosted/Recent-Errors (10 each), Settings
+prev/next) applied **client-side** (slices already-fetched arrays — **no endpoint shape changes; server
+lists are already capped at ≤100 rows, so client-side slicing is safe and avoids touching 7 endpoints +
+their tests**) to 11 list views + a nested **skip-reasons expand/collapse** ("+ Show N more", first 5) in
+the Activity → Job-Alert expanded detail: Activity Job-Alerts (10), Activity System Scanner/Polls/Ghosted/Recent-Errors (10 each), Settings
 Scan-History (10) / API-Usage (20) / Error-Log (10), Admin Users (20) / Error-Log (10) / Governance audit
 (20). **Bugs:** scanner "Multiple rows" (UserPreferences `scalar_one_or_none`→`.first()`); Gmail-alert "No
 link" (skip url-less gated cards); expanded alert SKIP_WORDS (CTO/Program-Manager/Strategy/Advisory — bare

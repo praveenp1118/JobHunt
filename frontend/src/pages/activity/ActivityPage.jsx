@@ -131,9 +131,11 @@ function AlertsTab() {
 
 function AlertRow({ alert }) {
   const [open, setOpen] = useState(false)
+  const [showAllReasons, setShowAllReasons] = useState(false)
   const allGated = alert.links_public === 0 && alert.links_gated > 0
   const noLinks = alert.jobs_saved === 0 && alert.links_found === 0
   const reasons = alert.skip_reasons || []
+  const shownReasons = showAllReasons ? reasons : reasons.slice(0, 5)
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -172,7 +174,13 @@ function AlertRow({ alert }) {
 
       {open && reasons.length > 0 && (
         <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 space-y-1.5">
-          {reasons.map((r, i) => <ReasonLine key={i} r={r} />)}
+          {shownReasons.map((r, i) => <ReasonLine key={i} r={r} />)}
+          {reasons.length > 5 && (
+            <button onClick={() => setShowAllReasons((s) => !s)}
+              className="text-xs text-emerald-600 hover:underline font-medium pt-1">
+              {showAllReasons ? 'Show less' : `+ Show ${reasons.length - 5} more`}
+            </button>
+          )}
         </div>
       )}
       {open && reasons.length === 0 && (
