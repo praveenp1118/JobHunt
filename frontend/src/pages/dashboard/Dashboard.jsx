@@ -228,12 +228,12 @@ export default function Dashboard() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit mb-6">
-        {['overview', 'analytics'].map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors capitalize ${
-              tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+        {[{ k: 'overview', l: 'Overview' }, { k: 'analytics', l: 'Analytics' }, { k: 'feed-performance', l: 'Feed Performance' }].map((t) => (
+          <button key={t.k} onClick={() => setTab(t.k)}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              tab === t.k ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}>
-            {t}
+            {t.l}
           </button>
         ))}
       </div>
@@ -256,9 +256,6 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-
-              {/* Feed Performance card */}
-              <FeedPerformance onSelectFeed={(id) => setFilter(`feed:${id}`)} />
 
               {/* Career readiness widget */}
               <CareerWidget />
@@ -450,6 +447,11 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+      )}
+
+      {/* ── Feed Performance ── */}
+      {tab === 'feed-performance' && (
+        <FeedPerformance onSelectFeed={(id) => setFilter(`feed:${id}`)} />
       )}
     </div>
   )
