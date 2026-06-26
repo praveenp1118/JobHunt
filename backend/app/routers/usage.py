@@ -71,9 +71,15 @@ async def get_usage_logs(
     )).scalars().all()
 
     anth = {"total_tokens": 0, "total_cost_usd": 0.0, "total_cost_inr": 0.0,
-            "call_count": 0, "by_category": {}}
+            "call_count": 0, "by_category": {}, "by_model": {}}
     apify = {"total_runs": 0, "total_cost_usd": 0.0, "total_cost_inr": 0.0, "actor_count": 0}
     actors = set()
+
+    def _tier(model: str) -> str:
+        m = (model or "").lower()
+        return ("Haiku" if "haiku" in m else "Sonnet" if "sonnet" in m
+                else "Opus" if "opus" in m else (model or "other"))
+
     for r in all_rows:
         if r.provider == "anthropic":
             anth["total_tokens"] += r.total_tokens or 0
@@ -84,6 +90,11 @@ async def get_usage_logs(
             c["tokens"] += r.total_tokens or 0
             c["cost"] += r.estimated_cost_inr or 0.0
             c["count"] += 1
+            # Tiered-model summary (Haiku vs Sonnet vs Opus) — shows the optimization in ₹.
+            mt = anth["by_model"].setdefault(_tier(r.model), {"count": 0, "cost": 0.0, "tokens": 0})
+            mt["count"] += 1
+            mt["cost"] += r.estimated_cost_inr or 0.0
+            mt["tokens"] += r.total_tokens or 0
         elif r.provider == "apify":
             apify["total_runs"] += r.runs_returned or 0
             apify["total_cost_usd"] += r.estimated_cost_usd or 0.0
@@ -97,6 +108,8 @@ async def get_usage_logs(
     apify["total_cost_inr"] = round(apify["total_cost_inr"], 2)
     for c in anth["by_category"].values():
         c["cost"] = round(c["cost"], 2)
+    for m in anth["by_model"].values():
+        m["cost"] = round(m["cost"], 2)
 
     return {"logs": [_serialize(r) for r in rows], "summary": {"anthropic": anth, "apify": apify}}
 

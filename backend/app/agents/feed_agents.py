@@ -106,26 +106,40 @@ def get_boards_for_domain(industry_code: str, country_code: str) -> list:
     return boards
 
 
+# Keyword generation is a simple task — Haiku is sufficient (was Sonnet).
+FEED_KEYWORDS_MODEL = "claude-haiku-4-5"
+
+
 async def generate_feed_keywords(
     domain_cv_content: str,
     industry_label: str,
     function_label: str,
     country_code: str,
     api_key: str,
-    model: str = "claude-sonnet-4-5",
+    model: str = FEED_KEYWORDS_MODEL,
+    essence: Optional[dict] = None,
 ) -> dict:
     """
-    Use Claude to generate personalised search keywords from a domain CV.
-    Returns: { search_keywords: str, feed_name: str }
+    Use Claude (Haiku) to generate personalised search keywords from a domain CV.
+    Prefers the compact CV essence (keywords + domain strengths) over the full CV text
+    — much smaller input → cheaper. Returns: { search_keywords: str, feed_name: str }
     """
     from anthropic import Anthropic
 
     client = Anthropic(api_key=api_key)
 
+    # Compact essence context when available (keywords + domain strengths), else CV excerpt.
+    if essence:
+        kws = ", ".join(map(str, (essence.get("keywords") or [])[:20]))
+        strengths = ", ".join((essence.get("domain_strengths") or {}).keys())
+        cv_context = f"Candidate keywords: {kws}\nDomain strengths: {strengths}\n" \
+                     f"Identity: {essence.get('core_identity', '')}"
+    else:
+        cv_context = f"Domain CV excerpt (first 2000 chars):\n{domain_cv_content[:2000]}"
+
     prompt = f"""You are a job search assistant. Based on this domain CV for a {industry_label} × {function_label} product leader targeting {country_code}, generate optimal job search keywords.
 
-Domain CV excerpt (first 2000 chars):
-{domain_cv_content[:2000]}
+{cv_context}
 
 Generate:
 1. A short search query (5-8 words) for job boards like Indeed/LinkedIn
@@ -224,7 +238,7 @@ async def create_feed_profile_for_domain_cv(
             function_label=function_label,
             country_code=cv.country_code or "NL",
             api_key=api_key,
-            model=model,
+            essence=cv.essence_json,
         )
         search_keywords = result.get("search_keywords", f"head of product {industry_label.lower()}")
         feed_name = result.get("feed_name", f"{industry_label} × {function_label}")

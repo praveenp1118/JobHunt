@@ -46,6 +46,40 @@ JOB_ALERT_SENDERS = [
 
 NOREPLY_PATTERNS = ["noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon"]
 
+# Classification model — Haiku is plenty for this simple labelling task (was Sonnet).
+CLASSIFY_MODEL = "claude-haiku-4-5"
+
+# Content-pattern rules (free, no Claude) — checked when the sender-based quick_classify
+# is inconclusive. Order matters: rejection before interview before confirmation.
+RULE_BASED_PATTERNS = {
+    "auto_rejection": [
+        "unfortunately", "not moving forward", "other candidates",
+        "position has been filled", "not selected", "regret to inform",
+    ],
+    "interview_invite": [
+        "interview", "schedule a call", "meet with", "speak with our team",
+        "next steps", "assessment",
+    ],
+    "auto_confirmation": [
+        "application received", "application submitted", "thank you for applying",
+        "we received your", "your application was sent",
+    ],
+    "job_alert": [
+        "jobs matching", "new jobs for you", "recommended jobs", "job alert",
+    ],
+}
+# Categories that always need a human in the loop, even when matched by a free rule.
+_HITL_CATEGORIES = {"interview_invite", "genuine_recruiter", "offer"}
+
+
+def rule_classify(subject: str, body_preview: str) -> Optional[str]:
+    """Free content-pattern classification. Returns a category or None (→ needs Claude)."""
+    text = f"{subject or ''} {body_preview or ''}".lower()
+    for category, patterns in RULE_BASED_PATTERNS.items():
+        if any(p in text for p in patterns):
+            return category
+    return None
+
 
 def quick_classify(from_email: str, subject: str, body_preview: str) -> Optional[str]:
     """
@@ -103,18 +137,18 @@ async def classify_emails_batch(
     needs_claude = []
 
     for email_data in emails:
-        quick = quick_classify(
-            email_data.get("from_email", ""),
-            email_data.get("subject", ""),
-            email_data.get("body_preview", ""),
-        )
+        subj = email_data.get("subject", "")
+        body = email_data.get("body_preview", "")
+        # 1. sender-based quick rules → 2. content-pattern rules (both FREE, no Claude)
+        quick = quick_classify(email_data.get("from_email", ""), subj, body) \
+            or rule_classify(subj, body)
         if quick:
             results.append({
                 "id": email_data["id"],
                 "classification": quick,
                 "confidence": "high",
-                "needs_hitl": False,
-                "summary": f"Auto-classified as {quick}",
+                "needs_hitl": quick in _HITL_CATEGORIES,
+                "summary": f"Rule-classified as {quick}",
             })
         else:
             needs_claude.append(email_data)
@@ -172,11 +206,11 @@ needs_hitl = true for: genuine_recruiter, interview_invite, offer"""
 
     try:
         response = client.messages.create(
-            model=settings.anthropic_model,
+            model=CLASSIFY_MODEL,   # Haiku — classification is simple, no need for Sonnet
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
-        await log_call("classify_emails_batch", "gmail", response, settings.anthropic_model)
+        await log_call("classify_emails_batch", "gmail", response, CLASSIFY_MODEL)
         text = response.content[0].text
         text = re.sub(r"```json\s*", "", text)
         text = re.sub(r"```\s*", "", text)

@@ -163,6 +163,7 @@ class JDParseResult(BaseModel):
     # Usage for this parse (None if not scored)
     s1_tokens: Optional[int] = None
     s1_cost_inr: Optional[float] = None
+    stage: Optional[str] = None   # RAG tier used: stage2_essence (Haiku) | stage3_full (Sonnet)
 
 
 # ── Email thread ──────────────────────────────────────────────────────────────

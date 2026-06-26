@@ -125,8 +125,11 @@ async def _run_analysis(user, session, source=None, feed_id=None, domain_cv_id=N
         raise HTTPException(status_code=400, detail="Upload a master CV first to analyse your career readiness")
 
     clauses, filter_hash, filter_label, fields = await _resolve_filter(session, source, feed_id, domain_cv_id, market)
+    # Best-fit JDs first (highest S1d), analyse up to 100.
+    from sqlalchemy import func as _func
     jobs = (await session.execute(
-        select(Job).where(Job.user_id == user.id, Job.jd_raw.isnot(None), *clauses).limit(50))).scalars().all()
+        select(Job).where(Job.user_id == user.id, Job.jd_raw.isnot(None), *clauses)
+        .order_by(_func.coalesce(Job.s1d, Job.s1).desc().nullslast()).limit(100))).scalars().all()
     jd_texts = [(j.jd_md or j.jd_raw) for j in jobs if (j.jd_md or j.jd_raw)]
     if not jd_texts:
         raise HTTPException(status_code=400, detail=f"No jobs match this filter ({filter_label}) — try a broader filter")
@@ -135,10 +138,15 @@ async def _run_analysis(user, session, source=None, feed_id=None, domain_cv_id=N
         select(CareerQuestion).where(CareerQuestion.user_id == user.id))).scalars().all()}
 
     key = await _anthropic_key(user, session)
-    model = await get_user_model(user.id, session)
+    # Prefer the user's configured career_model (Settings → Scoring); fall back to their default.
+    from app.models.user import UserPreferences
+    _prefs = (await session.execute(
+        select(UserPreferences).where(UserPreferences.user_id == user.id))).scalars().first()
+    model = (getattr(_prefs, "career_model", None)) or await get_user_model(user.id, session)
     set_usage_user(user.id)
     analysis = await analyse_career_gaps(master.content_md, jd_texts, answers, key, model,
-                                         session=session, user_id=user.id)
+                                         session=session, user_id=user.id,
+                                         master_essence=master.essence_json)
     usage = analysis.pop("_usage", {}) or {}
     if not analysis or (analysis.get("readiness_score") is None and not analysis.get("scores")):
         raise HTTPException(status_code=502, detail="Career analysis could not be parsed — please retry")

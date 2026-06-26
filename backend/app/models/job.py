@@ -144,6 +144,9 @@ class Job(Base, TimestampMixin):
     best_domain_cv_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("domain_cvs.id"), nullable=True, index=True
     )
+    # V3 optimization: cached Tailor-page JD highlights ({matches, gaps}) — computed once
+    # per job (Haiku + CV essence) and reused, so opening Tailor never re-spends tokens.
+    jd_highlights_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Salary
     salary_range_raw: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

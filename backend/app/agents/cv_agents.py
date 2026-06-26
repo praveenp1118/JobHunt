@@ -61,12 +61,14 @@ RULES:
 RAW TEXT:
 {raw_text}"""
 
+    # Simple formatting task — Haiku is sufficient (was Sonnet).
+    used_model = model or "claude-haiku-4-5"
     response = client.messages.create(
-        model=model or settings.anthropic_model,
+        model=used_model,
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
-    await log_call("text_to_markdown_cv", "other", response, model or settings.anthropic_model)
+    await log_call("text_to_markdown_cv", "other", response, used_model)
     return response.content[0].text.strip()
 
 

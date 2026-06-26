@@ -61,17 +61,27 @@ async def analyse_career_gaps(
     model: str,
     session=None,
     user_id=None,
+    master_essence: dict = None,
 ) -> dict:
-    """Single batch call. Returns the analysis dict (+ `_usage` = {tokens_used, cost_inr})."""
+    """Single batch call. Returns the analysis dict (+ `_usage` = {tokens_used, cost_inr}).
+
+    Optimization: prefers the compact CV essence over the full CV text (smaller input),
+    and analyses up to 100 JDs (the caller orders them best-fit first)."""
+    from app.agents.rag_scorer import _essence_text
     client = _get_client(anthropic_key)
     used_model = model or settings.anthropic_model
     jd_count = len(jd_texts)
-    jd_block = "\n".join(f"<jd_{i + 1}>\n{jd[:500]}\n</jd_{i + 1}>" for i, jd in enumerate(jd_texts[:50]))
+    jd_block = "\n".join(f"<jd_{i + 1}>\n{jd[:500]}\n</jd_{i + 1}>" for i, jd in enumerate(jd_texts[:100]))
+
+    # Use the CV essence when available (fewer input tokens); fall back to the full CV.
+    cv_for_prompt = _essence_text(master_essence) if master_essence else ""
+    if not cv_for_prompt:
+        cv_for_prompt = master_cv_md[:8000]
 
     user_prompt = f"""
 MASTER CV:
 <cv_content>
-{master_cv_md[:8000]}
+{cv_for_prompt[:8000]}
 </cv_content>
 
 USER CONTEXT:

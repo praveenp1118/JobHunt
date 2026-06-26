@@ -111,11 +111,26 @@ async def jd_highlights(
             )).scalar_one_or_none()
             country_rules = _country_rule_display(country)
 
-    anthropic_key = await _get_anthropic_key(user, session)
+    # Cached per job — never re-run unless the JD changes (cache key includes a JD hash).
     jd_text = job.jd_md or job.jd_raw or ""
+    import hashlib
+    jd_sig = hashlib.sha256(jd_text.encode("utf-8", "ignore")).hexdigest()[:16]
+    cached = job.jd_highlights_json
+    if cached and cached.get("_jd_sig") == jd_sig:
+        return {"matches": cached.get("matches", []), "gaps": cached.get("gaps", []),
+                "country_rules": country_rules, "cached": True}
+
+    anthropic_key = await _get_anthropic_key(user, session)
+    master = (await session.execute(
+        select(MasterCV).where(MasterCV.user_id == user.id, MasterCV.is_active == True)
+    )).scalars().first()
     result = await extract_jd_highlights(
-        jd_text, model=await get_user_model(user.id, session), user_anthropic_key=anthropic_key)
-    return {"matches": result["matches"], "gaps": result["gaps"], "country_rules": country_rules}
+        jd_text, user_anthropic_key=anthropic_key,
+        cv_essence=(master.essence_json if master else None))
+    job.jd_highlights_json = {"matches": result["matches"], "gaps": result["gaps"], "_jd_sig": jd_sig}
+    await session.commit()
+    return {"matches": result["matches"], "gaps": result["gaps"],
+            "country_rules": country_rules, "cached": False}
 
 
 # ══════════════════════════════════════════════════════════════

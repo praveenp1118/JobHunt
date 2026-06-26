@@ -137,7 +137,7 @@ async def suggest_feed(
                 function_label=function_label,
                 country_code=country_code,
                 api_key=api_key,
-                model=settings.anthropic_model,
+                essence=cv.essence_json,
             )
             search_keywords = result.get("search_keywords") or search_keywords
             feed_name = result.get("feed_name") or feed_name

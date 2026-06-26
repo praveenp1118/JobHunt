@@ -194,6 +194,11 @@ export default function AddJobModal({ onClose, onSuccess }) {
                     <span className="text-sm font-medium text-gray-700">Base fit score (S1)</span>
                     <div className="flex items-center gap-2">
                       {parseResult.s1_tokens && <TokenBadge tokens={parseResult.s1_tokens} cost_inr={parseResult.s1_cost_inr} />}
+                      {parseResult.stage && (
+                        <span className="text-[10px] text-gray-400" title="Hybrid-RAG tier used to score this job">
+                          {parseResult.stage === 'stage3_full' ? 'Sonnet — borderline' : 'Haiku'}
+                        </span>
+                      )}
                       <ScorePill score={s1} />
                     </div>
                   </div>

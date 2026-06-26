@@ -127,6 +127,19 @@ export default function UsageTab() {
             ))}
             {Object.keys(anth.by_category).length === 0 && <p className="text-xs text-gray-400">No Claude usage in this window.</p>}
           </div>
+          {anth.by_model && Object.keys(anth.by_model).length > 0 && (
+            <div className="mt-3 pt-2 border-t border-gray-100 space-y-0.5">
+              {Object.entries(anth.by_model).sort((a, b) => b[1].cost - a[1].cost).map(([tier, m]) => (
+                <div key={tier} className="flex items-center justify-between text-[11px]">
+                  <span className={tier === 'Haiku' ? 'text-emerald-600 font-medium' : 'text-gray-600'}>{tier} calls: {m.count}</span>
+                  <span className="text-gray-400 tabular-nums">₹{m.cost.toFixed(2)}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between text-[11px] font-semibold text-gray-700 pt-0.5">
+                <span>Total</span><span className="tabular-nums">₹{anth.total_cost_inr.toFixed(2)}</span>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-200 p-5">
@@ -192,6 +205,7 @@ function UsageTable({ logs, isLoading, expanded, setExpanded, kind }) {
             <th className="px-4 py-2 font-medium">Date</th>
             <th className="px-4 py-2 font-medium">{kind === 'apify' ? 'Actor' : 'Agent'}</th>
             <th className="px-4 py-2 font-medium">For</th>
+            {kind === 'anthropic' && <th className="px-4 py-2 font-medium">Model</th>}
             <th className="px-4 py-2 font-medium text-right">{kind === 'apify' ? 'Runs' : 'Tokens'}</th>
             <th className="px-4 py-2 font-medium text-right">Cost</th>
           </tr>
@@ -205,6 +219,16 @@ function UsageTable({ logs, isLoading, expanded, setExpanded, kind }) {
                 <td className="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">{l.created_at ? format(new Date(l.created_at), 'MMM d HH:mm') : '—'}</td>
                 <td className="px-4 py-2.5 text-xs text-gray-700 font-mono truncate max-w-[160px]">{l.agent_name}</td>
                 <td className="px-4 py-2.5 text-xs text-gray-600 truncate max-w-[200px]">{l.entity_label || '—'}</td>
+                {kind === 'anthropic' && (
+                  <td className="px-4 py-2.5">
+                    {(() => {
+                      const m = (l.model || '').toLowerCase()
+                      const tier = m.includes('haiku') ? 'Haiku' : m.includes('sonnet') ? 'Sonnet' : m.includes('opus') ? 'Opus' : '—'
+                      const cls = tier === 'Haiku' ? 'bg-emerald-50 text-emerald-600' : tier === 'Sonnet' ? 'bg-blue-50 text-blue-600' : tier === 'Opus' ? 'bg-purple-50 text-purple-600' : 'bg-gray-100 text-gray-400'
+                      return <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${cls}`}>{tier}</span>
+                    })()}
+                  </td>
+                )}
                 <td className="px-4 py-2.5 text-right">
                   {kind === 'apify' ? <span className="text-xs tabular-nums text-gray-700">{l.runs_returned ?? '—'}</span> : <TokenBadge n={l.total_tokens} />}
                 </td>
@@ -214,7 +238,7 @@ function UsageTable({ logs, isLoading, expanded, setExpanded, kind }) {
               </tr>
               {expanded === l.id && (
                 <tr key={l.id + '-d'} className="bg-gray-50">
-                  <td colSpan={5} className="px-4 py-3">
+                  <td colSpan={kind === 'anthropic' ? 6 : 5} className="px-4 py-3">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                       <Detail label="Agent" value={l.agent_name} />
                       <Detail label="Category" value={l.category} />

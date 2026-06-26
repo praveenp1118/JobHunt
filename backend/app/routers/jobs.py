@@ -892,18 +892,26 @@ async def _parse_raw_text(
     s1_tokens = None
     s1_cost_inr = None
 
+    parse_stage = None
     if score and filter_result["passed"]:
         master = await _get_master_cv(user, session)
         if master:
             anthropic_key = await _get_anthropic_key(user, session)
             from app.utils.usage_logger import set_usage_user, set_usage_entity, get_session_usage
+            from app.agents.jd_agents import tiered_parse_and_score
+            from app.models.user import UserPreferences
             set_usage_user(user.id)
             set_usage_entity("job", None, None)
-            result_data = await parse_and_score_jd(raw_text, master.content_md, anthropic_key)
+            _prefs = (await session.execute(
+                select(UserPreferences).where(UserPreferences.user_id == user.id))).scalars().first()
+            # Tiered RAG: Haiku + essence first, Sonnet full-CV only if borderline.
+            result_data = await tiered_parse_and_score(
+                raw_text, master.content_md, master.essence_json, _prefs, anthropic_key)
             parsed_data = result_data.get("parsed", {})
             s1_score = result_data.get("s1_score", 0)
             key_matches = result_data.get("key_matches", [])
             gaps = result_data.get("gaps", [])
+            parse_stage = result_data.get("stage")
             _pu = get_session_usage()
             s1_tokens = _pu["tokens"] or None
             s1_cost_inr = round(_pu["cost_inr"], 2) or None
@@ -957,4 +965,5 @@ async def _parse_raw_text(
         is_duplicate=False,
         s1_tokens=s1_tokens,
         s1_cost_inr=s1_cost_inr,
+        stage=parse_stage,
     )

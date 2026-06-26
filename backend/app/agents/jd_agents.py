@@ -156,6 +156,40 @@ def _parse_json_safe(text: str) -> dict:
 
 # ── Main agent: parse JD + score S1 in one call ───────────────────────────────
 
+async def tiered_parse_and_score(
+    raw_text: str,
+    master_cv_md: str,
+    master_essence: Optional[dict],
+    prefs,
+    user_anthropic_key: Optional[str] = None,
+) -> dict:
+    """Manual-add scoring with the hybrid-RAG tiers (Groups 1/3):
+      Stage 2 — parse + score against the compact CV essence (Haiku, cheap)
+      Stage 3 — re-score against the full CV (Sonnet) ONLY for borderline scores
+    Falls back to full-CV scoring when no essence exists yet. Returns the
+    parse_and_score_jd dict plus a `stage` marker ('stage2_essence' | 'stage3_full')."""
+    from app.agents.rag_scorer import config_from_prefs, _essence_text
+    config = config_from_prefs(prefs)
+    essence_text = _essence_text(master_essence) if master_essence else ""
+
+    res = await parse_and_score_jd(
+        raw_text, essence_text or master_cv_md, user_anthropic_key,
+        model=config["s1_essence_model"])
+    s1 = res.get("s1_score", 0) or 0
+    stage = "stage2_essence" if essence_text else "stage3_full"
+
+    if essence_text and config["s1_borderline_low"] <= s1 < config["s1_borderline_high"]:
+        full = await parse_and_score_jd(
+            raw_text, master_cv_md, user_anthropic_key, model=config["s1_full_model"])
+        res = full
+        s1 = full.get("s1_score", s1) or s1
+        stage = "stage3_full"
+
+    res["s1_score"] = s1
+    res["stage"] = stage
+    return res
+
+
 async def parse_and_score_jd(
     raw_text: str,
     master_cv_md: str,

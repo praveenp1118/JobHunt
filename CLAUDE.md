@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (105 tests, all passing):
+- Current coverage (114 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -118,6 +118,12 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     sonnet for borderline; confident save ≥ borderline_high skips Stage 3; domain scoring skipped below
     min_s1) via a monkeypatched `batch_score_s1` (deterministic, free); `config_from_prefs`; `GET
     /scoring/estimate`; `master_cvs.essence_json` round-trips.
+  - `test_optimization.py` (9): email `rule_classify` (rejection/interview/None); JD highlights use Haiku
+    (`JD_HIGHLIGHTS_MODEL` + a monkeypatched-client call asserting `model=haiku`) and are **cached** per job
+    (a pre-seeded `jd_highlights_json` with a matching JD signature → endpoint returns `cached:true`, no
+    Claude); feed keywords default to Haiku; the gmail-alert public path wires the 3-stage config
+    (`config_from_prefs`/`s1_essence_model`/`s1_borderline_low`/`s1_full_model`); and `tiered_parse_and_score`
+    escalates Haiku-essence → Sonnet-full only for borderline scores (`stage3_full`, calls `[haiku, sonnet]`).
   - `test_email_to_jobhunt.py` (4): `is_save_job_email` detects save signals + `jh:`/`jt:` prefixes
     (pure); `extract_first_url` pulls the first real job URL (anchors/text/subject, skips social/footer);
     `process_save_job_email` (mocked fetch/parse) saves a `manual`/`new` job with `portal_url` + S1 +
@@ -228,7 +234,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_night_batch → v3_auto_detect_apps → v3_email_to_jobhunt
+│   │   └── versions/        # chain tip: … → v3_auto_detect_apps → v3_email_to_jobhunt → v3_optimization
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -324,6 +330,8 @@ D:\JobHunt\
 - `s1` (master fit), `s1d` (best domain CV fit), `s2`, `s3_domain`, `s3_master`
 - `domain_cv_scores` (JSONB `{domain_cv_id: score}` — fit vs ALL active domain CVs at ingest)
 - `best_domain_cv_id` (FK → domain_cvs; highest-scoring domain CV; drives Tailor pre-select)
+- `jd_highlights_json` (JSONB) — **cached** Tailor-page JD highlights `{matches, gaps, _jd_sig}`; computed
+  once (Haiku + CV essence) and reused until the JD changes (`_jd_sig` = sha256(jd)[:16]). Migration `v3_optimization`.
 - `has_partial_jd` (bool) — JD is only an alert-email snippet (LinkedIn/gated cards); full JD behind
   `portal_url`. Saved **unscored** (`s1`/`s1d`/`domain_cv_scores`/`best_domain_cv_id` = NULL) — a 50-char
   snippet scores unreliably. Score it by fetching the full JD (`POST /jobs/{id}/fetch-jd` → background
@@ -1104,7 +1112,23 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 27, 2026 — **Email to JobHunt** (migration `v3_email_to_jobhunt`): email any job URL to
+*Last updated: June 27, 2026 — **Cost optimization: RAG + tiered models across ALL Claude calls** (migration
+`v3_optimization` adds `jobs.jd_highlights_json`). **Email classification** (`gmail_agents`): rules-first —
+sender `quick_classify` then content-pattern `rule_classify` (both FREE), and the remaining ~30% now use
+**Haiku** (`CLASSIFY_MODEL`) not Sonnet (~85% cheaper). **Gmail alert public-URL path** (`gmail_alert_agent`):
+full 3-stage hybrid-RAG — Stage 1 keyword filter (free) → Stage 2 essence score (Haiku) → Stage 3 full-CV
+(Sonnet, **borderline only**) → domain scoring (config model, gated on min S1). **Manual JD parse** (jobs
+`parse/text|url` via new `jd_agents.tiered_parse_and_score`): Haiku+essence first, Sonnet full-CV only if
+borderline; returns `stage` → AddJobModal shows "Haiku" / "Sonnet — borderline". **JD highlights**
+(`extract_jd_highlights`): Haiku + CV-essence context (≈60% fewer input tokens) + **cached per job** in
+`jd_highlights_json` (endpoint returns `cached:true` on a JD-signature hit — never re-runs unless the JD
+changes). **Feed keywords** (`generate_feed_keywords`): Haiku + CV essence. **text_to_markdown_cv**: Haiku.
+**Career insights** (`analyse_career_gaps`): CV essence instead of full text, `career_model` from prefs, JD
+limit 50→**100** (ordered best-fit/S1d DESC). **API Usage tab**: per-row **Model** tier badge (Haiku/Sonnet/
+Opus) + a `by_model` summary ("Haiku calls: N · ₹X / Sonnet calls: M · ₹Y / Total"). **Scheduler night batch:**
+the **scanner** already defers scoring in overnight mode (night-batch feature); **deliberately NOT** deferring
+hourly **email classification** to 2 AM (would delay time-sensitive recruiter/interview emails — rules-first +
+Haiku already cut that cost ~85% without delay). 114 tests. **Email to JobHunt** (migration `v3_email_to_jobhunt`): email any job URL to
 your job-search Gmail with a subject containing "jobhunt"/"job hunt"/"save job"/"crawl"/"track this"/"add to
 tracker" — or starting with **`jh:`** / **`jt:`** — and the poll fetches + parses + RAG-scores the URL and
 saves it (`source=manual`, `status=new`, `portal_url`), then emails a confirmation back ("✅ Saved to JobHunt:
@@ -1260,4 +1284,4 @@ by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category b
 row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. **Community follow-ups:** insights on the Add-Job parse screen
 (compact card, decide before tailoring), Contributions "View →" deep-link fixed (`/jobs?open={id}` →
 JobsPage opens the detail panel), and **`normalize_company`** matching so company-name casing/punctuation
-no longer splits buckets. All 105 smoke tests passing*
+no longer splits buckets. All 114 smoke tests passing*

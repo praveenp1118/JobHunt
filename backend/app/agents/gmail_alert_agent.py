@@ -447,18 +447,16 @@ async def process_job_alert_email(
         select(MasterCV).where(MasterCV.user_id == user.id, MasterCV.is_active == True)
     )).scalars().first()
     master_cv_md = master.content_md if master else ""
-    # Hybrid-RAG Stage 1 keyword filter (free) for the public-URL path.
+    # Full hybrid-RAG config for the public-URL path: Stage 1 keyword filter (free) +
+    # Stage 2 essence score (Haiku) + Stage 3 full-CV score (Sonnet, borderline only).
+    from app.agents.rag_scorer import config_from_prefs, _essence_text
+    from app.models.user import UserPreferences
+    _p = (await session.execute(
+        select(UserPreferences).where(UserPreferences.user_id == user.id))).scalars().first()
+    rag_config = config_from_prefs(_p)
     _essence_kw = [str(k).lower() for k in ((master.essence_json or {}).get("keywords") or [])] if master else []
-    _kw_threshold = 0
-    if _essence_kw:
-        try:
-            from app.models.user import UserPreferences
-            from app.agents.rag_scorer import config_from_prefs
-            _p = (await session.execute(
-                select(UserPreferences).where(UserPreferences.user_id == user.id))).scalars().first()
-            _kw_threshold = config_from_prefs(_p)["keyword_match_threshold"]
-        except Exception:
-            _kw_threshold = 3
+    _kw_threshold = rag_config["keyword_match_threshold"] if _essence_kw else 0
+    _essence_text_md = _essence_text(master.essence_json) if (master and master.essence_json) else ""
     # ALL active domain CVs (id, content, label) — each job is scored against every one.
     domain_cv_list = await _load_domain_cvs_full(session, user.id)
     label_map = {str(dcv_id): label for dcv_id, _content, label in domain_cv_list}
@@ -506,18 +504,30 @@ async def process_job_alert_email(
                 results.append({"url": url, "reason": "duplicate"})
                 continue
 
-            result = await parse_and_score_jd(content, master_cv_md, anthropic_key, model=model)
+            # ── Stage 2: cheap parse + essence score (Haiku, CV essence as context) ──
+            result = await parse_and_score_jd(
+                content, _essence_text_md or master_cv_md, anthropic_key,
+                model=rag_config["s1_essence_model"])
             s1 = result.get("s1_score", 0) or 0
             parsed = result.get("parsed", {})
+            stage_used = "stage2_essence"
+            # ── Stage 3: only borderline scores get the full-CV quality model (Sonnet) ──
+            if _essence_text_md and rag_config["s1_borderline_low"] <= s1 < rag_config["s1_borderline_high"]:
+                full = await parse_and_score_jd(
+                    content, master_cv_md, anthropic_key, model=rag_config["s1_full_model"])
+                s1 = full.get("s1_score", s1) or s1
+                parsed = full.get("parsed") or parsed
+                stage_used = "stage3_full"
             company = parsed.get("company") or "Unknown"
             role = parsed.get("role") or "Unknown"
 
-            # Score this job against ALL active domain CVs; the best one drives the
-            # threshold decision (best S1d when domain CVs exist, else S1).
+            # Domain-CV scoring (config model) — only when S1 clears the min threshold.
             job_input = [{"id": "j", "role": role, "company": company,
                           "location": parsed.get("location") or "", "description": content[:500]}]
-            dscores = (await _score_jobs_vs_domain_cvs(
-                job_input, domain_cv_list, anthropic_key, model)).get("j", {})
+            dscores = {}
+            if s1 >= rag_config["domain_score_min_s1"]:
+                dscores = (await _score_jobs_vs_domain_cvs(
+                    job_input, domain_cv_list, anthropic_key, rag_config["domain_score_model"])).get("j", {})
             best_id, best_s1d = _best_domain(dscores)
             has_domain = best_s1d is not None
             decision = best_s1d if has_domain else s1
@@ -552,7 +562,7 @@ async def process_job_alert_email(
             saved_ids.append(str(new_id))
             results.append({"url": url, "reason": "saved", "s1": s1, "s1d": best_s1d,
                             "domain_scores": _labelled(dscores), "best_domain_cv": label_map.get(best_id),
-                            "decision": "s1d" if has_domain else "s1",
+                            "decision": "s1d" if has_domain else "s1", "stage": stage_used,
                             "role": role, "company": company})
         except Exception as e:
             print(f"⚠️ job alert: failed to process {url}: {e}")
