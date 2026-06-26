@@ -10,10 +10,13 @@ import ScorePill from '../../components/ui/ScorePill'
 import TokenBadge from '../../components/ui/TokenBadge'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
+import Pagination from '../../components/ui/Pagination'
 import AddJobModal from './AddJobModal'
 import { toast } from '../../store/toast'
 import JobDetail from './JobDetail'
 import TailorOverlay from './TailorOverlay'
+
+const PER_PAGE = 25
 
 const STATUS_FILTERS = [
   { value: null, label: 'All' },
@@ -65,6 +68,7 @@ export default function JobsPage() {
   const [selectedJobId, setSelectedJobId] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [tailorJobId, setTailorJobId] = useState(null)
+  const [page, setPage] = useState(1)
 
   // Filter + sort state lives in the URL so views are shareable/bookmarkable.
   const statusFilter = sp.get('status')
@@ -90,9 +94,13 @@ export default function JobsPage() {
     else patchSp({ sort: null })  // asc → desc → unsorted (default Added DESC)
   }
 
-  // All filters are server-side now (so counts stay accurate beyond the page limit).
+  // Server-side pagination: fetch one page; filters/sort are also server-side so counts stay accurate.
+  const filterKey = `${statusFilter}|${sourceFilter}|${scoreFilter}|${domainFilter}|${needsHitl}|${hidePartial}|${search}|${sortKey}:${sortDir}`
+  // Reset to page 1 whenever any filter / search / sort changes.
+  useEffect(() => { setPage(1) }, [filterKey])
   const params = {
-    limit: 50,
+    limit: PER_PAGE,
+    skip: (page - 1) * PER_PAGE,
     ...(statusFilter && { status: statusFilter }),
     ...(sourceFilter && { source: sourceFilter }),
     ...(scoreFilter && { score: scoreFilter }),
@@ -231,7 +239,7 @@ export default function JobsPage() {
             ))}
           </div>
 
-          {/* Source / Score / Domain filters (combinable, AND logic) */}
+          {/* Row 1: Source + Score pills */}
           <div className="flex items-center gap-x-4 gap-y-2 flex-wrap mt-2">
             <FilterGroup label="Source">
               {SOURCE_FILTERS.map((f) => (
@@ -247,12 +255,16 @@ export default function JobsPage() {
                   onClick={() => patchSp({ score: f.value })}>{f.label}</FilterPill>
               ))}
             </FilterGroup>
+          </div>
+
+          {/* Row 2: Domain dropdown + Partial-JD toggle (kept on one line) */}
+          <div className="flex items-center gap-3 flex-wrap mt-2">
             {domainCVOptions.length > 0 && (
               <FilterGroup label="Domain">
                 <select
                   value={domainFilter || ''}
                   onChange={(e) => patchSp({ domain: e.target.value || null })}
-                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:border-emerald-400 bg-white text-gray-700"
+                  className="text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:border-emerald-400 bg-white text-gray-700 max-w-[180px] truncate"
                 >
                   <option value="">All domains ({stats.total ?? 0})</option>
                   {domainCVOptions.map((d) => (
@@ -265,13 +277,13 @@ export default function JobsPage() {
               <button
                 onClick={() => patchSp({ hide_partial: hidePartial ? 'false' : null })}
                 title="Partial-JD jobs (LinkedIn-gated) are unscored until you add the full JD"
-                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors whitespace-nowrap ${
                   hidePartial
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                     : 'bg-amber-50 text-amber-700 border-amber-200'
                 }`}
               >
-                {hidePartial ? 'Hide partial ✓' : `Show partial (${stats.partial_count ?? 0})`}
+                {hidePartial ? 'Hide Partial JD ✓' : `Show Partial JD (${stats.partial_count ?? 0})`}
               </button>
             </FilterGroup>
           </div>
@@ -411,6 +423,12 @@ export default function JobsPage() {
                 ))}
               </tbody>
             </table>
+          )}
+          {!isLoading && totalCount > PER_PAGE && (
+            <div className="px-4 py-3 border-t border-gray-100 bg-white">
+              <Pagination currentPage={page} totalPages={Math.ceil(totalCount / PER_PAGE)}
+                totalItems={totalCount} itemsPerPage={PER_PAGE} onPageChange={setPage} label="jobs" />
+            </div>
           )}
         </div>
       </div>

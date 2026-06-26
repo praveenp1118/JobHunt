@@ -392,6 +392,7 @@ async def list_jobs(
     order_clauses = [primary]
     if sort_key != "created_at":
         order_clauses.append(Job.created_at.desc())  # stable tiebreaker (same score → newest first)
+    order_clauses.append(Job.id.desc())  # final UNIQUE tiebreaker → deterministic across paginated offsets
 
     result = await session.execute(
         select(Job).where(*filters).order_by(*order_clauses).offset(skip).limit(limit)

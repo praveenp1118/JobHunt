@@ -452,7 +452,10 @@ S3 = factual integrity % — computed after Apply
   `has_partial_jd=false OR NULL`), `skip`, `limit`. **Returns an object** `{jobs: [...], total_count, unfiltered_count}` — `total_count`
   matches the current filters, `unfiltered_count` is all of the user's jobs. (All filters **and the sort**
   are server-side so counts stay accurate and the correct rows surface beyond the page limit. Score sorts
-  push NULLs last; every non-date sort tiebreaks on `created_at DESC`.)
+  push NULLs last; every non-date sort tiebreaks on `created_at DESC`, then a **final unique `Job.id DESC`
+  tiebreaker** so paginated `offset`/`limit` pages never overlap. The **Jobs Tracker is server-side
+  paginated** (25/page via `skip`/`limit` + the shared `Pagination` component; page resets on any
+  filter/sort change).)
 - `GET /stats` — pipeline counts + analytics: `total`, `by_status`, **`needs_hitl`** (boolean-flag
   count, fixed), `by_source`, `by_domain_cv` (by detected feed CV), **`by_best_domain`** (by
   best_domain_cv_id — drives the Domain filter dropdown counts), **`by_score_bucket`**
@@ -1089,7 +1092,12 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Night-batch scoring** (RAG add-on, migration `v3_night_batch`): per-user
+*Last updated: June 26, 2026 — **Jobs Tracker filter fixes**: server-side **pagination** (25/page via
+`skip`/`limit` + shared `Pagination`, page resets on filter/sort change) — fixed a latent **non-deterministic
+ordering bug** (added a final unique `Job.id DESC` tiebreaker so paginated pages never overlap); filter bar
+now **2 rows max** (Row 1 Source+Score pills, Row 2 Domain dropdown [max-w-180px, truncated] + Partial toggle
+on the same line); renamed the partial toggle to **"Hide Partial JD ✓" / "Show Partial JD (N)"**.
+**Night-batch scoring** (RAG add-on, migration `v3_night_batch`): per-user
 `UserPreferences.scoring_timing` (**immediate** [default, safe] / overnight / manual) + `night_batch_time`
 (IST, informational); `Job.scoring_status` (scored/pending/failed). In **overnight/manual** mode the scanner
 saves jobs **unscored** (`scoring_status="pending"`, only the free Stage-1 keyword filter runs — no Claude);
