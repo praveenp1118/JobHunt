@@ -358,7 +358,11 @@ async def list_jobs(
             filters.append(Job.source_feed_id == uuid.UUID(feed))
         except (ValueError, TypeError):
             pass
-    if hide_partial:
+    # Alert (gmail_alert) jobs are inherently partial-JD (LinkedIn-gated). When the user
+    # explicitly filters to the Alert source, don't hide them — otherwise the filter shows
+    # nothing (every alert job is partial), which looks like the filter is broken.
+    alert_only = bool(source) and all(s == JobSource.gmail_alert for s in source)
+    if hide_partial and not alert_only:
         filters.append(or_(Job.has_partial_jd == False, Job.has_partial_jd.is_(None)))
     if search:
         filters.append(or_(

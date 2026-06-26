@@ -85,4 +85,8 @@ async def test_partial_jd_flag_exposed_via_api(client, user_creds):
     # and it is hidden by default
     r2 = await client.get("/api/jobs?limit=50", headers=user_creds["headers"])
     assert not any(j["id"] == str(job_id) for j in r2.json()["jobs"])
+    # but filtering by the Alert source overrides hide_partial (alert jobs are all partial,
+    # so hiding them would make the filter show nothing) — the job surfaces.
+    r3 = await client.get("/api/jobs?limit=50&source=gmail_alert", headers=user_creds["headers"])
+    assert any(j["id"] == str(job_id) for j in r3.json()["jobs"])
     # cleanup via user_creds teardown (jobs.user_id ON DELETE CASCADE)

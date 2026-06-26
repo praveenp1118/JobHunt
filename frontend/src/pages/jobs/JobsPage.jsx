@@ -274,17 +274,24 @@ export default function JobsPage() {
               </FilterGroup>
             )}
             <FilterGroup label="Partial">
-              <button
-                onClick={() => patchSp({ hide_partial: hidePartial ? 'false' : null })}
-                title="Partial-JD jobs (LinkedIn-gated) are unscored until you add the full JD"
-                className={`text-xs px-2.5 py-1 rounded-full border transition-colors whitespace-nowrap ${
-                  hidePartial
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : 'bg-amber-50 text-amber-700 border-amber-200'
-                }`}
-              >
-                {hidePartial ? 'Hide Partial JD ✓' : `Show Partial JD (${stats.partial_count ?? 0})`}
-              </button>
+              {sourceFilter === 'gmail_alert' ? (
+                // Alert jobs are all partial-JD, so the toggle doesn't apply — they always show.
+                <span className="text-[11px] text-gray-400 whitespace-nowrap" title="Alert jobs are LinkedIn-gated (partial JD) — always shown when filtering by Alert">
+                  Alert jobs shown (partial JD)
+                </span>
+              ) : (
+                <button
+                  onClick={() => patchSp({ hide_partial: hidePartial ? 'false' : null })}
+                  title="Partial-JD jobs (LinkedIn-gated) are unscored until you add the full JD"
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors whitespace-nowrap ${
+                    hidePartial
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                  }`}
+                >
+                  {hidePartial ? 'Hide Partial JD ✓' : `Show Partial JD (${stats.partial_count ?? 0})`}
+                </button>
+              )}
             </FilterGroup>
           </div>
         </div>

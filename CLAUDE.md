@@ -454,7 +454,10 @@ S3 = factual integrity % — computed after Apply
   `coalesce(s1d, s1)`), **`domain`** (best_domain_cv_id), `search`, **`sort`** (`best_fit`→`s1d` |
   `s1` | `company` | `role` | `market` | `status` | `source` | `created_at`), **`order`** (`asc`|`desc`),
   **`hide_partial`** (default **true** — hides partial-JD/LinkedIn-gated unscored jobs;
-  `has_partial_jd=false OR NULL`), `skip`, `limit`. **Returns an object** `{jobs: [...], total_count, unfiltered_count}` — `total_count`
+  `has_partial_jd=false OR NULL`. **Override:** when the **source filter is `gmail_alert`** (Alert), the
+  partial hide is **skipped** — every alert job is partial, so hiding them would make the Alert filter
+  return nothing; the frontend shows "Alert jobs shown (partial JD)" instead of the Hide toggle there),
+  `skip`, `limit`. **Returns an object** `{jobs: [...], total_count, unfiltered_count}` — `total_count`
   matches the current filters, `unfiltered_count` is all of the user's jobs. (All filters **and the sort**
   are server-side so counts stay accurate and the correct rows surface beyond the page limit. Score sorts
   push NULLs last; every non-date sort tiebreaks on `created_at DESC`, then a **final unique `Job.id DESC`
@@ -1097,7 +1100,13 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Auto-detect external applications** (migration `v3_auto_detect_apps`):
+*Last updated: June 26, 2026 — **Alert source filter fix**: selecting the Jobs Tracker **Alert**
+(`gmail_alert`) source returned **0 jobs** because every alert job is partial-JD (LinkedIn-gated) and the
+default "Hide Partial JD ✓" hid them all. `GET /jobs` now **skips `hide_partial` when the source filter is
+exactly `gmail_alert`** (alert jobs always show under the Alert filter); the Tracker replaces the partial
+toggle with a muted "Alert jobs shown (partial JD)" note for that filter. Verified: Alert + hide_partial
+now returns 100 (was 0); RSS still hides partials. 101 tests (+1 assertion in `test_linkedin_alert`).
+**Auto-detect external applications** (migration `v3_auto_detect_apps`):
 when the Gmail poll classifies an email as `auto_confirmation` (an automated "application sent/received"
 message), `agents/application_detector.py` extracts the company (+ role) from the subject — **pure regex,
 no Claude** (LinkedIn/Indeed/generic ATS patterns) — then either **matches** a `new`/`bookmarked` tracked
