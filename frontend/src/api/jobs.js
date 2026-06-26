@@ -3,8 +3,8 @@ import client from './client'
 export const getJobs = (params = {}) =>
   client.get('/jobs', { params })
 
-export const getJobStats = () =>
-  client.get('/jobs/stats')
+export const getJobStats = (params = {}) =>
+  client.get('/jobs/stats', { params })
 
 export const getJob = (id) =>
   client.get(`/jobs/${id}`)

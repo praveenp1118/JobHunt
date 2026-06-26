@@ -447,7 +447,11 @@ S3 = factual integrity % — computed after Apply
   count, fixed), `by_source`, `by_domain_cv` (by detected feed CV), **`by_best_domain`** (by
   best_domain_cv_id — drives the Domain filter dropdown counts), **`by_score_bucket`**
   (`{any, gte_70, gte_80, gte_90}` on `coalesce(s1d, s1)`), `score_distribution`, `avg_s1`,
-  **`partial_count`** (jobs with `has_partial_jd=True` — drives the "Show partial (N)" toggle)
+  **`partial_count`** (jobs with `has_partial_jd=True` — drives the "Show partial (N)" toggle). **Accepts
+  filters** `source`/`feed_id`/`domain_cv_id`/`market` (Dashboard filter dropdown): pipeline + score stats
+  scope to the filter, **facet counts** (`by_source`/`by_market`/`by_best_domain`/`by_domain_cv`) stay
+  unfiltered so the dropdown always shows each option's full count; also returns **`unfiltered_total`** +
+  **`by_market`**. (`GET /jobs` gained a matching **`feed`** param = `source_feed_id`.)
 - `POST /parse/text`, `POST /parse/url`
 - `POST /confirm/{temp_id}`
 - `GET /{id}`, `PATCH /{id}/status`, `GET /{id}/emails`
@@ -476,6 +480,11 @@ S3 = factual integrity % — computed after Apply
 ### Feeds (`/api/`)
 - `GET /feeds`, `POST /feeds`, `PATCH /feeds/{id}`, `POST /feeds/{id}/toggle`, `DELETE /feeds/{id}`
 - `POST /feeds/{id}/run` — V3: run ONE feed now (synchronous) → `{jobs_found, jobs_added, duration_seconds}`
+- `GET /feeds/with-counts` — active feeds + `job_count` each (Dashboard filter dropdown)
+- `GET /feeds/performance` — per-feed breakdown `{feed_id, feed_name, feed_type, job_count, avg_s1d, avg_s1,
+  applied_count, above_threshold_count, quality_score}` (= `avg_s1d/100·0.6 + applied/count·0.4`, null if
+  unscored), ordered by quality DESC, plus a synthetic **Gmail Alerts** row. Drives the Dashboard **Feed
+  Performance** card (click a row → `?filter=feed:{id}`).
 - `POST /feeds/suggest` — Claude-generates keywords from domain CV
 - `GET /feeds/apify-actors?search=` — live Apify Store search
 - `GET /companies`, `POST /companies`, `DELETE /companies/{id}`
@@ -1062,7 +1071,13 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Governance & security-first build** (`v3_governance` migration: User
+*Last updated: June 26, 2026 — **Dashboard filter + Feed Performance card**: a grouped filter dropdown
+(top-right, by Source / Feed / Domain CV / Market) drives `/dashboard?filter=source:rss|feed:{id}|domain:{id}|
+market:NL` — all pipeline stats, charts, and the recent-jobs table scope to it, with a "Showing N of M jobs"
+indicator; `GET /jobs/stats` accepts `source`/`feed_id`/`domain_cv_id`/`market` (facet counts stay unfiltered)
++ returns `unfiltered_total`/`by_market`, `GET /jobs` gained a `feed` param, new `GET /feeds/with-counts` +
+`GET /feeds/performance`. **Feed Performance** card (Overview, below pipeline stats): per-feed jobs / avg fit /
+applied / quality bar, click-to-filter, + a synthetic Gmail Alerts row. 79 tests. **Governance & security-first build** (`v3_governance` migration: User
 deletion/marketing fields + Creds key-rotation timestamps + `rate_limit_log` + `audit_logs`): per-user
 **rate limiting** on 6 paid endpoints (+ `X-RateLimit-Remaining`), **anti-hallucination** validator on
 tailor apply (`hallucination_check`), **prompt-injection hardening** (XML-tagged user content + SECURITY

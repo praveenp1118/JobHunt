@@ -8,6 +8,8 @@ export const updateFeed = (id, data) => client.patch(`/feeds/${id}`, data)
 export const toggleFeed = (id) => client.post(`/feeds/${id}/toggle`)
 export const runFeed = (id) => client.post(`/feeds/${id}/run`)
 export const deleteFeed = (id) => client.delete(`/feeds/${id}`)
+export const getFeedsWithCounts = () => client.get('/feeds/with-counts')
+export const getFeedPerformance = () => client.get('/feeds/performance')
 
 export const getTargetCompanies = () => client.get('/companies')
 export const addTargetCompany = (data) => client.post('/companies', data)

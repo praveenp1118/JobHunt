@@ -1,14 +1,17 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
 import { getJobStats, getJobs, pollGmail } from '../../api/jobs'
+import { getFeedsWithCounts } from '../../api/feeds'
+import { getDomainCVs } from '../../api/cvs'
 import { StatusBadge, MarketBadge } from '../../components/ui/Badge'
 import { ThreeScores } from '../../components/ui/ScorePill'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import { toast } from '../../store/toast'
 import CareerWidget from '../../components/dashboard/CareerWidget'
+import FeedPerformance from '../../components/dashboard/FeedPerformance'
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -25,6 +28,8 @@ const PIPELINE_ITEMS = [
 
 const PIE_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#6b7280', '#3b82f6', '#8b5cf6']
 
+const MARKET_LABELS = { NL: 'Netherlands', EU: 'EU', Dubai: 'Dubai', SG: 'Singapore', IN: 'India' }
+
 const SCORE_COLORS = {
   excellent: '#10b981',
   good: '#f59e0b',
@@ -35,14 +40,34 @@ const SCORE_COLORS = {
 export default function Dashboard() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const [sp, setSp] = useSearchParams()
   const [tab, setTab] = useState('overview')
   const [polling, setPolling] = useState(false)
 
+  // Filter: ?filter=source:rss | feed:{uuid} | domain:{uuid} | market:NL
+  const filter = sp.get('filter') || ''
+  const [ftype, fval] = filter.split(':')
+  const statsParams = {}
+  const jobsFilter = {}
+  if (ftype === 'source') { statsParams.source = fval; jobsFilter.source = fval }
+  else if (ftype === 'feed') { statsParams.feed_id = fval; jobsFilter.feed = fval }
+  else if (ftype === 'domain') { statsParams.domain_cv_id = fval; jobsFilter.domain = fval }
+  else if (ftype === 'market') { statsParams.market = fval; jobsFilter.market = fval }
+
+  const setFilter = (v) => {
+    const next = new URLSearchParams(sp)
+    if (v) next.set('filter', v); else next.delete('filter')
+    setSp(next, { replace: true })
+  }
+
   const { data: statsData, isLoading: statsLoading } = useQuery({
-    queryKey: ['job-stats'],
-    queryFn: () => getJobStats(),
+    queryKey: ['job-stats', filter],
+    queryFn: () => getJobStats(statsParams),
     refetchInterval: 30000,
   })
+
+  const { data: feedsCountData } = useQuery({ queryKey: ['feeds-with-counts'], queryFn: getFeedsWithCounts, retry: false })
+  const { data: domainCVsData } = useQuery({ queryKey: ['domain-cvs'], queryFn: getDomainCVs, retry: false })
 
   const { data: hitlData } = useQuery({
     queryKey: ['hitl-jobs'],
@@ -51,8 +76,8 @@ export default function Dashboard() {
   })
 
   const { data: recentData, isLoading: recentLoading } = useQuery({
-    queryKey: ['recent-jobs'],
-    queryFn: () => getJobs({ limit: 10 }),
+    queryKey: ['recent-jobs', filter],
+    queryFn: () => getJobs({ limit: 10, ...jobsFilter }),
     refetchInterval: 30000,
   })
 
@@ -100,6 +125,39 @@ export default function Dashboard() {
           <p className="text-sm text-gray-500 mt-0.5">Your job search at a glance</p>
         </div>
         <div className="flex items-center gap-2">
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 outline-none focus:border-emerald-400 max-w-[220px]"
+          >
+            <option value="">All jobs ({stats.unfiltered_total ?? 0})</option>
+            <optgroup label="By Source">
+              {[['rss', 'RSS feeds'], ['apify', 'LinkedIn / Apify'], ['gmail_alert', 'Gmail Alerts'], ['manual', 'Manual']].map(([k, lbl]) => (
+                <option key={k} value={`source:${k}`}>{lbl} ({(stats.by_source || {})[k] || 0})</option>
+              ))}
+            </optgroup>
+            {(feedsCountData?.data || []).length > 0 && (
+              <optgroup label="By Feed">
+                {(feedsCountData?.data || []).map((f) => (
+                  <option key={f.feed_id} value={`feed:${f.feed_id}`}>{f.name.slice(0, 28)} ({f.job_count})</option>
+                ))}
+              </optgroup>
+            )}
+            {(domainCVsData?.data || []).length > 0 && (
+              <optgroup label="By Domain CV">
+                {(domainCVsData?.data || []).map((cv) => (
+                  <option key={cv.id} value={`domain:${cv.id}`}>
+                    {(cv.industry_label || 'Domain')} × {(cv.country_code || '—')} ({(stats.by_best_domain || {})[String(cv.id)] || 0})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            <optgroup label="By Market">
+              {Object.entries(stats.by_market || {}).map(([m, c]) => (
+                <option key={m} value={`market:${m}`}>{MARKET_LABELS[m] || m} ({c})</option>
+              ))}
+            </optgroup>
+          </select>
           <Button variant="secondary" size="sm" onClick={handlePollNow} loading={polling}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -109,6 +167,14 @@ export default function Dashboard() {
           <Button size="sm" onClick={() => navigate('/jobs')}>+ Add job</Button>
         </div>
       </div>
+
+      {/* Filter indicator */}
+      {filter && (
+        <div className="-mt-3 mb-5 flex items-center gap-2 text-xs text-gray-500">
+          <span>Showing <strong className="text-gray-800">{stats.total ?? 0}</strong> of {stats.unfiltered_total ?? 0} jobs</span>
+          <button onClick={() => setFilter('')} className="text-emerald-600 hover:underline font-medium">Clear filter ✕</button>
+        </div>
+      )}
 
       {/* Action Needed alert */}
       {hitlJobs.length > 0 && (
@@ -166,6 +232,9 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
+
+              {/* Feed Performance card */}
+              <FeedPerformance onSelectFeed={(id) => setFilter(`feed:${id}`)} />
 
               {/* Career readiness widget */}
               <CareerWidget />

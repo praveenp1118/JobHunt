@@ -316,6 +316,7 @@ async def list_jobs(
     min_s1: Optional[float] = None,
     score: Optional[float] = None,   # min effective score (coalesce s1d, s1)
     domain: Optional[str] = None,    # best_domain_cv_id
+    feed: Optional[str] = None,      # source_feed_id (Dashboard feed filter)
     hide_partial: bool = True,       # hide partial-JD (LinkedIn-gated, unscored) jobs by default
     search: Optional[str] = None,
     sort: Optional[str] = None,       # best_fit | s1 | company | role | market | status | source | created_at
@@ -350,6 +351,11 @@ async def list_jobs(
     if domain:
         try:
             filters.append(Job.best_domain_cv_id == uuid.UUID(domain))
+        except (ValueError, TypeError):
+            pass
+    if feed:
+        try:
+            filters.append(Job.source_feed_id == uuid.UUID(feed))
         except (ValueError, TypeError):
             pass
     if hide_partial:
@@ -430,22 +436,51 @@ async def list_jobs(
 
 @router.get("/stats")
 async def get_job_stats(
+    source: Optional[str] = None,
+    feed_id: Optional[str] = None,
+    domain_cv_id: Optional[str] = None,
+    market: Optional[str] = None,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
-    """Pipeline counts for Dashboard — V2: includes by_source and by_domain_cv."""
+    """Pipeline counts for Dashboard. Optional source/feed/domain/market filters scope the
+    pipeline + score stats; the facet counts (by_source/by_market/by_best_domain) stay
+    unfiltered so the filter dropdown always shows every option's full count."""
     from sqlalchemy import func
     from app.models.cv import DomainCV
 
-    # Status counts
+    # Build the filter set (filtered stats use *base_filters; facet counts use user-only).
+    base_filters = [Job.user_id == user.id]
+    if source:
+        try:
+            base_filters.append(Job.source == JobSource(source))
+        except ValueError:
+            pass
+    if feed_id:
+        try:
+            base_filters.append(Job.source_feed_id == uuid.UUID(feed_id))
+        except (ValueError, TypeError):
+            pass
+    if domain_cv_id:
+        try:
+            base_filters.append(Job.best_domain_cv_id == uuid.UUID(domain_cv_id))
+        except (ValueError, TypeError):
+            pass
+    if market:
+        base_filters.append(Job.market == market)
+
+    unfiltered_total = (await session.execute(
+        select(func.count(Job.id)).where(Job.user_id == user.id))).scalar() or 0
+
+    # Status counts (filtered)
     result = await session.execute(
         select(Job.status, func.count(Job.id))
-        .where(Job.user_id == user.id)
+        .where(*base_filters)
         .group_by(Job.status)
     )
     counts = {row[0]: row[1] for row in result}
 
-    # Source counts (manual vs scan)
+    # Source counts (unfiltered — drives the dropdown facet counts)
     source_result = await session.execute(
         select(Job.source, func.count(Job.id))
         .where(Job.user_id == user.id)
@@ -456,7 +491,15 @@ async def get_job_stats(
     # Scan-sourced jobs (rss + apify)
     from_scan = by_source.get('rss', 0) + by_source.get('apify', 0)
 
-    # By domain CV
+    # By market (unfiltered — dropdown facet counts)
+    market_result = await session.execute(
+        select(Job.market, func.count(Job.id))
+        .where(Job.user_id == user.id, Job.market != None)
+        .group_by(Job.market)
+    )
+    by_market = {str(row[0]): row[1] for row in market_result}
+
+    # By domain CV (unfiltered — dropdown facet counts)
     domain_result = await session.execute(
         select(Job.detected_domain_cv_id, func.count(Job.id))
         .where(Job.user_id == user.id, Job.detected_domain_cv_id != None)
@@ -496,9 +539,9 @@ async def get_job_stats(
     )
     by_best_domain = {str(row[0]): row[1] for row in bd_result}
 
-    # S1 score distribution (legacy buckets, on s1)
+    # S1 score distribution (filtered)
     score_result = await session.execute(
-        select(Job.s1).where(Job.user_id == user.id, Job.s1 != None)
+        select(Job.s1).where(*base_filters, Job.s1 != None)
     )
     scores = [row[0] for row in score_result]
     score_dist = {
@@ -508,9 +551,9 @@ async def get_job_stats(
         "low": sum(1 for s in scores if s < 55),
     }
 
-    # Score buckets for the Score filter pills — use s1d when present, else s1.
+    # Score buckets for the Score filter pills — use s1d when present, else s1 (filtered).
     eff_result = await session.execute(
-        select(func.coalesce(Job.s1d, Job.s1)).where(Job.user_id == user.id)
+        select(func.coalesce(Job.s1d, Job.s1)).where(*base_filters)
     )
     eff = [row[0] for row in eff_result if row[0] is not None]
     total = sum(counts.values())
@@ -521,23 +564,25 @@ async def get_job_stats(
         "gte_90": sum(1 for s in eff if s >= 90),
     }
 
-    # Needs-HITL count (a boolean flag, not a status)
+    # Needs-HITL count (filtered)
     needs_hitl = (await session.execute(
-        select(func.count(Job.id)).where(Job.user_id == user.id, Job.needs_hitl == True)
+        select(func.count(Job.id)).where(*base_filters, Job.needs_hitl == True)
     )).scalar() or 0
 
-    # Partial-JD count (LinkedIn-gated, unscored — hidden from the tracker by default)
+    # Partial-JD count (filtered)
     partial_count = (await session.execute(
-        select(func.count(Job.id)).where(Job.user_id == user.id, Job.has_partial_jd == True)
+        select(func.count(Job.id)).where(*base_filters, Job.has_partial_jd == True)
     )).scalar() or 0
 
     return {
-        "total": total,
+        "total": total,                       # filtered total
+        "unfiltered_total": unfiltered_total,  # all of the user's jobs
         "by_status": {s.value: counts.get(s, 0) for s in JobStatus},
         "needs_hitl": needs_hitl,
         "partial_count": partial_count,
         "from_scan": from_scan,
         "by_source": by_source,
+        "by_market": by_market,
         "by_domain_cv": by_domain_cv,
         "by_best_domain": by_best_domain,
         "by_score_bucket": by_score_bucket,

@@ -175,6 +175,96 @@ async def list_feeds(
     return [FeedRead.model_validate(f) for f in result.scalars().all()]
 
 
+@router.get("/feeds/with-counts")
+async def feeds_with_counts(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Active feeds + the count of jobs each has surfaced (for the Dashboard filter)."""
+    from sqlalchemy import func
+    from app.models.job import Job
+    feeds = (await session.execute(
+        select(UserFeed).where(UserFeed.user_id == user.id, UserFeed.is_active == True)
+        .order_by(UserFeed.name))).scalars().all()
+    rows = (await session.execute(
+        select(Job.source_feed_id, func.count(Job.id))
+        .where(Job.user_id == user.id, Job.source_feed_id != None)
+        .group_by(Job.source_feed_id))).all()
+    cmap = {str(r[0]): r[1] for r in rows}
+    return [{"feed_id": str(f.id), "name": f.name, "feed_type": f.feed_type,
+             "job_count": cmap.get(str(f.id), 0)} for f in feeds]
+
+
+@router.get("/feeds/performance")
+async def feeds_performance(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Per-feed performance — job count, avg fit, applied, and a composite quality score.
+    Includes a synthetic 'Gmail Alerts' row for alert-sourced jobs (no UserFeed)."""
+    from sqlalchemy import func
+    from app.models.job import Job, JobStatus, JobSource
+    from app.models.user import UserPreferences
+
+    prefs = (await session.execute(
+        select(UserPreferences).where(UserPreferences.user_id == user.id))).scalar_one_or_none()
+    thr = prefs.s1_min_threshold if prefs and prefs.s1_min_threshold else 65
+
+    feeds = (await session.execute(
+        select(UserFeed).where(UserFeed.user_id == user.id))).scalars().all()
+    feed_map = {str(f.id): f for f in feeds}
+
+    rows = (await session.execute(
+        select(
+            Job.source_feed_id,
+            func.count(Job.id),
+            func.avg(Job.s1d),
+            func.avg(Job.s1),
+            func.count(Job.id).filter(Job.status == JobStatus.applied),
+            func.count(Job.id).filter(func.coalesce(Job.s1d, Job.s1) >= thr),
+        ).where(Job.user_id == user.id, Job.source_feed_id != None)
+        .group_by(Job.source_feed_id))).all()
+
+    def _quality(avg_s1d, applied, count):
+        if avg_s1d is None or not count:
+            return None
+        return round((avg_s1d / 100) * 0.6 + (applied / count) * 0.4, 3)
+
+    out = []
+    for fid, count, avg_s1d, avg_s1, applied, above in rows:
+        f = feed_map.get(str(fid))
+        if not f:
+            continue
+        a1d = round(avg_s1d, 1) if avg_s1d is not None else None
+        out.append({
+            "feed_id": str(fid), "feed_name": f.name, "feed_type": f.feed_type,
+            "job_count": count, "avg_s1d": a1d,
+            "avg_s1": round(avg_s1, 1) if avg_s1 is not None else None,
+            "applied_count": applied, "above_threshold_count": above,
+            "quality_score": _quality(a1d, applied, count),
+        })
+
+    # Synthetic Gmail Alerts row (alert-sourced jobs have no source_feed_id).
+    g = (await session.execute(
+        select(
+            func.count(Job.id), func.avg(Job.s1d), func.avg(Job.s1),
+            func.count(Job.id).filter(Job.status == JobStatus.applied),
+            func.count(Job.id).filter(func.coalesce(Job.s1d, Job.s1) >= thr),
+        ).where(Job.user_id == user.id, Job.source == JobSource.gmail_alert))).first()
+    if g and g[0]:
+        a1d = round(g[1], 1) if g[1] is not None else None
+        out.append({
+            "feed_id": None, "feed_name": "Gmail Alerts", "feed_type": "gmail_alert",
+            "job_count": g[0], "avg_s1d": a1d,
+            "avg_s1": round(g[2], 1) if g[2] is not None else None,
+            "applied_count": g[3], "above_threshold_count": g[4],
+            "quality_score": _quality(a1d, g[3], g[0]),
+        })
+
+    out.sort(key=lambda r: (r["quality_score"] is not None, r["quality_score"] or 0), reverse=True)
+    return out
+
+
 @router.post("/feeds", response_model=FeedRead, status_code=status.HTTP_201_CREATED)
 async def create_feed(
     body: FeedCreate,
