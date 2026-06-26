@@ -6,6 +6,7 @@ import { getAlertActivity, getSystemActivity, pollGmailNow, runScanNow } from '.
 import client from '../../api/client'
 import Spinner from '../../components/ui/Spinner'
 import ScanFeedBreakdown from '../../components/ui/ScanFeedBreakdown'
+import Pagination, { usePagination } from '../../components/ui/Pagination'
 import { toast } from '../../store/toast'
 
 const REFRESH = 60000
@@ -84,6 +85,7 @@ function AlertsTab() {
     refetchInterval: REFRESH,
   })
   const alerts = data?.data || []
+  const pg = usePagination(alerts, 10)
 
   const totals = alerts.reduce(
     (a, r) => ({ links: a.links + (r.links_found || 0), saved: a.saved + (r.jobs_saved || 0) }),
@@ -119,7 +121,8 @@ function AlertsTab() {
         </div>
       ) : (
         <div className="space-y-3">
-          {alerts.map((a) => <AlertRow key={a.id} alert={a} />)}
+          {pg.slice.map((a) => <AlertRow key={a.id} alert={a} />)}
+          <Pagination currentPage={pg.page} totalPages={pg.totalPages} totalItems={pg.total} itemsPerPage={10} onPageChange={pg.setPage} label="alert emails" />
         </div>
       )}
     </div>
@@ -222,6 +225,10 @@ function SystemTab() {
     refetchInterval: REFRESH,
   })
   const sys = data?.data || {}
+  const scanPg = usePagination(sys.scanner_runs || [], 10)
+  const pollPg = usePagination(sys.gmail_polls || [], 10)
+  const ghostPg = usePagination(sys.ghosted_checks || [], 10)
+  const errPg = usePagination(sys.recent_errors || [], 10)
 
   const handleResolve = async (id) => {
     try {
@@ -238,15 +245,18 @@ function SystemTab() {
   return (
     <div className="space-y-4">
       <CollapsibleSection title="Weekly Scanner" runs={sys.scanner_runs} empty="No scans run yet">
-        {(sys.scanner_runs || []).map((r) => <ScannerCard key={r.id} run={r} />)}
+        {scanPg.slice.map((r) => <ScannerCard key={r.id} run={r} />)}
+        <Pagination currentPage={scanPg.page} totalPages={scanPg.totalPages} totalItems={scanPg.total} itemsPerPage={10} onPageChange={scanPg.setPage} label="runs" />
       </CollapsibleSection>
 
       <CollapsibleSection title="Gmail Polls" runs={sys.gmail_polls} empty="No Gmail polls run yet">
-        {(sys.gmail_polls || []).map((r) => <PollCard key={r.id} run={r} />)}
+        {pollPg.slice.map((r) => <PollCard key={r.id} run={r} />)}
+        <Pagination currentPage={pollPg.page} totalPages={pollPg.totalPages} totalItems={pollPg.total} itemsPerPage={10} onPageChange={pollPg.setPage} label="polls" />
       </CollapsibleSection>
 
       <CollapsibleSection title="Ghosted Check" runs={sys.ghosted_checks} empty="No ghosted checks run yet">
-        {(sys.ghosted_checks || []).map((r) => <GhostedCard key={r.id} run={r} />)}
+        {ghostPg.slice.map((r) => <GhostedCard key={r.id} run={r} />)}
+        <Pagination currentPage={ghostPg.page} totalPages={ghostPg.totalPages} totalItems={ghostPg.total} itemsPerPage={10} onPageChange={ghostPg.setPage} label="checks" />
       </CollapsibleSection>
 
       <div>
@@ -260,7 +270,7 @@ function SystemTab() {
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-50">
-            {sys.recent_errors.map((e) => (
+            {errPg.slice.map((e) => (
               <div key={e.id} className="flex items-center justify-between px-4 py-3 gap-3">
                 <div className="min-w-0">
                   <p className="text-sm text-gray-900 truncate"><span className="font-medium">{e.action}</span> — {e.error_message}</p>
@@ -274,6 +284,9 @@ function SystemTab() {
                 )}
               </div>
             ))}
+            <div className="px-4 py-1">
+              <Pagination currentPage={errPg.page} totalPages={errPg.totalPages} totalItems={errPg.total} itemsPerPage={10} onPageChange={errPg.setPage} label="errors" />
+            </div>
           </div>
         )}
       </div>

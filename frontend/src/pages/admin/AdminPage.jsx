@@ -9,6 +9,7 @@ import { toast } from '../../store/toast'
 import useAuthStore from '../../store/auth'
 import { useNavigate } from 'react-router-dom'
 import { getGovernance, adminCancelDeletion } from '../../api/privacy'
+import Pagination, { usePagination } from '../../components/ui/Pagination'
 
 export default function AdminPage() {
   const { user } = useAuthStore()
@@ -80,6 +81,7 @@ function UsersTab() {
   })
 
   const users = data?.data || []
+  const pg = usePagination(users, 20)
 
   const handleRoleChange = async (userId, role) => {
     try {
@@ -117,7 +119,7 @@ function UsersTab() {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-50">
-          {users.map((u) => (
+          {pg.slice.map((u) => (
             <tr key={u.id} className="hover:bg-gray-50">
               <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.name || '—'}</td>
               <td className="px-4 py-3 text-sm text-gray-600">{u.email}</td>
@@ -154,6 +156,9 @@ function UsersTab() {
           ))}
         </tbody>
       </table>
+      <div className="px-4 pb-3">
+        <Pagination currentPage={pg.page} totalPages={pg.totalPages} totalItems={pg.total} itemsPerPage={20} onPageChange={pg.setPage} label="users" />
+      </div>
     </div>
   )
 }
@@ -168,6 +173,7 @@ function ErrorsTab() {
 
   const errors = data?.data || []
   const unresolved = errors.filter((e) => !e.is_resolved)
+  const pg = usePagination(errors, 10)
 
   return (
     <div>
@@ -186,7 +192,7 @@ function ErrorsTab() {
         </div>
       ) : (
         <div className="space-y-2">
-          {errors.map((err) => (
+          {pg.slice.map((err) => (
             <div key={err.id} className={`bg-white rounded-xl border p-4 ${err.is_resolved ? 'border-gray-100 opacity-60' : 'border-red-100'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -213,6 +219,7 @@ function ErrorsTab() {
               </div>
             </div>
           ))}
+          <Pagination currentPage={pg.page} totalPages={pg.totalPages} totalItems={pg.total} itemsPerPage={10} onPageChange={pg.setPage} label="errors" />
         </div>
       )}
     </div>
@@ -255,6 +262,7 @@ function GovernanceTab() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['admin-governance'], queryFn: getGovernance, refetchInterval: 60000 })
   const g = data?.data
+  const pg = usePagination(g?.audit_logs || [], 20)
   if (isLoading) return <div className="flex justify-center py-12"><Spinner /></div>
   if (!g) return null
 
@@ -303,7 +311,7 @@ function GovernanceTab() {
               <tr><th className="text-left px-3 py-2">Time</th><th className="text-left px-3 py-2">Action</th><th className="text-left px-3 py-2">User</th><th className="text-left px-3 py-2">IP</th><th className="text-left px-3 py-2">Details</th></tr>
             </thead>
             <tbody>
-              {(g.audit_logs || []).map((l) => (
+              {pg.slice.map((l) => (
                 <tr key={l.id} className="border-t border-gray-50">
                   <td className="px-3 py-1.5 text-gray-400 whitespace-nowrap">{l.created_at ? new Date(l.created_at).toLocaleString() : ''}</td>
                   <td className="px-3 py-1.5"><span className={`font-medium ${l.action.includes('fail') || l.action.includes('rate') || l.action.includes('hallucinat') ? 'text-amber-700' : 'text-gray-700'}`}>{l.action}</span></td>
@@ -314,6 +322,9 @@ function GovernanceTab() {
               ))}
             </tbody>
           </table>
+          <div className="px-3 pb-3">
+            <Pagination currentPage={pg.page} totalPages={pg.totalPages} totalItems={pg.total} itemsPerPage={20} onPageChange={pg.setPage} label="events" />
+          </div>
         </div>
       </div>
     </div>

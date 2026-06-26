@@ -4,6 +4,7 @@ import client from '../../api/client'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import { toast } from '../../store/toast'
+import Pagination, { usePagination } from '../../components/ui/Pagination'
 
 export default function ErrorLogTab() {
   const { data, isLoading, refetch } = useQuery({
@@ -13,6 +14,7 @@ export default function ErrorLogTab() {
   })
 
   const errors = data?.data || []
+  const pg = usePagination(errors, 10)
 
   return (
     <div>
@@ -34,7 +36,7 @@ export default function ErrorLogTab() {
         </div>
       ) : (
         <div className="space-y-2">
-          {errors.map((err) => (
+          {pg.slice.map((err) => (
             <div key={err.id} className={`bg-white rounded-xl border p-4 ${err.is_resolved ? 'border-gray-100 opacity-60' : 'border-red-100'}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -71,6 +73,7 @@ export default function ErrorLogTab() {
               </div>
             </div>
           ))}
+          <Pagination currentPage={pg.page} totalPages={pg.totalPages} totalItems={pg.total} itemsPerPage={10} onPageChange={pg.setPage} label="errors" />
         </div>
       )}
     </div>

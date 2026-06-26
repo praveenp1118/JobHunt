@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { getUsageLogs, exportUsageCSV } from '../../api/usage'
 import { toast } from '../../store/toast'
+import Pagination, { usePagination } from '../../components/ui/Pagination'
 
 // 10-step token badge colour scale (per spec).
 function tokenColor(n) {
@@ -179,6 +180,7 @@ export default function UsageTab() {
 }
 
 function UsageTable({ logs, isLoading, expanded, setExpanded, kind }) {
+  const pg = usePagination(logs, 20)
   if (isLoading) return <p className="text-sm text-gray-400 text-center py-8">Loading…</p>
   if (!logs.length) return <p className="text-sm text-gray-400 text-center py-8 bg-white rounded-2xl border border-gray-200">No usage in this window.</p>
 
@@ -195,7 +197,7 @@ function UsageTable({ logs, isLoading, expanded, setExpanded, kind }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-50">
-          {logs.map((l) => (
+          {pg.slice.map((l) => (
             <>
               <tr key={l.id} onClick={() => setExpanded(expanded === l.id ? null : l.id)}
                 className="hover:bg-gray-50 cursor-pointer"
@@ -242,6 +244,9 @@ function UsageTable({ logs, isLoading, expanded, setExpanded, kind }) {
           ))}
         </tbody>
       </table>
+      <div className="px-4 pb-3">
+        <Pagination currentPage={pg.page} totalPages={pg.totalPages} totalItems={pg.total} itemsPerPage={20} onPageChange={pg.setPage} label="calls" />
+      </div>
     </div>
   )
 }

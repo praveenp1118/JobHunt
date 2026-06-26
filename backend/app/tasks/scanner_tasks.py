@@ -173,9 +173,11 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
     master_cv_md = master.content_md if master else ""
 
     from app.models.user import UserPreferences
+    # .first() (not scalar_one_or_none) — tolerant of any pre-existing duplicate prefs rows
+    # (scalar_one_or_none raises "Multiple rows were found" and aborts the whole user's scan).
     prefs = (await session.execute(
         select(UserPreferences).where(UserPreferences.user_id == user.id)
-    )).scalar_one_or_none()
+    )).scalars().first()
     threshold = prefs.s1_min_threshold if prefs else 65
 
     # Per-feed keyword sets (Option B): each feed pre-filters with its OWN

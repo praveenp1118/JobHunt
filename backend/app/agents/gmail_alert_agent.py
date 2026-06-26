@@ -265,6 +265,11 @@ async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
         company = c.get("company") or "Unknown"
         url = c.get("url")
         snippet = c.get("snippet") or ""
+        # Skip cards with no link — a partial-JD job with no portal_url is useless
+        # (the user can't open it to read the full JD), and shows as "No link".
+        if not url:
+            results.append({"url": None, "reason": "no_url", "role": title, "company": company})
+            continue
         # Drop clearly non-product roles by title (gated cards have no JD to S1-score,
         # so this is the only filter — e.g. "Head of Surveillance", "Sales Director").
         tl = title.lower()

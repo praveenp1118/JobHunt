@@ -11,6 +11,7 @@ import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Spinner from '../../components/ui/Spinner'
 import ScanFeedBreakdown from '../../components/ui/ScanFeedBreakdown'
+import Pagination, { usePagination } from '../../components/ui/Pagination'
 import TokenBadge from '../../components/ui/TokenBadge'
 import { toast } from '../../store/toast'
 
@@ -48,6 +49,7 @@ export default function FeedsTab() {
   const domainCVs = domainData?.data || []
   const companies = companiesData?.data || []
   const scans = scanData?.data || []
+  const scansPg = usePagination(scans, 10)
 
   // Auto-generated domain-CV feeds get their own section; the rest split platform/custom
   const autoFeeds = feeds.filter((f) => f.is_auto_generated)
@@ -256,9 +258,12 @@ export default function FeedsTab() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {scans.map((scan) => <ScanHistoryRow key={scan.id} scan={scan} />)}
+                  {scansPg.slice.map((scan) => <ScanHistoryRow key={scan.id} scan={scan} />)}
                 </tbody>
               </table>
+              <div className="px-4 pb-3">
+                <Pagination currentPage={scansPg.page} totalPages={scansPg.totalPages} totalItems={scansPg.total} itemsPerPage={10} onPageChange={scansPg.setPage} label="scans" />
+              </div>
             </div>
           )}
         </div>

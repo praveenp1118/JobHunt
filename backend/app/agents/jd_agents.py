@@ -42,6 +42,11 @@ SKIP_WORDS = [
     "sales director", "finance director", "legal counsel",
     "operations director", "supply chain director",
     "procurement", "logistics", "customer success", "account manager",
+    # CTO / strategy / advisory / program (NOT product) — note: bare "cto" is unsafe
+    # (it is a substring of "dire-cto-r"), so use full phrases.
+    "chief technology officer", "technology officer", "technology strategy",
+    "technology advisor", "strategy consultant", "strategy & advisory", "advisory",
+    "program manager", "project manager", "program management",
 ]
 
 # Used only when a user has no target_roles / feed keywords configured.
