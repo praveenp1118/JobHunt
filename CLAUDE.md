@@ -21,9 +21,12 @@ Local Docker deployment only. Multi-user capable.
 `architecture.html` / `features.html` / `api.html` — thin pages that render the matching `*.md` source
 via marked.js with shared `doc.css` + `doc.js` (consistent Tailwind styling). `.nojekyll` keeps it
 pure-static — no Jekyll.)*  
-**Last major build:** V3 Multi-domain-CV scoring (June 24, 2026) — every job scored vs master + ALL
-domain CVs; Best Fit column + filters/sort; RSS company fix. All 19 smoke tests passing
-(prior: V3 Activity Dashboard, Gmail Job Alert Parser + Option A)
+**Last major build:** Cost-optimization sweep + docs refresh (June 27, 2026) — hybrid-RAG scoring (3-stage,
+~82% cheaper) + tiered models across ALL Claude calls (email classification rules-first→Haiku, JD highlights
+Haiku+cached, feed keywords Haiku, career insights essence), Email-to-JobHunt, auto-detected applications,
+night-batch scoring. **All 114 smoke tests passing.** Platform is feature-complete for launch.
+(prior majors: CV Templates, Governance/GDPR, Career Insights, Community, Stripe, Support Chat,
+Multi-domain-CV scoring, Activity Dashboard, Gmail Job Alert Parser)
 
 ---
 
@@ -1100,12 +1103,15 @@ Paste this at the start:
 I'm building JobHunt — an AI-powered job search platform.
 Here is the current project state: [paste CLAUDE.md contents]
 
-V1 and V2 are complete. Claude Code is connected in VS Code.
-Starting V3 now. V3 priority order:
-1. Gmail Job Alert Parser (fully designed — see spec in CLAUDE.md)
-2. Razorpay wallet top-up
-3. S3 storage migration
-4. Production deployment
+V1, V2, V3 complete. All optimizations done.
+114 tests passing. Claude Code connected.
+
+Next priorities:
+1. Home page + login flow
+2. Production deployment
+3. Test CV template + Career Insights end-to-end
+
+Platform is feature-complete for launch.
 
 Project root: D:\JobHunt
 ```

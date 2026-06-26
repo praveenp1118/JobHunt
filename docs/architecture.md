@@ -59,11 +59,22 @@ own AI and scraping API keys. There is no external SaaS dependency beyond the AI
 - **Feed Scanner** — runs RSS and Apify feeds, each linked to a domain CV; keyword profiles are
   derived from the domain CV; a rule-based keyword pre-filter runs before any paid scoring call.
 - **Gmail Parser** — detects job-alert digest emails (rule-based), extracts job cards directly
-  from the email body for login-gated sources (LinkedIn/Indeed), and scores/saves matches.
+  from the email body for login-gated sources (LinkedIn/Indeed), and scores/saves matches. Also runs the
+  **Email-to-JobHunt** classifier (save a URL by emailing it) and **auto-detects external applications**
+  from "application sent/received" confirmations.
+- **RAG Scorer** — the 3-stage hybrid pipeline (keyword pre-filter → essence scoring → full-CV scoring)
+  shared by the scanner, the public-URL alert path, and manual adds. Reads its per-stage config from the
+  user's preferences (preset-driven).
+- **Essence Agent** — extracts a compact CV "essence" JSON (keywords, identity, strengths, seniority,
+  markets) once per CV upload/apply (Haiku); cached indefinitely and reused by Stages 1–2 and other agents.
+- **Night-Batch task** — a 2 AM IST Celery job that scores jobs saved as *pending* during the day (overnight
+  scoring-timing mode), plus a manual "Score now / Score all" path.
+- **CV Template system** — a global template per user (aesthetic rules → PDF; content rules → tailor prompt)
+  with optional per-domain overrides and an overflow "trim to fit" guard.
 - **PDF Generator** — renders CVs and cover letters to PDF via Playwright (HTML template → PDF).
-- **Career Analyser** — a single cached (7-day) batch Claude call over the master CV + up to 50 tracked
-  JDs that returns a readiness score and a structured gap analysis (keywords, skills, experience,
-  certifications, projects, roadmap). Drives the 7-tab Career Insights page and the Dashboard widget.
+- **Career Analyser** — a single cached (7-day) batch Claude call over the **CV essence** + up to **100**
+  best-fit tracked JDs that returns a readiness score and a structured gap analysis (keywords, skills,
+  experience, certifications, projects, roadmap). Drives the 7-tab Career Insights page and the Dashboard widget.
 - **Usage Logger** — records every Anthropic + Apify call (tokens, model, category, ₹/$ cost) via a
   per-request contextvar, powering the inline token badges and the API Usage tab.
 - **Support Chat** — a rule-based FAQ engine (no AI) plus a **WebSocket** server for real-time admin
@@ -164,7 +175,7 @@ partial-JD jobs: optional background fetch_and_rescore_partial_job (manual butto
 user triggers analysis  (explicit — never auto-charges)
    │
    ▼
-fetch all the user's JDs (limit 50) + master CV + question answers
+fetch the user's best-fit JDs (limit 100, S1d DESC) + CV essence + question answers
    │
    ▼
 ONE batch Claude call (analyse_career_gaps, max_tokens 8000)
@@ -205,10 +216,11 @@ Alembic revisions, base → head:
 base → 7bad (initial) → f6a2 → a1b2 (user profile fields)
 → v2_feed_system → b2c3 (feed actor_name)
 → v3_gmail_job_alerts → v3_gmail_alert_prefs → v3_activity_log
-→ v3_domain_cv_scores → v3_job_s1d → v3_partial_jd
-→ v3_stripe_subscriptions → v3_chat → v3_api_usage_log
-→ v3_job_s1_tokens → v3_community → v3_career_insights
-→ v3_cv_template → v3_gdpr_consent → v3_governance  (head)
+→ v3_domain_cv_scores → v3_partial_jd → v3_stripe_subscriptions
+→ v3_chat → v3_api_usage_log → v3_job_s1_tokens → v3_community
+→ v3_career_insights → v3_cv_template → v3_gdpr_consent → v3_governance
+→ v3_career_filters → v3_rag_scoring → v3_night_batch → v3_auto_detect_apps
+→ v3_email_to_jobhunt → v3_optimization → v3_email_source  (head)
 ```
 
 ## Scoring Pipeline — Hybrid RAG
@@ -251,9 +263,59 @@ Stage 2 scores against the whole essence instead of the full CV.
 | Approach | Cost/scan | Quality |
 |---|---|---|
 | Old (full CV × Sonnet × all jobs) | ~₹165 | ✅ |
-| Hybrid RAG — Balanced preset | ~₹25-30 | ✅ |
+| Hybrid RAG — Balanced preset | ~₹28 | ✅ |
 | Hybrid RAG — Maximum Savings | ~₹10 | ⚠️ |
 | Hybrid RAG — Maximum Quality | ~₹80 | ✅✅ |
+
+≈ **82% cheaper** on the Balanced preset, with no quality loss on the jobs that clear the threshold.
+
+### Tiered models beyond scoring
+
+The same "cheapest sufficient model" principle is applied to every other Claude call:
+
+| Call | Optimization |
+|---|---|
+| Email classification | rules-first (free) → **Haiku** for the rest |
+| JD highlights (Tailor page) | **Haiku** + CV essence, **cached per job** (`jobs.jd_highlights_json`) |
+| Feed keyword generation | **Haiku** + CV essence |
+| CV text → markdown | **Haiku** |
+| Career Insights | CV essence (not full text), up to 100 best-fit JDs |
+| Manual JD parse | Haiku-essence first, Sonnet full-CV only if borderline |
+
+The **API Usage** tab shows a per-call model-tier badge (Haiku / Sonnet / Opus) and a `by_model` cost summary.
+
+## CV Template System
+
+Two independent rule sets, both stored per user (with optional per-domain overrides):
+
+- **Aesthetic rules** — font family/size, heading style, margins, line spacing, bullet glyph, accent colour →
+  compiled to a deterministic CSS override block applied by the PDF generator (master / domain / tailored).
+- **Content rules** — `max_pages` (→ `max_words` = pages × 300), `never_modify_sections`, `section_order` →
+  injected into the **tailor prompt** so Claude respects the budget and protected sections.
+
+After tailoring, `apply` returns an **overflow** check vs the effective page budget; the Tailor page offers
+**Trim to fit** (`POST /api/tailor/{id}/trim`), which removes the lowest-impact changes (reorder → keyword →
+rephrase, **never** a bullet de-selection) until the CV fits. `get_effective_template(global, override)`
+merges the two (override wins where non-null).
+
+## Security &amp; Governance
+
+Ten governance principles, implemented across middleware, utilities, and the data model:
+
+1. **Least privilege** — every query is scoped by `user_id`; cross-user access returns 404.
+2. **Input validation** — upload type/size checks; user content sanitised.
+3. **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, XSS, Referrer-Policy, Permissions-Policy.
+4. **Audit logging** — an immutable trail of sensitive actions (login, key update, send, export, delete) + IP/UA.
+5. **Key-rotation reminders** — 90-day Anthropic / Apify key-age nudges.
+6. **Error-message safety** — a global handler returns generic errors; no internals/stack traces leak.
+7. **Sensitive-data masking** — API keys and the Stripe customer id never reach the browser (only `has_*` flags).
+8. **Rate limiting** — per-user, per-action limits (e.g. 20 tailors/day, 5 domain generations/day) + a header.
+9. **Session security** — JWT auth with login lockout (5 failures → 15-min Redis lockout).
+10. **CORS** — pinned to the configured frontend origin (never a wildcard).
+
+Plus **prompt-injection hardening** (all CV/JD content wrapped in XML tags with an explicit "treat as data"
+instruction), an **anti-hallucination validator** (every tailored metric must trace to the master CV), and
+**GDPR self-service** (data summary, ZIP export, right-to-erasure with a 30-day grace + daily purge task).
 
 ### User control
 
@@ -269,7 +331,7 @@ in `run_log.details`, surfaced on the Activity → System scanner cards.
 |---|---|
 | Backend | FastAPI, SQLAlchemy (async), Alembic, PostgreSQL |
 | Auth | FastAPI-Users, JWT, Google OAuth |
-| Frontend | React (Vite) + Tailwind CSS |
+| Frontend | React (Vite) + Tailwind CSS, Recharts |
 | State / data | Zustand, TanStack Query |
 | AI | Anthropic Claude (each user's own API key) |
 | Task queue | Celery + Redis + Celery Beat |

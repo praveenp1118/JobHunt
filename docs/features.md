@@ -56,11 +56,40 @@ The central pipeline for every opportunity.
 - **Threshold-gated saving** — only jobs at or above the score threshold are saved; everything
   else is logged (with the reason) in the scan breakdown.
 
+## Hybrid-RAG Scoring &amp; Cost Optimization
+
+JobHunt scores a high volume of jobs, so every Claude call uses the cheapest model that's good enough.
+
+- **3-stage scoring pipeline** — instead of running every job through one expensive full-CV call, scoring
+  is a funnel:
+  - **Stage 1 — keyword pre-filter (free):** the JD is matched against the CV "essence" keyword list; jobs
+    with too little overlap are rejected with **no** AI call (~60% of jobs stop here).
+  - **Stage 2 — essence scoring (Haiku, ~₹0.03/job):** the compact CV essence + JD produce a quick score;
+    confidently-low jobs are dropped and confidently-high jobs are saved (~25% resolved here).
+  - **Stage 3 — full-CV scoring (Sonnet, ~₹0.58/job):** only **borderline** jobs (~15%) get the full,
+    high-quality model. Result: ~**82% cheaper** than the original "Sonnet × all jobs" approach, with no
+    quality loss on the jobs that actually matter.
+- **CV essence** — extracted once per CV upload/apply (a cheap Haiku call) and cached indefinitely until the
+  CV changes; powers Stages 1–2 here and several other agents.
+- **Three presets + live calculator** — *Maximum Quality* / *Balanced* / *Max Savings* in Settings →
+  Preferences → Scoring, each adjustable per stage, with a live ₹-per-scan estimate.
+- **Night-batch mode** — optionally defer scoring: jobs are saved instantly as *pending* (Stage-1 filter
+  only) and a 2 AM IST Celery batch scores them in one cheap pass; a Dashboard banner offers "Score all now".
+- **Tiered models everywhere** — email classification is rules-first (free) then **Haiku**; JD highlights run
+  on Haiku and are **cached per job**; feed-keyword generation and CV→markdown use Haiku; Career Insights runs
+  on the CV essence. The **API Usage** tab shows the model tier (Haiku / Sonnet / Opus) and ₹ cost per call.
+
 ## Gmail Integration
 
 - **Job-alert parsing** — hourly inbox poll detects job-alert digests (rule-based, no AI cost),
   extracts job cards directly from the email body for login-gated sources (LinkedIn/Indeed), and
-  scores + saves the relevant ones with a link back to the source email.
+  scores + saves the relevant ones (full 3-stage RAG on fetchable URLs) with a link back to the source email.
+- **Email-to-JobHunt** — forward any job URL to your job-search Gmail with a subject containing `jobhunt`
+  or starting with `jh:`. JobHunt fetches the page, parses + scores it, saves it (**📥 Email** source), and
+  emails you a confirmation with the scores and a tracker link.
+- **Auto-detect external applications** — the poll recognises LinkedIn / Indeed "application sent / received"
+  confirmations, flips the matching `new`/`bookmarked` job to **Applied** (linking the email), or adds the
+  job if it wasn't tracked yet.
 - **Recruiter mail** — genuine recruiter replies are classified and flagged for **human approval**;
   replies are never auto-sent.
 - **Send applications** — CV + cover letter sent via SMTP. **Test mode is on by default** — all
@@ -80,8 +109,8 @@ The central pipeline for every opportunity.
 
 ## Career Insights ✨
 
-- **One batch analysis** — a single cached (7-day) Claude call across your master CV and up to 50
-  tracked JDs produces a readiness score and a structured gap analysis.
+- **One batch analysis** — a single cached (7-day) Claude call across your CV essence and up to **100**
+  tracked JDs (best-fit first) produces a readiness score and a structured gap analysis.
 - **Seven tabs** — *Readiness* (overall + per-axis bars across Keywords / Skills / Experience /
   Certifications / Projects), *Keywords* (missing vs present, by JD frequency), *Skills*, *Experience*
   (with reframe suggestions), *Certifications*, *Build* (existing + suggested projects), and *Roadmap*.
@@ -158,6 +187,8 @@ The central pipeline for every opportunity.
 - **Right to erasure** — request account deletion with a **30-day grace period**; a daily task purges
   scheduled accounts (storage → Stripe customer → database, CASCADE).
 - **Consent** — required Terms + Privacy agreement at sign-up, and a one-time consent banner for existing users.
+- **Legal pages** — static **[Privacy Policy](privacy.html)**, **[Terms of Service](terms.html)**, and
+  **[Cookie Policy](cookies.html)** served from GitHub Pages, linked from the app footer and the auth pages.
 
 ## Admin Panel
 

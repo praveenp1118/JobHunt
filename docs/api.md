@@ -12,7 +12,7 @@ implementation spec.
 | `POST /forgot-password` | Start password reset |
 | `GET /me`, `PATCH /me/profile` | Current user + profile fields |
 | `GET/PUT /me/credentials` | Manage encrypted API keys (Anthropic, Apify, Gmail) |
-| `GET/PATCH /me/preferences` | Scoring thresholds, model, automation, job-alert controls |
+| `GET/PATCH /me/preferences` | Thresholds, model, automation, job-alert controls, auto-detect + Email-to-JobHunt toggles |
 | `GET /admin/users`, `PATCH /admin/users/{id}/…` | Admin user management |
 
 ## CVs — `/api/cvs`
@@ -31,9 +31,11 @@ implementation spec.
 |---|---|
 | `GET /` | List jobs (status / source / score / domain filters, search) |
 | `GET /stats` | Pipeline counts + analytics (by domain CV, score, source) |
-| `POST /parse/text`, `POST /parse/url` | Ingest a job from text or URL |
+| `POST /parse/text`, `POST /parse/url` | Ingest a job (tiered RAG: Haiku-essence → Sonnet if borderline) |
 | `GET /{id}`, `PATCH /{id}/status` | Job detail + status updates |
 | `GET /{id}/emails` | Recruiter email thread for a job |
+| `POST /{id}/fetch-jd`, `POST /{id}/add-full-jd` | Fetch / paste the full JD for a partial-JD job, then re-score |
+| `POST /{id}/score-now`, `POST /score-pending` | Score one / all `pending` jobs now (night-batch mode) |
 
 ## Tailor — `/api/tailor`
 
@@ -88,11 +90,18 @@ implementation spec.
 | `PATCH /roadmap/{id}` | Toggle a roadmap item → updates readiness |
 | `GET /community`, `POST /share` | Anonymised role-level insights (≥2 contributors) |
 
+## Scoring — `/api/scoring` (hybrid-RAG config)
+
+| Method & path | Purpose |
+|---|---|
+| `GET/PATCH /config` | Per-stage scoring config + preset (Maximum Quality / Balanced / Max Savings) + scoring timing |
+| `GET /estimate` | Live ₹-per-scan cost estimate for the current config |
+
 ## Usage — `/api/usage`
 
 | Method & path | Purpose |
 |---|---|
-| `GET /logs` | Token + cost log with summary and category breakdown |
+| `GET /logs` | Token + cost log with summary, by-category, and **by-model tier** (Haiku / Sonnet / Opus) breakdowns |
 | `GET /export` | CSV export of usage |
 
 ## Community — `/api/community`

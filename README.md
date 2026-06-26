@@ -35,6 +35,21 @@ scraping (Apify) API keys.
   inject keywords, deselect — never invent), gated by a factual-integrity score before sending.
 - **Multi-domain scoring** — every job is scored against the master CV **and all** active domain
   CVs; the best-fit domain surfaces automatically and pre-selects when you tailor.
+- **Hybrid-RAG scoring pipeline** — a 3-stage funnel cuts scoring cost ~**82%** with no quality loss on
+  saved jobs: Stage 1 keyword pre-filter (free) → Stage 2 essence scoring (Haiku) → Stage 3 full-CV scoring
+  (Sonnet, borderline jobs only). The CV "essence" is extracted once and cached. Three presets (Maximum
+  Quality / Balanced / Max Savings) + a live cost calculator in Settings, plus an optional **night-batch**
+  mode that scores the day's jobs cheaply at 2 AM.
+- **Tiered-model cost optimization** — every Claude call uses the cheapest sufficient model: email
+  classification is rules-first (free) then Haiku; JD highlights are Haiku + **cached per job**; feed keywords
+  and CV→markdown use Haiku; career insights run on the CV essence. The API Usage tab shows the model tier
+  (Haiku / Sonnet / Opus) and ₹ cost per call.
+- **Email-to-JobHunt** — forward any job URL to your job-search Gmail with a subject containing `jobhunt`
+  or starting with `jh:`; it's auto-fetched, parsed, scored, and saved (📥 Email source) with a confirmation
+  email back to you.
+- **Auto-detect external applications** — the Gmail poll recognises LinkedIn / Indeed "application sent /
+  received" confirmations, flips the matching tracked job to **Applied**, and links the email — or adds the
+  job if it wasn't tracked.
 - **Gmail job-alert parser** — detects LinkedIn / Indeed / company alert digests (rule-based, no
   AI cost) and extracts job cards straight from the email body for login-gated sources.
 - **Feed scanner** — scheduled RSS + Apify (LinkedIn, Google Jobs) scanning, with domain-CV-driven
@@ -130,7 +145,7 @@ See the full write-up in **[docs/architecture.md](docs/architecture.md)**.
 |---|---|
 | Backend | FastAPI, SQLAlchemy (async), Alembic, PostgreSQL |
 | Auth | FastAPI-Users, JWT, Google OAuth |
-| Frontend | React (Vite) + Tailwind CSS, Zustand, TanStack Query |
+| Frontend | React (Vite) + Tailwind CSS, Zustand, TanStack Query, Recharts |
 | AI | Anthropic Claude (each user's own API key) |
 | Task queue | Celery + Redis + Celery Beat |
 | Email | Gmail IMAP (poll) + SMTP (send), BeautifulSoup HTML parsing |
@@ -187,7 +202,8 @@ docker-compose exec backend pytest tests/ -v
 ```
 
 The suite runs **in-container against the live uvicorn server** over real HTTP against the real
-Postgres DB — smoke tests covering the API, scanner, Gmail alert parser, and multi-domain scoring.
+Postgres DB — **114 smoke tests** covering the API, scanner, Gmail alert parser, multi-domain scoring,
+the hybrid-RAG pipeline, tiered-model optimization, billing, governance, templates, and more.
 
 ## Documentation
 
@@ -197,11 +213,12 @@ Postgres DB — smoke tests covering the API, scanner, Gmail alert parser, and m
 
 ## Status
 
-Active personal project. Core platform (V1–V3) is complete: CV management, AI tailoring,
-multi-domain scoring, feed scanning, Gmail alert parsing, the activity dashboard, Career Insights,
-API usage visibility, support chat, community insights, Stripe subscriptions, CV templates, and a
-security-first governance layer (rate limiting, prompt-injection hardening, audit logs, GDPR export/erasure).
-**79 smoke tests passing.**
+Active personal project. Core platform (V1–V3) is **feature-complete**: CV management, AI tailoring,
+multi-domain scoring, the **hybrid-RAG scoring pipeline** + tiered-model cost optimization, feed scanning,
+Gmail alert parsing, **Email-to-JobHunt**, auto-detected applications, the activity dashboard, Career
+Insights, API usage visibility, support chat, community insights, Stripe subscriptions, CV templates, and a
+security-first governance layer (rate limiting, prompt-injection hardening, audit logs, GDPR export/erasure)
+with static legal pages + registration consent. **114 smoke tests passing.**
 
 ## License
 
