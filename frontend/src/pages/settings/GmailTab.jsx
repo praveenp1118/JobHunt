@@ -240,6 +240,24 @@ export default function GmailTab() {
           </div>
         )}
       </div>
+
+      {/* Auto-detect external applications (V3) */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Auto-detect applications</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              When a Gmail “application sent / received” confirmation arrives, mark the matching
+              tracked job as <strong>Applied</strong> — or add it as an applied job if it isn’t
+              tracked yet. Detected during each poll, no extra cost.
+            </p>
+          </div>
+          <Toggle
+            on={prefs.auto_detect_applications ?? true}
+            onChange={() => savePref({ auto_detect_applications: !(prefs.auto_detect_applications ?? true) })}
+          />
+        </div>
+      </div>
     </div>
   )
 }

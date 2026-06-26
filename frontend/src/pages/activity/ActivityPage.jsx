@@ -136,6 +136,26 @@ function AlertRow({ alert }) {
   const noLinks = alert.jobs_saved === 0 && alert.links_found === 0
   const reasons = alert.skip_reasons || []
   const shownReasons = showAllReasons ? reasons : reasons.slice(0, 5)
+  const auto = alert.auto_application  // {action, company, role} when an external application was auto-detected
+
+  // Auto-detected application — render a compact green card instead of the link funnel.
+  if (auto) {
+    return (
+      <div className="bg-white rounded-xl border border-emerald-200 px-4 py-3">
+        <p className="text-sm font-medium text-emerald-700">
+          ✅ Auto-detected: Applied to {auto.company}
+          {auto.action === 'created' && <span className="text-[10px] text-emerald-600 ml-1.5">(new job added)</span>}
+        </p>
+        <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1 text-xs text-gray-400">
+          {auto.role && auto.role !== 'Unknown role' && <span className="text-gray-500">{auto.role}</span>}
+          {auto.role && auto.role !== 'Unknown role' && <span>·</span>}
+          <span className="truncate max-w-[260px]">📧 {alert.email_subject || '(no subject)'}</span>
+          <span>·</span>
+          <span>{timeAgo(alert.received_at || alert.created_at)}</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

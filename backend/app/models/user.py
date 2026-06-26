@@ -186,6 +186,8 @@ class UserPreferences(Base, TimestampMixin):
     parse_job_alerts: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     job_alert_max_links: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     job_alert_title_filter: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # V3: auto-detect external applications from Gmail "application sent" confirmations
+    auto_detect_applications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # V3 Community Insights — opt-in anonymised sharing
     community_sharing_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

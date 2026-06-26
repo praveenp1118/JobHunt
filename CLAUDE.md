@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (97 tests, all passing):
+- Current coverage (101 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -118,6 +118,11 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     sonnet for borderline; confident save ≥ borderline_high skips Stage 3; domain scoring skipped below
     min_s1) via a monkeypatched `batch_score_s1` (deterministic, free); `config_from_prefs`; `GET
     /scoring/estimate`; `master_cvs.essence_json` round-trips.
+  - `test_auto_detect.py` (4): `extract_company_role` parses LinkedIn/Indeed confirmation subjects
+    (company + role, and `(None, None)` for non-confirmations — pure regex); `detect_external_application`
+    **matches** a `new`/`bookmarked` job by company → flips it to `applied` (+`applied_at`, EmailThread,
+    EmailAlertLog), **creates** an applied `gmail_alert` job when there's no match, and **no-ops** on an
+    unparseable subject.
   - `test_night_batch.py` (4): pending jobs expose `scoring_status="pending"` (+`pending_count` in stats)
     and aren't scored; `score_pending_for_user` scores all pending (monkeypatched scorer → scored, s1 set);
     `POST /jobs/{id}/score-now` no-ops on an already-scored job; default timing is `immediate`.
@@ -219,7 +224,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_career_filters → v3_rag_scoring → v3_night_batch
+│   │   └── versions/        # chain tip: … → v3_rag_scoring → v3_night_batch → v3_auto_detect_apps
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -1092,7 +1097,17 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Jobs Tracker filter fixes**: server-side **pagination** (25/page via
+*Last updated: June 26, 2026 — **Auto-detect external applications** (migration `v3_auto_detect_apps`):
+when the Gmail poll classifies an email as `auto_confirmation` (an automated "application sent/received"
+message), `agents/application_detector.py` extracts the company (+ role) from the subject — **pure regex,
+no Claude** (LinkedIn/Indeed/generic ATS patterns) — then either **matches** a `new`/`bookmarked` tracked
+job by company (ILIKE + first-word fallback) → flips it to **applied** (`applied_at` = email time), or
+**creates** a new applied job (`source=gmail_alert`). Either way it links the email via an EmailThread and
+writes an `EmailAlertLog` so it surfaces in **Activity → Job Alerts** as a green "✅ Auto-detected: Applied
+to {company}" card. Gated by `UserPreferences.auto_detect_applications` (default **True**; toggle in Settings
+→ Gmail). `POST /gmail/poll` returns `applications_detected`; `GET /activity/alerts` rows gain an
+`auto_application` `{action, company, role}` field. Created jobs show as **Applied** with the **📧 Alert**
+source badge in the Tracker. 101 tests. **Jobs Tracker filter fixes**: server-side **pagination** (25/page via
 `skip`/`limit` + shared `Pagination`, page resets on filter/sort change) — fixed a latent **non-deterministic
 ordering bug** (added a final unique `Job.id DESC` tiebreaker so paginated pages never overlap); filter bar
 now **2 rows max** (Row 1 Source+Score pills, Row 2 Domain dropdown [max-w-180px, truncated] + Partial toggle
@@ -1219,4 +1234,4 @@ by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category b
 row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. **Community follow-ups:** insights on the Add-Job parse screen
 (compact card, decide before tailoring), Contributions "View →" deep-link fixed (`/jobs?open={id}` →
 JobsPage opens the detail panel), and **`normalize_company`** matching so company-name casing/punctuation
-no longer splits buckets. All 97 smoke tests passing*
+no longer splits buckets. All 101 smoke tests passing*

@@ -52,6 +52,7 @@ class PollResult(BaseModel):
     hitl_flagged: int
     alerts_processed: int = 0      # V3: job-alert digest emails handled
     jobs_from_alerts: int = 0      # V3: jobs saved from those alerts
+    applications_detected: int = 0  # V3: external applications auto-detected from confirmations
     errors: list[str] = []
 
 
@@ -167,7 +168,7 @@ async def _process_inbox_emails(
 
     errors = []
     empty = {"emails_checked": 0, "new_emails": 0, "jobs_updated": 0, "hitl_flagged": 0,
-             "alerts_processed": 0, "jobs_from_alerts": 0, "errors": errors}
+             "alerts_processed": 0, "jobs_from_alerts": 0, "applications_detected": 0, "errors": errors}
 
     try:
         raw_emails = await poll_inbox(gmail_address, app_password, since_dt=since_dt)
@@ -196,11 +197,13 @@ async def _process_inbox_emails(
         select(UserPreferences).where(UserPreferences.user_id == user.id)
     )).scalar_one_or_none()
     parse_alerts = getattr(prefs, "parse_job_alerts", True)
+    auto_detect_apps = getattr(prefs, "auto_detect_applications", True)
     if model is None:
         model = getattr(prefs, "preferred_model", None)
 
     alerts_processed = 0
     jobs_from_alerts = 0
+    applications_detected = 0
 
     # ── V3: peel off job-alert digests first (rule-based, no Claude call) ────
     alert_ids = set()
@@ -271,6 +274,21 @@ async def _process_inbox_emails(
                         except Exception as ex:
                             errors.append(f"alert process {email_msg.message_id}: {ex}")
                     continue
+
+                # V3: an automated "application sent/received" confirmation — auto-detect
+                # the external application (match a new/bookmarked job → applied, or create one).
+                if classification == "auto_confirmation" and auto_detect_apps:
+                    try:
+                        from app.agents.application_detector import detect_external_application
+                        res = await detect_external_application(
+                            email_msg, user, session, poll_run_id=poll_run_id)
+                        if res["action"] in ("matched", "created"):
+                            applications_detected += 1
+                            jobs_updated += 1
+                            continue  # EmailThread already created inside the detector
+                    except Exception as ex:
+                        errors.append(f"auto-detect {email_msg.message_id}: {ex}")
+                    # no_company / error → fall through to save a plain thread record
 
                 # Match to job
                 job_id_str = await match_email_to_job(
@@ -351,6 +369,7 @@ async def _process_inbox_emails(
         "hitl_flagged": hitl_flagged,
         "alerts_processed": alerts_processed,
         "jobs_from_alerts": jobs_from_alerts,
+        "applications_detected": applications_detected,
         "errors": errors,
     }
 

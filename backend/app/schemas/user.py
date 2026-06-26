@@ -112,6 +112,7 @@ class PreferencesUpdate(BaseModel):
     parse_job_alerts: Optional[bool] = None
     job_alert_max_links: Optional[int] = None
     job_alert_title_filter: Optional[bool] = None
+    auto_detect_applications: Optional[bool] = None
 
 
 # ── Admin schemas ─────────────────────────────────────────────────────────────
