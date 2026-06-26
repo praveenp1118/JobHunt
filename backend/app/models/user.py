@@ -190,5 +190,24 @@ class UserPreferences(Base, TimestampMixin):
     # V3 Community Insights — opt-in anonymised sharing
     community_sharing_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # ── V3 Hybrid-RAG scoring config (per-user, preset-driven) ──
+    scoring_preset: Mapped[str] = mapped_column(String(20), default="balanced", nullable=False)  # maximum_quality/balanced/maximum_savings
+    # Stage 1 — keyword pre-filter (free)
+    keyword_match_threshold: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    # Stage 2 — essence scoring (cheap)
+    s1_essence_model: Mapped[str] = mapped_column(String(50), default="claude-haiku-4-5", nullable=False)
+    s1_essence_reject_below: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    # Stage 3 — full CV scoring (quality)
+    s1_full_model: Mapped[str] = mapped_column(String(50), default="claude-sonnet-4-6", nullable=False)
+    s1_borderline_low: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+    s1_borderline_high: Mapped[int] = mapped_column(Integer, default=74, nullable=False)
+    # Domain CV scoring
+    domain_score_model: Mapped[str] = mapped_column(String(50), default="claude-haiku-4-5", nullable=False)
+    domain_score_min_s1: Mapped[int] = mapped_column(Integer, default=55, nullable=False)
+    # Career insights
+    career_model: Mapped[str] = mapped_column(String(50), default="claude-sonnet-4-6", nullable=False)
+    # Batch size
+    scoring_batch_size: Mapped[int] = mapped_column(Integer, default=12, nullable=False)
+
     # Relationships
     user: Mapped["User"] = relationship(back_populates="preferences")

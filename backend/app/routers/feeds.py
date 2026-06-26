@@ -459,7 +459,7 @@ async def run_single_feed(
         or settings.platform_anthropic_api_key or settings.anthropic_api_key
 
     started = datetime.now(timezone.utc)
-    found, added, _feed_stats = await _scan_feeds_for_user(user, [feed], apify_token, anthropic_key, session)
+    found, added, _feed_stats, _rag_stats = await _scan_feeds_for_user(user, [feed], apify_token, anthropic_key, session)
     duration = (datetime.now(timezone.utc) - started).total_seconds()
 
     # Usage for this feed run (set_usage_user inside _scan_feeds_for_user reset the session).

@@ -36,7 +36,7 @@ async def test_scanner_feeds_summary_breakdown():
                 keywords=None, location=None, actor_name=None, domain_cv_id=None,
             )
             with patch.object(rss_mod, "fetch_rss_feed", _empty_rss):
-                found, added, stats = await _scan_feeds_for_user(user, [feed], None, None, session)
+                found, added, stats, rag_stats = await _scan_feeds_for_user(user, [feed], None, None, session)
 
         assert found == 0 and added == 0
         assert len(stats) == 1

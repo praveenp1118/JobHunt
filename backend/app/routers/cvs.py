@@ -2,6 +2,7 @@
 CV router — master CV, domain CVs, change log, S3 scoring.
 """
 import uuid
+from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -202,7 +203,64 @@ async def _save_master_cv(
 
     await session.commit()
     await session.refresh(master)
+    # Hybrid-RAG: (re)compute the CV essence (best-effort, cheap Haiku call).
+    await _compute_master_essence(master, user, session)
     return MasterCVRead.model_validate(master)
+
+
+async def _compute_master_essence(master, user, session) -> bool:
+    """Extract + store the master CV essence (Stage-2 input). Never breaks the save."""
+    try:
+        from app.models.user import UserPreferences
+        from app.agents.essence_agent import extract_cv_essence
+        from app.utils.usage_logger import set_usage_user
+        key = await _get_anthropic_key(user, session)
+        if not key:
+            return False
+        set_usage_user(user.id)
+        prefs = (await session.execute(
+            select(UserPreferences).where(UserPreferences.user_id == user.id))).scalars().first()
+        model = (prefs.s1_essence_model if prefs and prefs.s1_essence_model else "claude-haiku-4-5")
+        essence = await extract_cv_essence(master.content_md, master.version, anthropic_key=key, model=model)
+        master.essence_json = essence
+        master.essence_computed_at = datetime.now(timezone.utc)
+        master.essence_version = master.version
+        await session.commit()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ master essence extraction failed: {e}")
+        return False
+
+
+async def _compute_domain_essence(dcv, user, session) -> bool:
+    """Extract + store a domain CV's essence (with domain extras). Never breaks the apply."""
+    try:
+        from app.models.user import UserPreferences
+        from app.agents.essence_agent import extract_cv_essence
+        from app.utils.usage_logger import set_usage_user
+        if not dcv.content_md:
+            return False
+        key = await _get_anthropic_key(user, session)
+        if not key:
+            return False
+        set_usage_user(user.id)
+        prefs = (await session.execute(
+            select(UserPreferences).where(UserPreferences.user_id == user.id))).scalars().first()
+        model = (prefs.s1_essence_model if prefs and prefs.s1_essence_model else "claude-haiku-4-5")
+        ind = (await session.execute(
+            select(IndustryVertical.label).where(IndustryVertical.id == dcv.industry_id))).scalar() if dcv.industry_id else None
+        fn = (await session.execute(
+            select(FunctionalDiscipline.label).where(FunctionalDiscipline.id == dcv.function_id))).scalar() if dcv.function_id else None
+        domain_context = {"industry": ind, "function": fn, "country_code": dcv.country_code}
+        essence = await extract_cv_essence(dcv.content_md, dcv.version, domain_context=domain_context,
+                                           anthropic_key=key, model=model)
+        dcv.essence_json = essence
+        dcv.essence_computed_at = datetime.now(timezone.utc)
+        await session.commit()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ domain essence extraction failed: {e}")
+        return False
 
 
 @router.get("/master/versions", response_model=List[MasterCVVersionRead])
@@ -670,11 +728,43 @@ async def apply_domain_cv_changes(
         except Exception as e:
             print(f"⚠️ Feed profile creation failed (non-blocking): {e}")
 
+    # Hybrid-RAG: (re)compute the domain CV essence (best-effort) once it's active.
+    if cv_status == CVStatus.active:
+        await _compute_domain_essence(domain_cv, user, session)
+
     _out = DomainCVRead.model_validate(domain_cv)
     _u = get_session_usage()
     _out.tokens_used = _u["tokens"] or None
     _out.cost_inr = round(_u["cost_inr"], 2) or None
     return _out
+
+
+@router.post("/master/recompute-essence")
+async def recompute_master_essence(user: User = Depends(current_active_user),
+                                   session: AsyncSession = Depends(get_db)):
+    """Manually (re)compute the master CV essence."""
+    master = (await session.execute(
+        select(MasterCV).where(MasterCV.user_id == user.id, MasterCV.is_active == True))).scalars().first()
+    if not master:
+        raise HTTPException(status_code=404, detail="No master CV found")
+    ok = await _compute_master_essence(master, user, session)
+    if not ok:
+        raise HTTPException(status_code=502, detail="Essence extraction failed — check your Anthropic key")
+    return {"computed": True, "keywords": len((master.essence_json or {}).get("keywords", []))}
+
+
+@router.post("/domains/{domain_cv_id}/recompute-essence")
+async def recompute_domain_essence(domain_cv_id: uuid.UUID, user: User = Depends(current_active_user),
+                                   session: AsyncSession = Depends(get_db)):
+    """Manually (re)compute a domain CV essence."""
+    dcv = (await session.execute(
+        select(DomainCV).where(DomainCV.id == domain_cv_id, DomainCV.user_id == user.id))).scalar_one_or_none()
+    if not dcv:
+        raise HTTPException(status_code=404, detail="Domain CV not found")
+    ok = await _compute_domain_essence(dcv, user, session)
+    if not ok:
+        raise HTTPException(status_code=502, detail="Essence extraction failed — apply the domain CV first")
+    return {"computed": True, "keywords": len((dcv.essence_json or {}).get("keywords", []))}
 
 
 @router.post("/domains/{domain_cv_id}/regenerate")

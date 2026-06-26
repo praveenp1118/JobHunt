@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (79 tests, all passing):
+- Current coverage (93 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -113,6 +113,11 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     **7-day cache** (`is_fresh` true for future `expires_at`, false when expired); roadmap completion
     **+impact_pct** updates readiness (70→73→70 on toggle); community **warming_up** when < 2 contributors;
     career questions save + read back. DB-seeded (no live Claude — the analysis pipeline is live-verified).
+  - `test_rag_scoring.py` (14): essence schema; the 3 presets' config; `estimate_scan_cost`; **3-stage
+    routing** (Stage 1 keyword reject/pass w/ NO model call; Stage 2 uses the haiku model; Stage 3 uses
+    sonnet for borderline; confident save ≥ borderline_high skips Stage 3; domain scoring skipped below
+    min_s1) via a monkeypatched `batch_score_s1` (deterministic, free); `config_from_prefs`; `GET
+    /scoring/estimate`; `master_cvs.essence_json` round-trips.
   - `test_governance.py` (12): rate limit blocks after limit + resets after the window; hallucination
     validator catches an invented metric / passes a valid CV; prompt-injection hardening present (XML tags
     + SECURITY INSTRUCTION in jd/tailor/career agents); data export returns a ZIP; deletion request schedules
@@ -211,7 +216,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_gdpr_consent → v3_governance → v3_career_filters
+│   │   └── versions/        # chain tip: … → v3_governance → v3_career_filters → v3_rag_scoring
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -1081,7 +1086,21 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Pagination + 3 bug fixes**: a reusable **`Pagination.jsx`** (`Pagination`
+*Last updated: June 26, 2026 — **Hybrid-RAG scoring pipeline** (major scoring rearchitecture, migration
+`v3_rag_scoring`): replaced "full CV × Sonnet × all jobs" with a **3-stage** pipeline — **Stage 1** keyword
+pre-filter (FREE, JD vs the CV-essence keyword list), **Stage 2** essence scoring (cheap Haiku vs a compact
+`essence_json`), **Stage 3** full-CV scoring (Sonnet, only borderline/no-essence jobs) + domain scoring (only
+if S1 ≥ min). **CV essence** (`master_cvs.essence_json` / `domain_cvs.essence_json`) extracted once per
+upload/apply by **`agents/essence_agent.py`** (Haiku, ~₹0.08; keywords/core_identity/top_experiences/
+domain_strengths/…), triggered in `_save_master_cv` + domain apply (+ `POST /cvs/master|domains/{id}/
+recompute-essence`). **`agents/rag_scorer.py`** = `hybrid_rag_score` + `SCORING_PRESETS` (maximum_quality/
+balanced/maximum_savings) + `estimate_scan_cost`. Wired into `scanner_tasks` (writes a `rag_stats` funnel to
+`run_log.details`) + the gmail-alert public-URL path (Stage 1). **11 scoring-config fields** on
+`UserPreferences`; **`/api/scoring/config` (GET/PATCH) + `/estimate`**; **Settings → Preferences → Scoring &
+Cost** (3 preset cards + per-stage controls + **live cost calculator**); Activity scanner cards show the RAG
+funnel + "Saved ₹X vs unoptimized". Target ₹165→~₹28/scan (~82%, balanced); live-verified (essence 29
+keywords; estimate 90.5% savings; preset switching). Graceful fallback: no essence → full-CV scoring (no
+savings, no quality loss). 93 tests. **Pagination + 3 bug fixes**: a reusable **`Pagination.jsx`** (`Pagination`
 component + `usePagination(items, perPage)` hook — "Showing X-Y of N", max-5 page buttons w/ ellipsis,
 prev/next) applied **client-side** (slices already-fetched arrays — no endpoint shape changes) to 11 list
 views: Activity Job-Alerts (10), Activity System Scanner/Polls/Ghosted/Recent-Errors (10 each), Settings
@@ -1178,4 +1197,4 @@ by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category b
 row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. **Community follow-ups:** insights on the Add-Job parse screen
 (compact card, decide before tailoring), Contributions "View →" deep-link fixed (`/jobs?open={id}` →
 JobsPage opens the detail panel), and **`normalize_company`** matching so company-name casing/punctuation
-no longer splits buckets. All 79 smoke tests passing*
+no longer splits buckets. All 93 smoke tests passing*

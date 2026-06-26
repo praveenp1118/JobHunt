@@ -182,6 +182,9 @@ app.include_router(templates_router, prefix="/api/templates", tags=["templates"]
 from app.routers.privacy import router as privacy_router
 app.include_router(privacy_router, prefix="/api/privacy", tags=["privacy"])
 
+from app.routers.scoring import router as scoring_router
+app.include_router(scoring_router, prefix="/api/scoring", tags=["scoring"])
+
 # ── Health check ─────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():

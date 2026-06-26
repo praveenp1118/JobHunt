@@ -211,6 +211,58 @@ base → 7bad (initial) → f6a2 → a1b2 (user profile fields)
 → v3_cv_template → v3_gdpr_consent → v3_governance  (head)
 ```
 
+## Scoring Pipeline — Hybrid RAG
+
+To minimise token cost without losing accuracy on saved jobs, JobHunt scores jobs through a
+3-stage hybrid-RAG pipeline (the scanner and the public-URL alert path both use it).
+
+```
+Job arrives (scanner / Gmail alert)
+        │
+        ▼
+Stage 1 — Keyword pre-filter (FREE)
+   match JD text against the CV "essence" keyword list
+   < threshold matches → REJECT (no API call) — ~55% filtered here
+        │
+        ▼
+Stage 2 — Essence scoring (cheap, e.g. Haiku)
+   send the compact CV essence JSON + JD → fast 0-100 relevance score
+   < reject threshold → REJECT — ~25% filtered here   (~₹0.03/job)
+        │
+        ▼
+Stage 3 — Full-CV scoring (quality, e.g. Sonnet)
+   only borderline jobs (or when there's no essence) get the FULL CV + JD
+   accurate final S1 — ~15-20% of jobs reach here     (~₹0.58/job)
+        │
+        ▼
+Domain-CV scoring (cheap)  — only if S1 ≥ a min threshold; finds best_domain_cv_id
+```
+
+### CV Essence
+
+Computed **once per CV upload/update** with Haiku (~₹0.08), stored in `master_cvs.essence_json`
+and `domain_cvs.essence_json`. It is a small JSON blob — `keywords` (20-30 searchable terms),
+`core_identity`, `top_experiences`, `domain_strengths` (1-10 per domain), `seniority_level`,
+`markets`, `education`, `certifications`, `years_experience`. Stage 1 uses the keyword list;
+Stage 2 scores against the whole essence instead of the full CV.
+
+### Cost
+
+| Approach | Cost/scan | Quality |
+|---|---|---|
+| Old (full CV × Sonnet × all jobs) | ~₹165 | ✅ |
+| Hybrid RAG — Balanced preset | ~₹25-30 | ✅ |
+| Hybrid RAG — Maximum Savings | ~₹10 | ⚠️ |
+| Hybrid RAG — Maximum Quality | ~₹80 | ✅✅ |
+
+### User control
+
+Every parameter is configurable in **Settings → Preferences → Scoring & Cost** with three presets
+(**Maximum Quality / Balanced / Maximum Savings**) and a **live cost calculator**. The effective
+config is read per scan from `user_preferences`; `GET /api/scoring/config` / `GET /api/scoring/estimate`
+back the UI. Each scanner run records a `rag_stats` funnel (per-stage counts, tokens, cost, savings_pct)
+in `run_log.details`, surfaced on the Activity → System scanner cards.
+
 ## Tech stack
 
 | Layer | Technology |

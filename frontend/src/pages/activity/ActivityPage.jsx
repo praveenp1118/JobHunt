@@ -358,6 +358,7 @@ function ScannerCard({ run }) {
   const [running, setRunning] = useState(false)
   const feeds = run.details?.feeds_summary || []
   const u = run.details?.usage_summary
+  const rag = run.details?.rag_stats
   const fmtK = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n ?? 0))
 
   const handleScan = async (e) => {
@@ -385,10 +386,28 @@ function ScannerCard({ run }) {
             {u.apify_runs > 0 && ` | Apify: ${u.apify_runs} runs · $${(u.apify_usd || 0).toFixed(2)}`}
           </p>
         )}
+        {rag && rag.cost_inr != null && (
+          <p className="text-[11px] text-emerald-600 mt-1">
+            ⚡ ₹{rag.cost_inr} · 💡 Saved ₹{Math.max(0, ((rag.estimated_unoptimized_cost || 0) - (rag.cost_inr || 0))).toFixed(0)} vs unoptimized ({rag.savings_pct}%)
+          </p>
+        )}
         {run.error_message && <p className="text-xs text-red-400 mt-1 truncate">{run.error_message}</p>}
       </div>
-      {open && feeds.length > 0 && (
+      {open && (feeds.length > 0 || rag) && (
         <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 space-y-3">
+          {rag && (
+            <div className="bg-white rounded-lg border border-gray-100 p-3">
+              <p className="text-xs font-semibold text-gray-700 mb-1">RAG Pipeline</p>
+              <p className="text-[11px] text-gray-500 leading-relaxed">
+                {rag.total} total → <strong>{rag.stage1_rejected}</strong> Stage 1 rejected (free)
+                → <strong>{rag.stage2_rejected}</strong> Stage 2 rejected (Haiku)
+                → <strong>{rag.stage2_saved}</strong> saved at Stage 2 + <strong>{rag.stage3_scored}</strong> Stage 3 scored (Sonnet)
+              </p>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Tokens — Stage 2: {fmtK(rag.tokens_stage2)} · Stage 3: {fmtK(rag.tokens_stage3)} · cost ₹{rag.cost_inr}
+              </p>
+            </div>
+          )}
           {feeds.map((f, i) => <ScanFeedBreakdown key={i} f={f} />)}
         </div>
       )}

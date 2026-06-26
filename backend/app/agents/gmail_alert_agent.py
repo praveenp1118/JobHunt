@@ -401,6 +401,18 @@ async def process_job_alert_email(
         select(MasterCV).where(MasterCV.user_id == user.id, MasterCV.is_active == True)
     )).scalars().first()
     master_cv_md = master.content_md if master else ""
+    # Hybrid-RAG Stage 1 keyword filter (free) for the public-URL path.
+    _essence_kw = [str(k).lower() for k in ((master.essence_json or {}).get("keywords") or [])] if master else []
+    _kw_threshold = 0
+    if _essence_kw:
+        try:
+            from app.models.user import UserPreferences
+            from app.agents.rag_scorer import config_from_prefs
+            _p = (await session.execute(
+                select(UserPreferences).where(UserPreferences.user_id == user.id))).scalars().first()
+            _kw_threshold = config_from_prefs(_p)["keyword_match_threshold"]
+        except Exception:
+            _kw_threshold = 3
     # ALL active domain CVs (id, content, label) — each job is scored against every one.
     domain_cv_list = await _load_domain_cvs_full(session, user.id)
     label_map = {str(dcv_id): label for dcv_id, _content, label in domain_cv_list}
@@ -432,6 +444,13 @@ async def process_job_alert_email(
             if not content or len(content) < 100:
                 results.append({"url": url, "reason": "fetch_failed"})
                 continue
+
+            # RAG Stage 1 (free): skip public jobs with low keyword overlap vs the master essence.
+            if _essence_kw and _kw_threshold:
+                _m = sum(1 for k in _essence_kw if k in content.lower())
+                if _m < _kw_threshold:
+                    results.append({"url": url, "reason": f"stage1_keyword_{_m}/{_kw_threshold}"})
+                    continue
 
             jd_hash = compute_jd_hash(content)
             existing = (await session.execute(

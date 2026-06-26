@@ -41,6 +41,7 @@ async def _weekly_scan_async():
     total_found = 0
     total_added = 0
     all_feed_stats = []
+    all_rag_stats = {}
     errors = []
 
     async with AsyncSessionLocal() as session:
@@ -90,7 +91,7 @@ async def _weekly_scan_async():
                     if not anthropic_key:
                         anthropic_key = settings.platform_anthropic_api_key or settings.anthropic_api_key
 
-                    found, added, feed_stats = await _scan_feeds_for_user(
+                    found, added, feed_stats, rag_stats = await _scan_feeds_for_user(
                         user=user,
                         feeds=feeds,
                         apify_token=apify_token,
@@ -100,6 +101,10 @@ async def _weekly_scan_async():
                     total_found += found
                     total_added += added
                     all_feed_stats.extend(feed_stats)
+                    for k in ("total", "stage1_rejected", "stage2_rejected", "stage2_saved",
+                              "stage3_scored", "tokens_stage2", "tokens_stage3", "cost_inr",
+                              "estimated_unoptimized_cost"):
+                        all_rag_stats[k] = round(all_rag_stats.get(k, 0) + (rag_stats.get(k, 0) or 0), 2)
 
                 except Exception as e:
                     err = f"User {user.email}: {e}"
@@ -125,8 +130,11 @@ async def _weekly_scan_async():
                 "apify_runs": sum(r.runs_returned or 0 for r in urows if r.provider == "apify"),
                 "apify_usd": round(sum(r.estimated_cost_usd or 0 for r in urows if r.provider == "apify"), 3),
             }
+            if all_rag_stats.get("estimated_unoptimized_cost"):
+                all_rag_stats["savings_pct"] = round(
+                    (1 - all_rag_stats.get("cost_inr", 0) / all_rag_stats["estimated_unoptimized_cost"]) * 100, 1)
             run_log.details = {"feeds_run": len(all_feed_stats), "feeds_summary": all_feed_stats,
-                               "usage_summary": usage_summary}
+                               "usage_summary": usage_summary, "rag_stats": all_rag_stats or None}
             run_log.completed_at = datetime.now(timezone.utc)
             run_log.duration_seconds = (run_log.completed_at - run_log.started_at).total_seconds()
             if errors:
@@ -310,66 +318,60 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                 stats[fid]["duplicates"] += 1
             _reject(fid, job, "duplicate")
 
-    # ── 4. S1 scoring ───────────────────────────────────────────────────────
-    # 4a. S1 = base fit vs the MASTER CV (universal baseline) for every job.
-    scored_map = {}
-    if new_jobs and master_cv_md and anthropic_key:
-        score_inputs = [
-            {"id": j.get("jd_hash", str(i)), "role": j.get("role", ""), "company": j.get("company", ""),
-             "location": j.get("location", ""), "description": j.get("description", "")[:500]}
-            for i, j in enumerate(new_jobs)
-        ]
-        scores = await batch_score_s1(master_cv_md, score_inputs, api_key=anthropic_key)
-        scored_map = {s["id"]: s for s in scores}
+    # ── 4 + 5. Hybrid-RAG scoring + threshold save ──────────────────────────
+    from app.agents.rag_scorer import hybrid_rag_score, config_from_prefs
+    config = config_from_prefs(prefs)
+    master_essence = master.essence_json if master else None
 
-    # 4b. Score every job against ALL of the user's active domain CVs (not just the
-    #     feed's linked one). domain_scores_by_job[hash] = {dcv_id_str: score}; the
-    #     best one drives the threshold decision + Tailor pre-select.
-    #     Token cost: N new jobs × M active domain CVs (each batched 5/call).
-    domain_scores_by_job = {}
+    # Active domain CVs — essence preferred (cheap), content as fallback.
     domain_cv_labels = {}
-    if new_jobs and anthropic_key:
+    domain_cvs_input = []
+    if new_jobs:
         dcv_rows = (await session.execute(
-            select(DomainCV.id, DomainCV.content_md, IndustryVertical.label, DomainCV.country_code)
+            select(DomainCV.id, DomainCV.content_md, DomainCV.essence_json,
+                   IndustryVertical.label, DomainCV.country_code)
             .outerjoin(IndustryVertical, IndustryVertical.id == DomainCV.industry_id)
             .where(DomainCV.user_id == user.id, DomainCV.status == CVStatus.active,
                    DomainCV.content_md.isnot(None))
         )).all()
-        domain_cv_labels = {str(dcv_id): f"{ind or 'Domain'} × {cc or '—'}"
-                            for dcv_id, _content, ind, cc in dcv_rows}
-        active_dcvs = [(dcv_id, content) for dcv_id, content, _ind, _cc in dcv_rows if content]
-        if active_dcvs:
-            dscore_inputs = [
-                {"id": j.get("jd_hash", str(i)), "role": j.get("role", ""), "company": j.get("company", ""),
-                 "location": j.get("location", ""), "description": j.get("description", "")[:500]}
-                for i, j in enumerate(new_jobs)
-            ]
-            for dcv_id, content in active_dcvs:
-                for s in await batch_score_s1(content, dscore_inputs, api_key=anthropic_key):
-                    domain_scores_by_job.setdefault(s["id"], {})[str(dcv_id)] = s.get("s1_score")
+        domain_cv_labels = {str(did): f"{ind or 'Domain'} × {cc or '—'}"
+                            for did, _c, _e, ind, cc in dcv_rows}
+        domain_cvs_input = [{"id": str(did), "content_md": c, "essence": e}
+                            for did, c, e, _i, _cc in dcv_rows]
+
+    rag_stats = {"total": len(new_jobs), "stage1_rejected": 0, "stage2_rejected": 0,
+                 "stage2_saved": 0, "stage3_scored": 0, "tokens_stage2": 0, "tokens_stage3": 0,
+                 "cost_inr": 0.0, "estimated_unoptimized_cost": 0.0, "savings_pct": 0.0}
+    rag_jobs = new_jobs
+    if new_jobs and anthropic_key:
+        rag = await hybrid_rag_score(new_jobs, master_essence, master_cv_md,
+                                     domain_cvs_input, config, anthropic_key)
+        rag_jobs, rag_stats = rag["jobs"], rag["stats"]
 
     def _labelled(dscores):
         return {domain_cv_labels.get(k, k): v for k, v in (dscores or {}).items()}
 
-    # ── 5. Threshold + save ─────────────────────────────────────────────────
-    # Decision score: use S1d when the feed has a linked domain CV, else S1.
+    # Save RAG-survivors above threshold; record RAG-rejected jobs (cost saved upstream).
     added = 0
     source_map = {"rss": JobSource.rss, "apify_linkedin": JobSource.apify,
                   "apify_google": JobSource.apify, "apify": JobSource.apify}
-    for job in new_jobs:
+    for job in rag_jobs:
         fid = job.get("feed_id")
-        if fid in stats:
-            stats[fid]["s1_scored"] += 1
         try:
+            stage = job.get("_stage")
+            if stage in ("stage1_rejected", "stage2_rejected"):
+                _reject(fid, job, job.get("_reject_reason") or stage, s1=job.get("_s1_essence"))
+                continue
+
+            if fid in stats:
+                stats[fid]["s1_scored"] += 1
             job_hash = job.get("jd_hash", "")
-            s1 = scored_map.get(job_hash, {}).get("s1_score")
+            s1 = job.get("s1")
             feed = feed_by_id.get(fid)
 
-            # Best-fit domain CV across ALL active domain CVs.
-            dscores = domain_scores_by_job.get(job_hash, {})  # {dcv_id_str: score}
-            valid = {k: v for k, v in dscores.items() if v is not None}
-            best_dcv_id_str = max(valid, key=valid.get) if valid else None
-            best_s1d = valid.get(best_dcv_id_str) if best_dcv_id_str else None
+            dscores = job.get("domain_cv_scores") or {}  # {dcv_id_str: score}
+            best_dcv_id_str = job.get("best_domain_cv_id")
+            best_s1d = job.get("s1d")
 
             # S1d (best domain CV) drives the decision when available; else S1.
             has_domain = best_s1d is not None
@@ -389,8 +391,7 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                     "s1": s1, "s1d": best_s1d,
                     "domain_scores": _labelled(dscores),
                     "best_domain_cv": domain_cv_labels.get(best_dcv_id_str),
-                    "decision": (f"saved (s1d={best_s1d} ≥ {threshold})" if has_domain
-                                 else f"saved (s1={s1})"),
+                    "decision": f"{stage} · " + (f"s1d={best_s1d}" if has_domain else f"s1={s1}"),
                 })
 
             source = source_map.get(job.get("source", "rss"), JobSource.rss)
@@ -431,5 +432,5 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
             continue
 
     await session.commit()
-    print(f"✅ User {user.email}: {found} found, {added} added")
-    return found, added, list(stats.values())
+    print(f"✅ User {user.email}: {found} found, {added} added (RAG ₹{rag_stats.get('cost_inr')})")
+    return found, added, list(stats.values()), rag_stats

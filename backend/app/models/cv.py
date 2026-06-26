@@ -1,8 +1,9 @@
 import uuid
 from enum import Enum
 from typing import Optional
-from sqlalchemy import String, Text, Integer, Boolean, ForeignKey, Enum as SAEnum, Float
-from sqlalchemy.dialects.postgresql import UUID
+from datetime import datetime
+from sqlalchemy import String, Text, Integer, Boolean, ForeignKey, Enum as SAEnum, Float, DateTime
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
 from app.database import Base
@@ -48,6 +49,11 @@ class MasterCV(Base, TimestampMixin):
     version: Mapped[int] = mapped_column(Integer, default=1)
     word_count: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # Hybrid-RAG: structured CV essence (computed once per upload/update, used by Stage 2)
+    essence_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    essence_computed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    essence_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Relationships
     versions: Mapped[list["MasterCVVersion"]] = relationship(
@@ -127,6 +133,10 @@ class DomainCV(Base, TimestampMixin):
     # S3 scores (vs domain base and vs master)
     s3_domain: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     s3_master: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Hybrid-RAG: structured essence (incl. domain extras), computed on apply
+    essence_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    essence_computed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Storage
     file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

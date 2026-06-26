@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getPreferences, updatePreferences } from '../../api/auth'
 import { updateCommunityPreferences } from '../../api/community'
+import ScoringSettings from './ScoringSettings'
 import Button from '../../components/ui/Button'
 import { toast } from '../../store/toast'
 
@@ -158,6 +159,11 @@ export default function PreferencesTab() {
           className="mt-4 text-xs font-medium text-emerald-600 hover:underline">
           View my contributions →
         </button>
+      </div>
+
+      {/* Scoring & Cost Optimization */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5">
+        <ScoringSettings />
       </div>
     </div>
   )
