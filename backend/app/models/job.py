@@ -37,6 +37,7 @@ class JobSource(str, Enum):
     apify = "apify"
     rss = "rss"
     gmail_alert = "gmail_alert"   # V3: extracted from a job-alert digest email
+    email_to_jobhunt = "email_to_jobhunt"   # V3: user emailed a job URL to JobHunt
 
 
 class EmailDirection(str, Enum):

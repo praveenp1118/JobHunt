@@ -36,6 +36,7 @@ const SOURCE_FILTERS = [
   { value: 'apify', label: 'Apify' },
   { value: 'manual', label: 'Manual' },
   { value: 'gmail_alert', label: '📧 Alert' },
+  { value: 'email_to_jobhunt', label: '📥 Email' },
 ]
 
 const SCORE_FILTERS = [

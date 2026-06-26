@@ -78,7 +78,7 @@ async def test_process_save_job_email_saves(monkeypatch):
 
             assert res["action"] == "saved" and res["company"] == "Adyen" and res["s1"] == 78
             job = (await s.execute(select(Job).where(Job.user_id == uid))).scalar_one()
-            assert job.source == JobSource.manual and job.status == JobStatus.new
+            assert job.source == JobSource.email_to_jobhunt and job.status == JobStatus.new
             assert job.portal_url == "https://boards.greenhouse.io/acme/jobs/1" and job.s1 == 78
             assert job.source_email_id == thread.id
             # Activity log written with the email_to_jobhunt marker

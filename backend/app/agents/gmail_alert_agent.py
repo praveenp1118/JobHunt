@@ -671,7 +671,7 @@ async def process_save_job_email(
         jd_md=content[:50000],
         jd_language=parsed.get("jd_language") or "en",
         portal_url=url,
-        source=JobSource.manual,          # user-initiated
+        source=JobSource.email_to_jobhunt,   # user emailed a job URL (distinct from manual paste)
         status=JobStatus.new,
         s1=s1,
         s1d=best_s1d,

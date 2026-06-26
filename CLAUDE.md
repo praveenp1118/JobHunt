@@ -1112,7 +1112,11 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 27, 2026 — **Cost optimization: RAG + tiered models across ALL Claude calls** (migration
+*Last updated: June 27, 2026 — **Email-to-JobHunt source** (migration `v3_email_source`): jobs saved by
+emailing a URL now use a distinct **`JobSource.email_to_jobhunt`** (was `manual`) — Manual = pasted JD in the
+app, **📥 Email** = emailed a URL. `SourceBadge` (`📥 Email`, blue), a Jobs Tracker source filter pill, and
+the `/jobs/stats` `by_source` facet (GROUP BY, auto-includes it) all surface it. **Cost optimization: RAG +
+tiered models across ALL Claude calls** (migration
 `v3_optimization` adds `jobs.jd_highlights_json`). **Email classification** (`gmail_agents`): rules-first —
 sender `quick_classify` then content-pattern `rule_classify` (both FREE), and the remaining ~30% now use
 **Haiku** (`CLASSIFY_MODEL`) not Sonnet (~85% cheaper). **Gmail alert public-URL path** (`gmail_alert_agent`):
@@ -1131,7 +1135,7 @@ hourly **email classification** to 2 AM (would delay time-sensitive recruiter/in
 Haiku already cut that cost ~85% without delay). 114 tests. **Email to JobHunt** (migration `v3_email_to_jobhunt`): email any job URL to
 your job-search Gmail with a subject containing "jobhunt"/"job hunt"/"save job"/"crawl"/"track this"/"add to
 tracker" — or starting with **`jh:`** / **`jt:`** — and the poll fetches + parses + RAG-scores the URL and
-saves it (`source=manual`, `status=new`, `portal_url`), then emails a confirmation back ("✅ Saved to JobHunt:
+saves it (`source=email_to_jobhunt`, `status=new`, `portal_url`), then emails a confirmation back ("✅ Saved to JobHunt:
 {role} at {company} · S1/Best Fit · View link"). `gmail_alert_agent.py` adds `is_save_job_email` (rule-based,
 no Claude), `extract_first_url` (anchors/text/subject, skips social/footer), and `process_save_job_email`
 (fetch→`parse_and_score_jd`→domain scoring→save, **no threshold gate** — the user asked for it). Wired into
