@@ -54,6 +54,52 @@ def is_excluded_subject(subject: str) -> bool:
     return any(x in s for x in SUBJECT_EXCLUSIONS)
 
 
+# ── "Email to JobHunt": save a job URL by emailing it to your job-search Gmail ──
+SAVE_SUBJECT_SIGNALS = [
+    "jobhunt", "job hunt", "save job", "save this job",
+    "crawl", "track this", "add to tracker",
+]
+SAVE_SUBJECT_PREFIXES = ("jh:", "jt:")
+_URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+", re.I)
+# URLs that are never a job posting (footer/social/tracking links).
+_URL_SKIP = ["unsubscribe", "optout", "/privacy", "/terms", "mailto:",
+             "facebook.com", "twitter.com", "x.com/", "instagram.com",
+             "youtube.com", "linkedin.com/company", "google.com/maps"]
+
+
+def is_save_job_email(subject: str, body_html: str = "") -> bool:
+    """True when the user emailed a job to save it ("Email to JobHunt").
+    Rule-based, no Claude: subject contains a save signal OR starts with jh:/jt:."""
+    s = (subject or "").strip().lower()
+    if not s:
+        return False
+    if s.startswith(SAVE_SUBJECT_PREFIXES):
+        return True
+    return any(sig in s for sig in SAVE_SUBJECT_SIGNALS)
+
+
+def extract_first_url(body_html: str, subject: str = "") -> Optional[str]:
+    """First real http(s) URL in the email (anchors first, then any text/subject URL),
+    skipping unsubscribe/social/tracking links. Returns None if none found."""
+    candidates = []
+    if body_html:
+        try:
+            soup = BeautifulSoup(body_html, "html.parser")
+            candidates += [a["href"].strip() for a in soup.find_all("a", href=True)]
+        except Exception:
+            pass
+        candidates += _URL_RE.findall(body_html)
+    candidates += _URL_RE.findall(subject or "")
+    for u in candidates:
+        low = u.lower()
+        if not low.startswith("http"):
+            continue
+        if any(sk in low for sk in _URL_SKIP):
+            continue
+        return u.rstrip(".,);]")
+    return None
+
+
 def _is_gated_domain(url: str) -> bool:
     u = (url or "").lower()
     return any(d in u for d in GATED_DOMAINS)
@@ -514,6 +560,119 @@ async def process_job_alert_email(
             continue
 
     return _log(saved_ids, results)
+
+
+async def process_save_job_email(
+    email_thread,
+    body_html: str,
+    subject: str,
+    user,
+    session,
+    anthropic_key: Optional[str],
+    model: Optional[str],
+    prefs,
+    poll_run_id=None,
+) -> dict:
+    """"Email to JobHunt": the user emailed a job URL to their job-search Gmail.
+    Extract the first URL, fetch + parse + score it (full RAG: S1 vs master + S1d vs
+    all domain CVs — NO threshold gate, the user explicitly asked to save it), and save
+    it to the tracker with source=manual, status=new, portal_url=<url>. Writes an
+    EmailAlertLog (reason="email_to_jobhunt") for the Activity timeline and returns the
+    outcome dict (the caller sends the confirmation email + owns the commit).
+
+    Returns {saved, action: saved|duplicate|no_url|fetch_failed, company?, role?, s1?,
+    s1d?, job_id?, url?}."""
+    from app.agents.jd_agents import (
+        compute_jd_hash, parse_and_score_jd, fetch_url_content, detect_market_from_text,
+    )
+    from app.models.job import Job, JobSource, JobStatus
+    from app.models.cv import MasterCV
+    from app.models.admin import EmailAlertLog
+
+    url = extract_first_url(body_html, subject)
+
+    def _log(saved_ids, entry):
+        email_thread.jobs_extracted = 1 if url else 0
+        email_thread.jobs_saved = len(saved_ids)
+        session.add(EmailAlertLog(
+            poll_run_id=poll_run_id,
+            user_id=user.id,
+            email_subject=email_thread.subject,
+            sender=email_thread.from_email,
+            received_at=email_thread.received_at,
+            links_found=1 if url else 0,
+            links_public=1 if url else 0,
+            jobs_saved=len(saved_ids),
+            saved_job_ids=saved_ids or None,
+            skip_reasons=[entry],
+        ))
+        return {"saved": len(saved_ids), **entry}
+
+    if not url:
+        # Phase 2 (not implemented): subject like "jh: Head of Product at Adyen" with no URL
+        # → search Apify/Google for the role+company and save the best match.
+        return _log([], {"reason": "email_to_jobhunt", "action": "no_url", "subject": subject})
+
+    # Already tracked from the same URL? Don't duplicate.
+    existing = (await session.execute(
+        select(Job).where(Job.user_id == user.id, Job.portal_url == url)
+    )).scalars().first()
+    if existing:
+        return _log([], {"reason": "email_to_jobhunt", "action": "duplicate", "url": url,
+                         "company": existing.company, "role": existing.role,
+                         "job_id": str(existing.id)})
+
+    try:
+        content = await fetch_url_content(url)
+    except Exception as e:
+        print(f"⚠️ email-to-jobhunt: fetch failed for {url}: {e}")
+        content = ""
+    if not content or len(content) < 100:
+        return _log([], {"reason": "email_to_jobhunt", "action": "fetch_failed", "url": url})
+
+    master = (await session.execute(
+        select(MasterCV).where(MasterCV.user_id == user.id, MasterCV.is_active == True)
+    )).scalars().first()
+    master_cv_md = master.content_md if master else ""
+
+    result = await parse_and_score_jd(content, master_cv_md, anthropic_key, model=model)
+    s1 = result.get("s1_score", 0) or 0
+    parsed = result.get("parsed", {})
+    company = parsed.get("company") or "Unknown"
+    role = parsed.get("role") or "Unknown"
+
+    domain_cv_list = await _load_domain_cvs_full(session, user.id)
+    job_input = [{"id": "j", "role": role, "company": company,
+                  "location": parsed.get("location") or "", "description": content[:500]}]
+    dscores = (await _score_jobs_vs_domain_cvs(
+        job_input, domain_cv_list, anthropic_key, model)).get("j", {})
+    best_id, best_s1d = _best_domain(dscores)
+
+    new_id = uuid_module.uuid4()
+    session.add(Job(
+        id=new_id,
+        user_id=user.id,
+        company=company,
+        role=role,
+        location=parsed.get("location"),
+        market=parsed.get("market") or detect_market_from_text(content),
+        jd_hash=compute_jd_hash(content),
+        jd_raw=content[:50000],
+        jd_md=content[:50000],
+        jd_language=parsed.get("jd_language") or "en",
+        portal_url=url,
+        source=JobSource.manual,          # user-initiated
+        status=JobStatus.new,
+        s1=s1,
+        s1d=best_s1d,
+        domain_cv_scores=(dscores or None),
+        best_domain_cv_id=(uuid_module.UUID(best_id) if best_id else None),
+        source_email_id=email_thread.id,
+        detected_domain_cv_id=(uuid_module.UUID(best_id) if best_id else None),
+    ))
+    return _log([str(new_id)], {"reason": "email_to_jobhunt", "action": "saved", "url": url,
+                                "company": company, "role": role, "s1": s1, "s1d": best_s1d,
+                                "job_id": str(new_id)})
 
 
 async def fetch_and_rescore_partial_job(job_id, user, session, anthropic_key, model=None) -> dict:

@@ -67,7 +67,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (101 tests, all passing):
+- Current coverage (105 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -118,6 +118,10 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     sonnet for borderline; confident save ≥ borderline_high skips Stage 3; domain scoring skipped below
     min_s1) via a monkeypatched `batch_score_s1` (deterministic, free); `config_from_prefs`; `GET
     /scoring/estimate`; `master_cvs.essence_json` round-trips.
+  - `test_email_to_jobhunt.py` (4): `is_save_job_email` detects save signals + `jh:`/`jt:` prefixes
+    (pure); `extract_first_url` pulls the first real job URL (anchors/text/subject, skips social/footer);
+    `process_save_job_email` (mocked fetch/parse) saves a `manual`/`new` job with `portal_url` + S1 +
+    `source_email_id` + an `email_to_jobhunt` EmailAlertLog; and **no-ops** when the email has no URL.
   - `test_auto_detect.py` (4): `extract_company_role` parses LinkedIn/Indeed confirmation subjects
     (company + role, and `(None, None)` for non-confirmations — pure regex); `detect_external_application`
     **matches** a `new`/`bookmarked` job by company → flips it to `applied` (+`applied_at`, EmailThread,
@@ -224,7 +228,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_rag_scoring → v3_night_batch → v3_auto_detect_apps
+│   │   └── versions/        # chain tip: … → v3_night_batch → v3_auto_detect_apps → v3_email_to_jobhunt
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -1100,7 +1104,20 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 26, 2026 — **Alert source filter fix**: selecting the Jobs Tracker **Alert**
+*Last updated: June 27, 2026 — **Email to JobHunt** (migration `v3_email_to_jobhunt`): email any job URL to
+your job-search Gmail with a subject containing "jobhunt"/"job hunt"/"save job"/"crawl"/"track this"/"add to
+tracker" — or starting with **`jh:`** / **`jt:`** — and the poll fetches + parses + RAG-scores the URL and
+saves it (`source=manual`, `status=new`, `portal_url`), then emails a confirmation back ("✅ Saved to JobHunt:
+{role} at {company} · S1/Best Fit · View link"). `gmail_alert_agent.py` adds `is_save_job_email` (rule-based,
+no Claude), `extract_first_url` (anchors/text/subject, skips social/footer), and `process_save_job_email`
+(fetch→`parse_and_score_jd`→domain scoring→save, **no threshold gate** — the user asked for it). Wired into
+`_process_inbox_emails` (peeled off **first**, before alert detection) via `_handle_save_job` (creates the
+EmailThread + sends the confirmation). Gated by `UserPreferences.enable_email_to_jobhunt` (default **True**;
+Settings → Gmail section with the user's job-search address + Copy button). `EmailClassification.save_job`
+enum value added; `POST /gmail/poll` returns `jobs_saved_via_email`; `GET /activity/alerts` rows gain an
+`email_to_jobhunt` `{action, company, role, s1, s1d, url}` field → blue "📥 Email-to-JobHunt: Saved …" card.
+**Phase 2 (not built):** a `jh:` subject with role+company but **no URL** logs `action=no_url` (future:
+search Apify/Google for the best match). 105 tests. **Alert source filter fix**: selecting the Jobs Tracker **Alert**
 (`gmail_alert`) source returned **0 jobs** because every alert job is partial-JD (LinkedIn-gated) and the
 default "Hide Partial JD ✓" hid them all. `GET /jobs` now **skips `hide_partial` when the source filter is
 exactly `gmail_alert`** (alert jobs always show under the Alert filter); the Tracker replaces the partial
@@ -1243,4 +1260,4 @@ by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category b
 row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. **Community follow-ups:** insights on the Add-Job parse screen
 (compact card, decide before tailoring), Contributions "View →" deep-link fixed (`/jobs?open={id}` →
 JobsPage opens the detail panel), and **`normalize_company`** matching so company-name casing/punctuation
-no longer splits buckets. All 101 smoke tests passing*
+no longer splits buckets. All 105 smoke tests passing*

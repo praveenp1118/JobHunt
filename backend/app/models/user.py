@@ -188,6 +188,8 @@ class UserPreferences(Base, TimestampMixin):
     job_alert_title_filter: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # V3: auto-detect external applications from Gmail "application sent" confirmations
     auto_detect_applications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # V3: "Email to JobHunt" — save a job URL by emailing it (subject "jobhunt"/"jh:")
+    enable_email_to_jobhunt: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # V3 Community Insights — opt-in anonymised sharing
     community_sharing_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

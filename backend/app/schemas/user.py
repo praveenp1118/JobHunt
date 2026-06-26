@@ -113,6 +113,7 @@ class PreferencesUpdate(BaseModel):
     job_alert_max_links: Optional[int] = None
     job_alert_title_filter: Optional[bool] = None
     auto_detect_applications: Optional[bool] = None
+    enable_email_to_jobhunt: Optional[bool] = None
 
 
 # ── Admin schemas ─────────────────────────────────────────────────────────────

@@ -137,6 +137,7 @@ function AlertRow({ alert }) {
   const reasons = alert.skip_reasons || []
   const shownReasons = showAllReasons ? reasons : reasons.slice(0, 5)
   const auto = alert.auto_application  // {action, company, role} when an external application was auto-detected
+  const emailSave = alert.email_to_jobhunt  // {action, company, role, s1, s1d, url} when emailed to JobHunt
 
   // Auto-detected application — render a compact green card instead of the link funnel.
   if (auto) {
@@ -149,6 +150,29 @@ function AlertRow({ alert }) {
         <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1 text-xs text-gray-400">
           {auto.role && auto.role !== 'Unknown role' && <span className="text-gray-500">{auto.role}</span>}
           {auto.role && auto.role !== 'Unknown role' && <span>·</span>}
+          <span className="truncate max-w-[260px]">📧 {alert.email_subject || '(no subject)'}</span>
+          <span>·</span>
+          <span>{timeAgo(alert.received_at || alert.created_at)}</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Email-to-JobHunt — the user emailed a job URL to save it.
+  if (emailSave) {
+    const ok = emailSave.action === 'saved'
+    const dup = emailSave.action === 'duplicate'
+    return (
+      <div className={`bg-white rounded-xl border px-4 py-3 ${ok ? 'border-blue-200' : 'border-gray-200'}`}>
+        <p className={`text-sm font-medium ${ok ? 'text-blue-700' : 'text-gray-600'}`}>
+          {ok ? `📥 Email-to-JobHunt: Saved ${emailSave.role} at ${emailSave.company}`
+            : dup ? `📥 Email-to-JobHunt: Already tracked — ${emailSave.company}`
+            : emailSave.action === 'fetch_failed' ? '📥 Email-to-JobHunt: Could not fetch that URL'
+            : '📥 Email-to-JobHunt: No job URL found in the email'}
+        </p>
+        <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1 text-xs text-gray-400">
+          {ok && <span className="text-blue-600 font-medium">S1 {Math.round(emailSave.s1 ?? 0)} · Best Fit {emailSave.s1d != null ? Math.round(emailSave.s1d) : '—'}</span>}
+          {ok && <span>·</span>}
           <span className="truncate max-w-[260px]">📧 {alert.email_subject || '(no subject)'}</span>
           <span>·</span>
           <span>{timeAgo(alert.received_at || alert.created_at)}</span>

@@ -54,6 +54,7 @@ class EmailClassification(str, Enum):
     sent_application = "sent_application"
     sent_followup = "sent_followup"
     job_alert = "job_alert"   # V3: job-alert digest email
+    save_job = "save_job"     # V3: user emailed a job URL to save ("Email to JobHunt")
 
 
 class Job(Base, TimestampMixin):

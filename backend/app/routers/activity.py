@@ -67,9 +67,12 @@ async def get_alert_activity(
     out = []
     for r in rows:
         saved_jobs = [job_map[str(jid)] for jid in (r.saved_job_ids or []) if str(jid) in job_map]
-        # Auto-detected external applications encode their outcome in skip_reasons.
+        # Auto-detected external applications + "Email to JobHunt" saves encode their
+        # outcome in skip_reasons (single-entry marker).
         auto_app = next((x for x in (r.skip_reasons or [])
                          if isinstance(x, dict) and x.get("reason") == "auto_application"), None)
+        email_save = next((x for x in (r.skip_reasons or [])
+                           if isinstance(x, dict) and x.get("reason") == "email_to_jobhunt"), None)
         out.append({
             "id": str(r.id),
             "email_subject": r.email_subject,
@@ -84,6 +87,7 @@ async def get_alert_activity(
             "skip_reasons": r.skip_reasons or [],
             "saved_jobs": saved_jobs,
             "auto_application": auto_app,  # {action, company, role} when auto-detected, else null
+            "email_to_jobhunt": email_save,  # {action, company, role, s1, s1d, url} when emailed, else null
             "created_at": r.created_at,
         })
     return out

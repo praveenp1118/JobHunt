@@ -258,6 +258,49 @@ export default function GmailTab() {
           />
         </div>
       </div>
+
+      {/* Email to JobHunt (V3) */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Email to JobHunt</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Send any job URL to your job-search Gmail with a subject containing
+              <strong> “jobhunt” </strong> or starting with <strong>“jh:”</strong> — it’s
+              automatically fetched, scored, and saved to your tracker.
+            </p>
+          </div>
+          <Toggle
+            on={prefs.enable_email_to_jobhunt ?? true}
+            onChange={() => savePref({ enable_email_to_jobhunt: !(prefs.enable_email_to_jobhunt ?? true) })}
+          />
+        </div>
+
+        {(prefs.enable_email_to_jobhunt ?? true) && (
+          <div className="mt-5 border-t border-gray-100 pt-4">
+            <label className="text-xs text-gray-500">Your job-search email</label>
+            {gmailAddress ? (
+              <div className="flex items-center gap-2 mt-1.5">
+                <code className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-800 truncate">
+                  {gmailAddress}
+                </code>
+                <button
+                  onClick={() => { navigator.clipboard?.writeText(gmailAddress); toast.success('Email address copied') }}
+                  className="text-xs font-medium px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 whitespace-nowrap"
+                >
+                  Copy
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-amber-600 mt-1.5">Add your Gmail address above to use this feature.</p>
+            )}
+            <p className="text-[11px] text-gray-400 mt-2">
+              Example subject: <code className="text-gray-500">jh: Head of Product at Adyen</code> ·
+              you’ll get a confirmation email back with the scores.
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

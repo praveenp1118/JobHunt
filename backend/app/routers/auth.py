@@ -340,6 +340,7 @@ async def get_preferences(
         "job_alert_max_links": prefs.job_alert_max_links,
         "job_alert_title_filter": prefs.job_alert_title_filter,
         "auto_detect_applications": prefs.auto_detect_applications,
+        "enable_email_to_jobhunt": prefs.enable_email_to_jobhunt,
         "community_sharing_enabled": prefs.community_sharing_enabled,
     }
 

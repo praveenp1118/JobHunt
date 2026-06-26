@@ -53,6 +53,7 @@ class PollResult(BaseModel):
     alerts_processed: int = 0      # V3: job-alert digest emails handled
     jobs_from_alerts: int = 0      # V3: jobs saved from those alerts
     applications_detected: int = 0  # V3: external applications auto-detected from confirmations
+    jobs_saved_via_email: int = 0   # V3: jobs saved via "Email to JobHunt"
     errors: list[str] = []
 
 
@@ -149,6 +150,51 @@ async def _handle_job_alert(e, user, session, anthropic_key, model, prefs, poll_
     return res.get("saved", 0)
 
 
+async def _handle_save_job(e, user, session, anthropic_key, model, prefs, poll_run_id=None) -> int:
+    """"Email to JobHunt" — the user emailed a job URL. Create the EmailThread, fetch +
+    parse + score the URL, save it, and email a confirmation back. Returns jobs saved."""
+    from app.agents.gmail_alert_agent import process_save_job_email
+    thread = EmailThread(
+        user_id=user.id,
+        job_id=None,
+        gmail_message_id=e.message_id,
+        direction=EmailDirection.received,
+        classification=EmailClassification.save_job,
+        subject=e.subject[:500] if e.subject else None,
+        from_email=e.from_email,
+        to_email=e.to_email,
+        body_preview=e.body_preview(500),
+        received_at=e.received_at,
+    )
+    session.add(thread)
+    await session.flush()  # assign thread.id so the job can FK source_email_id
+    res = await process_save_job_email(
+        thread, e.body_html, e.subject, user, session, anthropic_key, model, prefs,
+        poll_run_id=poll_run_id)
+
+    # Confirmation email back to the user (best-effort — never blocks the save).
+    if res.get("action") == "saved":
+        try:
+            creds = (await session.execute(
+                select(UserCredentials).where(UserCredentials.user_id == user.id))).scalar_one_or_none()
+            to = (creds.notification_email if creds else None) or settings.notification_email
+            if to:
+                s1 = res.get("s1")
+                s1d = res.get("s1d")
+                view = f"{settings.frontend_url}/jobs?id={res.get('job_id')}"
+                await send_notification_email(
+                    to=to,
+                    subject=f"✅ Saved to JobHunt: {res.get('role')} at {res.get('company')}",
+                    message=(f"<strong>✅ Saved to JobHunt:</strong> {res.get('role')} at "
+                             f"{res.get('company')}<br>S1: {round(s1) if s1 else '—'} · "
+                             f"Best Fit: {round(s1d) if s1d else '—'}<br>"
+                             f"<a href='{view}'>View in tracker →</a>"),
+                )
+        except Exception as ex:
+            print(f"⚠️ email-to-jobhunt: confirmation email failed: {ex}")
+    return res.get("saved", 0)
+
+
 async def _process_inbox_emails(
     user,
     gmail_address: str,
@@ -164,11 +210,12 @@ async def _process_inbox_emails(
     job-alert digests (V3 — rule-based, no Claude), classifies the rest with
     Claude, matches to jobs, updates statuses + HITL. Commits before returning."""
     from app.models.user import UserPreferences
-    from app.agents.gmail_alert_agent import is_job_alert_email, is_excluded_subject
+    from app.agents.gmail_alert_agent import is_job_alert_email, is_excluded_subject, is_save_job_email
 
     errors = []
     empty = {"emails_checked": 0, "new_emails": 0, "jobs_updated": 0, "hitl_flagged": 0,
-             "alerts_processed": 0, "jobs_from_alerts": 0, "applications_detected": 0, "errors": errors}
+             "alerts_processed": 0, "jobs_from_alerts": 0, "applications_detected": 0,
+             "jobs_saved_via_email": 0, "errors": errors}
 
     try:
         raw_emails = await poll_inbox(gmail_address, app_password, since_dt=since_dt)
@@ -198,17 +245,39 @@ async def _process_inbox_emails(
     )).scalar_one_or_none()
     parse_alerts = getattr(prefs, "parse_job_alerts", True)
     auto_detect_apps = getattr(prefs, "auto_detect_applications", True)
+    email_to_jobhunt = getattr(prefs, "enable_email_to_jobhunt", True)
     if model is None:
         model = getattr(prefs, "preferred_model", None)
 
     alerts_processed = 0
     jobs_from_alerts = 0
     applications_detected = 0
+    jobs_saved_via_email = 0
 
-    # ── V3: peel off job-alert digests first (rule-based, no Claude call) ────
+    # ── V3: peel off "Email to JobHunt" save-job emails first (highest priority —
+    # a "jh:" email is user-initiated, never a digest). Rule-based, no Claude. ──
+    save_ids = set()
+    if email_to_jobhunt:
+        for e in new_emails:
+            try:
+                if is_save_job_email(e.subject, e.body_html):
+                    save_ids.add(e.message_id)
+            except Exception as ex:
+                errors.append(f"save-job detect {e.message_id}: {ex}")
+        for e in new_emails:
+            if e.message_id in save_ids:
+                try:
+                    jobs_saved_via_email += await _handle_save_job(
+                        e, user, session, anthropic_key, model, prefs, poll_run_id)
+                except Exception as ex:
+                    errors.append(f"save-job process {e.message_id}: {ex}")
+
+    # ── V3: peel off job-alert digests (rule-based, no Claude call) ────
     alert_ids = set()
     if parse_alerts:
         for e in new_emails:
+            if e.message_id in save_ids:
+                continue
             try:
                 if await is_job_alert_email(e.subject, e.from_email, e.body_html):
                     alert_ids.add(e.message_id)
@@ -223,7 +292,8 @@ async def _process_inbox_emails(
                 except Exception as ex:
                     errors.append(f"alert process {e.message_id}: {ex}")
 
-    other_emails = [e for e in new_emails if e.message_id not in alert_ids]
+    other_emails = [e for e in new_emails
+                    if e.message_id not in alert_ids and e.message_id not in save_ids]
 
     jobs_updated = 0
     hitl_flagged = 0
@@ -370,6 +440,7 @@ async def _process_inbox_emails(
         "alerts_processed": alerts_processed,
         "jobs_from_alerts": jobs_from_alerts,
         "applications_detected": applications_detected,
+        "jobs_saved_via_email": jobs_saved_via_email,
         "errors": errors,
     }
 
