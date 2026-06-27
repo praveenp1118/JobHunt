@@ -149,6 +149,18 @@ class Job(Base, TimestampMixin):
     # per job (Haiku + CV essence) and reused, so opening Tailor never re-spends tokens.
     jd_highlights_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # V3 ATS + Pursuit dual scoring — two scores per CV entity (master / domain / tailored).
+    # ATS = simulated automated screening; Pursuit = should-you-pursue judgment (0-100 each).
+    ats_master: Mapped[Optional[float]] = mapped_column(Float, nullable=True, index=True)
+    pursuit_master: Mapped[Optional[float]] = mapped_column(Float, nullable=True, index=True)
+    ats_domain: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pursuit_domain: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ats_tailored: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pursuit_tailored: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Latest component breakdowns per entity for the hover tooltip / detail panel
+    # {entity: {ats: {...components}, pursuit: {...components}}}
+    score_components: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     # Salary
     salary_range_raw: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     salary_expectation: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

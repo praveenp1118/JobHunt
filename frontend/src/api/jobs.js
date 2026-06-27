@@ -33,6 +33,10 @@ export const addFullJd = (id, jd_text) =>
 export const scoreNow = (id) => client.post(`/jobs/${id}/score-now`)
 export const scoreAllPending = () => client.post('/jobs/score-pending')
 
+// ATS + Pursuit dual scores
+export const getJobScores = (id) => client.get(`/jobs/${id}/scores`)
+export const backfillScores = () => client.post('/jobs/backfill-scores')
+
 export const updateJob = (id, data) =>
   client.patch(`/jobs/${id}`, data)
 

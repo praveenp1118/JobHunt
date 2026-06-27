@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getScoringConfig, updateScoringConfig, getScoringEstimate, recomputeMasterEssence } from '../../api/scoring'
+import { getPreferences, updatePreferences } from '../../api/auth'
+import { backfillScores } from '../../api/jobs'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import { toast } from '../../store/toast'
@@ -38,8 +40,25 @@ export default function ScoringSettings() {
   const [recomputing, setRecomputing] = useState(false)
   const { data: cfgData, isLoading } = useQuery({ queryKey: ['scoring-config'], queryFn: getScoringConfig })
   const { data: estData } = useQuery({ queryKey: ['scoring-estimate'], queryFn: getScoringEstimate })
+  const { data: prefsData } = useQuery({ queryKey: ['preferences'], queryFn: getPreferences })
   const c = cfgData?.data
   const est = estData?.data
+  const p = prefsData?.data || {}
+  const [backfilling, setBackfilling] = useState(false)
+
+  const savePref = async (patch) => {
+    try { await updatePreferences(patch); qc.invalidateQueries({ queryKey: ['preferences'] }) }
+    catch { toast.error('Save failed') }
+  }
+  const runBackfill = async () => {
+    if (!window.confirm('Compute ATS + Pursuit scores for your existing jobs? This uses Claude tokens (~₹0.15/job).')) return
+    setBackfilling(true)
+    try {
+      const r = await backfillScores()
+      toast.success(r.data.queued ? `Queued ${r.data.jobs} jobs · ~₹${r.data.estimated_cost_inr}` : r.data.message)
+    } catch (e) { toast.error(e.response?.data?.detail || 'Backfill failed') }
+    finally { setBackfilling(false) }
+  }
 
   const save = async (patch) => {
     try {
@@ -189,6 +208,44 @@ export default function ScoringSettings() {
       <div className="flex items-center justify-between">
         <p className="text-[11px] text-gray-400">Stage 1 + 2 use your CV “essence” — recompute it after editing your CV.</p>
         <Button size="sm" variant="secondary" loading={recomputing} onClick={recompute}>Recompute CV essence</Button>
+      </div>
+
+      {/* Score display — ATS + Pursuit */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Score display</p>
+        <p className="text-[11px] text-gray-400 mb-3">Each job gets two scores: <strong>ATS</strong> (will you pass automated screening?) and <strong>Pursuit</strong> (should you pursue it?).</p>
+        <p className="text-xs text-gray-600 mb-1">Default score view</p>
+        <div className="space-y-2 mb-4">
+          {[
+            ['pursuit', 'Pursuit score (recommended)', 'Overall fit — should you pursue this opportunity?'],
+            ['ats', 'ATS score', 'Keyword/requirement match — will you pass automated screening?'],
+            ['combined', 'Combined', '40% ATS + 60% Pursuit'],
+          ].map(([k, label, desc]) => (
+            <label key={k} className="flex items-start gap-2 cursor-pointer">
+              <input type="radio" name="scoreview" checked={(p.default_score_view ?? 'pursuit') === k}
+                onChange={() => savePref({ default_score_view: k })} className="mt-0.5 accent-emerald-500" />
+              <div><p className="text-sm text-gray-800">{label}</p><p className="text-[11px] text-gray-400">{desc}</p></div>
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-gray-600 mb-1">Score pill style</p>
+        <div className="space-y-2 mb-4">
+          {[
+            ['dual_ring', 'Dual ring (ATS outer, Pursuit inner)'],
+            ['single', 'Single colour (default score only)'],
+            ['number_only', 'Number only (minimal)'],
+          ].map(([k, label]) => (
+            <label key={k} className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="pillstyle" checked={(p.score_pill_style ?? 'dual_ring') === k}
+                onChange={() => savePref({ score_pill_style: k })} className="accent-emerald-500" />
+              <span className="text-sm text-gray-800">{label}</span>
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+          <p className="text-[11px] text-gray-400">Existing jobs have no ATS/Pursuit scores until computed (~₹0.15/job).</p>
+          <Button size="sm" variant="secondary" loading={backfilling} onClick={runBackfill}>Compute scores for existing jobs</Button>
+        </div>
       </div>
     </div>
   )

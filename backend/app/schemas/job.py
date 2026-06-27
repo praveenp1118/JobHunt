@@ -18,6 +18,14 @@ class JobRead(BaseModel):
     jd_md: Optional[str] = None
     has_partial_jd: bool = False       # JD is only an alert-email snippet
     scoring_status: str = "scored"     # scored / pending (night batch) / failed
+    # ATS + Pursuit dual scores + breakdown
+    ats_master: Optional[float] = None
+    pursuit_master: Optional[float] = None
+    ats_domain: Optional[float] = None
+    pursuit_domain: Optional[float] = None
+    ats_tailored: Optional[float] = None
+    pursuit_tailored: Optional[float] = None
+    score_components: Optional[dict] = None
     source: JobSource
     status: JobStatus
     s1: Optional[float]
@@ -68,6 +76,13 @@ class JobSummary(BaseModel):
     needs_hitl: bool
     has_partial_jd: bool = False  # JD is only an alert-email snippet; full JD behind portal_url
     scoring_status: str = "scored"  # scored / pending / failed
+    # ATS + Pursuit dual scores (per CV entity)
+    ats_master: Optional[float] = None
+    pursuit_master: Optional[float] = None
+    ats_domain: Optional[float] = None
+    pursuit_domain: Optional[float] = None
+    ats_tailored: Optional[float] = None
+    pursuit_tailored: Optional[float] = None
     detected_domain_cv_id: Optional[uuid.UUID] = None  # V2/V3: feed/alert domain match (frontend maps to label)
     # V3: fit against ALL active domain CVs at ingestion ({domain_cv_id: score})
     domain_cv_scores: Optional[dict] = None
@@ -164,6 +179,8 @@ class JDParseResult(BaseModel):
     s1_tokens: Optional[int] = None
     s1_cost_inr: Optional[float] = None
     stage: Optional[str] = None   # RAG tier used: stage2_essence (Haiku) | stage3_full (Sonnet)
+    ats_master: Optional[float] = None      # ATS + Pursuit dual scores (immediate display)
+    pursuit_master: Optional[float] = None
 
 
 # ── Email thread ──────────────────────────────────────────────────────────────

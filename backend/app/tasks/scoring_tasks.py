@@ -72,6 +72,74 @@ async def score_pending_for_user(user, session, anthropic_key, prefs, job_ids=No
             "total": len(pending), **{k: rag["stats"].get(k, 0) for k in ("stage1_rejected", "stage2_rejected", "stage3_scored")}}
 
 
+@celery_app.task(name="tasks.backfill_dual_scores", bind=True)
+def backfill_dual_scores(self, user_id: str):
+    from app.database import engine
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(_backfill_async(user_id))
+    finally:
+        loop.run_until_complete(engine.dispose())
+        loop.close()
+
+
+async def _backfill_async(user_id: str):
+    import uuid as _uuid
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from app.models.user import User, UserCredentials
+    from app.models.cv import MasterCV
+    from app.models.job import Job
+    from app.models.admin import RunLog, RunType, RunStatus
+    from app.agents.dual_scorer import compute_dual_scores
+    from app.utils.encryption import decrypt_if_present
+    from app.utils.usage_logger import set_usage_user, get_session_usage
+    from app.config import settings
+
+    uid = _uuid.UUID(user_id)
+    async with AsyncSessionLocal() as session:
+        run_log = RunLog(run_type=RunType.night_batch, status=RunStatus.running,
+                         started_at=datetime.now(timezone.utc))
+        session.add(run_log)
+        await session.flush()
+        set_usage_user(uid)
+
+        creds = (await session.execute(
+            select(UserCredentials).where(UserCredentials.user_id == uid))).scalar_one_or_none()
+        key = (decrypt_if_present(creds.anthropic_api_key_enc) if creds and creds.anthropic_api_key_enc else None) \
+            or settings.platform_anthropic_api_key or settings.anthropic_api_key
+        master = (await session.execute(
+            select(MasterCV).where(MasterCV.user_id == uid, MasterCV.is_active == True))).scalars().first()
+
+        scored = 0
+        if key and master and master.essence_json:
+            jobs = (await session.execute(select(Job).where(
+                Job.user_id == uid, Job.jd_raw.isnot(None), Job.ats_master.is_(None)))).scalars().all()
+            cost0 = get_session_usage().get("cost_inr", 0.0)
+            for job in jobs:
+                try:
+                    await compute_dual_scores(
+                        master.essence_json, master.content_md, job.jd_md or job.jd_raw or "",
+                        "master", job=job, anthropic_key=key, session=session)
+                    scored += 1
+                    await asyncio.sleep(0.2)  # ~5 jobs/sec rate limit
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"backfill score failed for job {job.id}: {e}")
+            cost = round(get_session_usage().get("cost_inr", 0.0) - cost0, 2)
+        else:
+            cost = 0.0
+
+        run_log.status = RunStatus.success
+        run_log.jobs_added = scored
+        run_log.details = {"backfill": True, "jobs_scored": scored, "cost_inr": cost}
+        run_log.completed_at = datetime.now(timezone.utc)
+        run_log.duration_seconds = (run_log.completed_at - run_log.started_at).total_seconds()
+        await session.commit()
+    logger.warning(f"dual-score backfill: scored {scored} jobs · ₹{cost}")
+    return {"scored": scored, "cost_inr": cost}
+
+
 @celery_app.task(name="tasks.score_pending_jobs_batch", bind=True)
 def score_pending_jobs_batch(self):
     from app.database import engine

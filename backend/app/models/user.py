@@ -190,6 +190,9 @@ class UserPreferences(Base, TimestampMixin):
     auto_detect_applications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # V3: "Email to JobHunt" — save a job URL by emailing it (subject "jobhunt"/"jh:")
     enable_email_to_jobhunt: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # V3 ATS + Pursuit dual scoring — display preferences
+    default_score_view: Mapped[str] = mapped_column(String(20), default="pursuit", nullable=False)  # ats / pursuit / combined
+    score_pill_style: Mapped[str] = mapped_column(String(20), default="dual_ring", nullable=False)  # dual_ring / single / number_only
 
     # V3 Community Insights — opt-in anonymised sharing
     community_sharing_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

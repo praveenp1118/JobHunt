@@ -114,6 +114,8 @@ class PreferencesUpdate(BaseModel):
     job_alert_title_filter: Optional[bool] = None
     auto_detect_applications: Optional[bool] = None
     enable_email_to_jobhunt: Optional[bool] = None
+    default_score_view: Optional[str] = None   # ats / pursuit / combined
+    score_pill_style: Optional[str] = None     # dual_ring / single / number_only
 
 
 # ── Admin schemas ─────────────────────────────────────────────────────────────

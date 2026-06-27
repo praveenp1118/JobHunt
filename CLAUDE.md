@@ -70,7 +70,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (114 tests, all passing):
+- Current coverage (124 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -121,6 +121,12 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     sonnet for borderline; confident save ≥ borderline_high skips Stage 3; domain scoring skipped below
     min_s1) via a monkeypatched `batch_score_s1` (deterministic, free); `config_from_prefs`; `GET
     /scoring/estimate`; `master_cvs.essence_json` round-trips.
+  - `test_dual_scoring.py` (10): ATS scorer returns 5 components + applies the dealbreaker cap; Pursuit
+    scorer returns 4 components + a recommendation; `compute_dual_scores` runs both in parallel and sets
+    `ats_<entity>`/`pursuit_<entity>` + `score_components[entity]` for master/domain/tailored; the
+    `default_score_view` pref persists; null scores serialize gracefully (`GET /jobs` + `/jobs/{id}/scores`);
+    `POST /jobs/backfill-scores` returns a job count + cost estimate; `/jobs/stats` exposes the
+    apply-now/get-referral/skip buckets. (Anthropic mocked — no live calls.)
   - `test_optimization.py` (9): email `rule_classify` (rejection/interview/None); JD highlights use Haiku
     (`JD_HIGHLIGHTS_MODEL` + a monkeypatched-client call asserting `model=haiku`) and are **cached** per job
     (a pre-seeded `jd_highlights_json` with a matching JD signature → endpoint returns `cached:true`, no
@@ -237,7 +243,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_auto_detect_apps → v3_email_to_jobhunt → v3_optimization
+│   │   └── versions/        # chain tip: … → v3_email_to_jobhunt → v3_optimization → v3_email_source → v3_ats_pursuit
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -335,6 +341,8 @@ D:\JobHunt\
 - `best_domain_cv_id` (FK → domain_cvs; highest-scoring domain CV; drives Tailor pre-select)
 - `jd_highlights_json` (JSONB) — **cached** Tailor-page JD highlights `{matches, gaps, _jd_sig}`; computed
   once (Haiku + CV essence) and reused until the JD changes (`_jd_sig` = sha256(jd)[:16]). Migration `v3_optimization`.
+- `ats_master`/`pursuit_master`/`ats_domain`/`pursuit_domain`/`ats_tailored`/`pursuit_tailored` (Float) +
+  `score_components` (JSONB `{entity: {ats:{…}, pursuit:{…}}}`) — V3 ATS + Pursuit dual scoring. Migration `v3_ats_pursuit`.
 - `has_partial_jd` (bool) — JD is only an alert-email snippet (LinkedIn/gated cards); full JD behind
   `portal_url`. Saved **unscored** (`s1`/`s1d`/`domain_cv_scores`/`best_domain_cv_id` = NULL) — a 50-char
   snippet scores unreliably. Score it by fetching the full JD (`POST /jobs/{id}/fetch-jd` → background
@@ -1118,7 +1126,27 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 27, 2026 — **Email-to-JobHunt source** (migration `v3_email_source`): jobs saved by
+*Last updated: June 27, 2026 — **ATS + Pursuit dual scoring** (migration `v3_ats_pursuit`): two scores per
+CV entity — **ATS** (simulated automated screening, 5 components, dealbreaker cap at 40) and **Pursuit**
+(should-you-pursue judgment, 4 components + a recommendation), per master/domain/tailored. New agents
+`agents/ats_scorer.py` (Haiku), `agents/pursuit_scorer.py` (Haiku), and `agents/dual_scorer.py`
+(`compute_dual_scores` runs both **in parallel** via `asyncio.to_thread`+`gather`, persists
+`ats_<entity>`/`pursuit_<entity>` + merges the breakdown into `jobs.score_components`). **Job** gains
+`ats_master/pursuit_master/ats_domain/pursuit_domain/ats_tailored/pursuit_tailored` (Float, indexes on
+master pair) + `score_components` (JSONB); **UserPreferences** gains `default_score_view` (ats/pursuit/
+**combined**, default pursuit) + `score_pill_style` (dual_ring/single/number_only). **Wired live:** manual
+JD parse (master, returned for immediate display + persisted on confirm) and **tailor apply** (tailored).
+**Frontend:** `DualRingPill` (SVG — ATS outer ring, Pursuit inner ring, centre number follows the view) +
+`ScoreTooltip` (absolute-positioned breakdown) + `ScoreToggle` (ATS/Pursuit/Combined) — wired into the
+**Jobs Tracker** as a new **Match** column with a header toggle. **API:** `GET /jobs` + `/jobs/{id}` expose
+all 6 fields; **`GET /jobs/{id}/scores`** (full per-entity breakdown); **`POST /jobs/backfill-scores`**
+(opt-in, returns job count + ₹ estimate, queues `tasks.backfill_dual_scores` — master scores for existing
+jobs, ~5/sec); `/jobs/stats` adds `avg_ats_master`/`avg_pursuit_master` + `apply_now_count`(ats≥70 &
+pursuit≥75)/`get_referral_count`(ats<70 & pursuit≥75)/`skip_count`(pursuit<60). **Settings → Scoring**:
+score-display radios + the backfill button. 124 tests. **DEFERRED (noted):** ongoing dual scoring in the
+**scanner** + **domain** flows (cost — backfill covers existing jobs); and the deeper UI surfaces from the
+spec (Tailor left panel, Dashboard score card, Job-Detail breakdown tabs, Career Insights, Feed Performance)
+— the Tracker pill + tooltip + toggle + Settings + backfill is the working slice. **Email-to-JobHunt source** (migration `v3_email_source`): jobs saved by
 emailing a URL now use a distinct **`JobSource.email_to_jobhunt`** (was `manual`) — Manual = pasted JD in the
 app, **📥 Email** = emailed a URL. `SourceBadge` (`📥 Email`, blue), a Jobs Tracker source filter pill, and
 the `/jobs/stats` `by_source` facet (GROUP BY, auto-includes it) all surface it. **Cost optimization: RAG +
@@ -1294,4 +1322,4 @@ by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category b
 row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. **Community follow-ups:** insights on the Add-Job parse screen
 (compact card, decide before tailoring), Contributions "View →" deep-link fixed (`/jobs?open={id}` →
 JobsPage opens the detail panel), and **`normalize_company`** matching so company-name casing/punctuation
-no longer splits buckets. All 114 smoke tests passing*
+no longer splits buckets. All 124 smoke tests passing*

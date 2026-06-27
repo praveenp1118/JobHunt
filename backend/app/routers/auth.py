@@ -341,6 +341,8 @@ async def get_preferences(
         "job_alert_title_filter": prefs.job_alert_title_filter,
         "auto_detect_applications": prefs.auto_detect_applications,
         "enable_email_to_jobhunt": prefs.enable_email_to_jobhunt,
+        "default_score_view": prefs.default_score_view,
+        "score_pill_style": prefs.score_pill_style,
         "community_sharing_enabled": prefs.community_sharing_enabled,
     }
 

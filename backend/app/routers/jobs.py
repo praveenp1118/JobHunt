@@ -249,6 +249,9 @@ async def confirm_and_save_job(
         s1=cached.get("s1_score"),
         s1_tokens=cached.get("s1_tokens"),
         s1_cost_inr=cached.get("s1_cost_inr"),
+        ats_master=cached.get("ats_master"),
+        pursuit_master=cached.get("pursuit_master"),
+        score_components=cached.get("score_components"),
         salary_range_raw=parsed.get("comp_range"),
         notes=body.notes,
     )
@@ -584,6 +587,17 @@ async def get_job_stats(
         select(func.count(Job.id)).where(Job.user_id == user.id, Job.scoring_status == "pending")
     )).scalar() or 0
 
+    # ATS + Pursuit aggregates (master CV) + recommendation buckets
+    ats_avg, pursuit_avg = (await session.execute(
+        select(func.avg(Job.ats_master), func.avg(Job.pursuit_master)).where(*base_filters)
+    )).first()
+    apply_now_count = (await session.execute(select(func.count(Job.id)).where(
+        *base_filters, Job.ats_master >= 70, Job.pursuit_master >= 75))).scalar() or 0
+    get_referral_count = (await session.execute(select(func.count(Job.id)).where(
+        *base_filters, Job.ats_master < 70, Job.pursuit_master >= 75))).scalar() or 0
+    skip_count = (await session.execute(select(func.count(Job.id)).where(
+        *base_filters, Job.pursuit_master < 60, Job.pursuit_master.isnot(None)))).scalar() or 0
+
     return {
         "total": total,                       # filtered total
         "unfiltered_total": unfiltered_total,  # all of the user's jobs
@@ -591,6 +605,11 @@ async def get_job_stats(
         "needs_hitl": needs_hitl,
         "partial_count": partial_count,
         "pending_count": pending_count,
+        "avg_ats_master": round(ats_avg, 1) if ats_avg is not None else None,
+        "avg_pursuit_master": round(pursuit_avg, 1) if pursuit_avg is not None else None,
+        "apply_now_count": apply_now_count,
+        "get_referral_count": get_referral_count,
+        "skip_count": skip_count,
         "from_scan": from_scan,
         "by_source": by_source,
         "by_market": by_market,
@@ -807,6 +826,47 @@ async def score_all_pending(user: User = Depends(current_active_user),
     return await score_pending_for_user(user, session, key, prefs)
 
 
+# ── ATS + Pursuit dual scoring ─────────────────────────────────────────────────
+DUAL_COST_PER_JOB_INR = 0.15  # ATS (Haiku) + Pursuit (Haiku), both batched off-thread
+
+
+@router.get("/{job_id}/scores")
+async def get_job_scores(job_id: uuid.UUID, user: User = Depends(current_active_user),
+                         session: AsyncSession = Depends(get_db)):
+    """Full ATS + Pursuit breakdown for all three CV entities (for the detail panel)."""
+    job = (await session.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == user.id))).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    comps = job.score_components or {}
+    return {
+        "totals": {
+            "master": {"ats": job.ats_master, "pursuit": job.pursuit_master},
+            "domain": {"ats": job.ats_domain, "pursuit": job.pursuit_domain},
+            "tailored": {"ats": job.ats_tailored, "pursuit": job.pursuit_tailored},
+        },
+        "master": comps.get("master"),
+        "domain": comps.get("domain"),
+        "tailored": comps.get("tailored"),
+    }
+
+
+@router.post("/backfill-scores")
+async def backfill_scores(user: User = Depends(current_active_user),
+                          session: AsyncSession = Depends(get_db)):
+    """Opt-in: compute ATS + Pursuit (master) for the user's existing jobs that have a
+    JD but no ATS score yet. Queues a background task; returns the cost estimate."""
+    from sqlalchemy import func
+    n = (await session.execute(select(func.count(Job.id)).where(
+        Job.user_id == user.id, Job.jd_raw.isnot(None), Job.ats_master.is_(None)))).scalar() or 0
+    if n == 0:
+        return {"queued": False, "jobs": 0, "estimated_cost_inr": 0.0,
+                "message": "All jobs with a JD already have ATS + Pursuit scores."}
+    from app.tasks.scoring_tasks import backfill_dual_scores
+    backfill_dual_scores.delay(str(user.id))
+    return {"queued": True, "jobs": n, "estimated_cost_inr": round(n * DUAL_COST_PER_JOB_INR, 2)}
+
+
 @router.post("/{job_id}/score-s1")
 async def score_job_s1(
     job_id: uuid.UUID,
@@ -893,6 +953,8 @@ async def _parse_raw_text(
     s1_cost_inr = None
 
     parse_stage = None
+    ats_master = pursuit_master = None
+    score_components = None
     if score and filter_result["passed"]:
         master = await _get_master_cv(user, session)
         if master:
@@ -912,6 +974,18 @@ async def _parse_raw_text(
             key_matches = result_data.get("key_matches", [])
             gaps = result_data.get("gaps", [])
             parse_stage = result_data.get("stage")
+            # ATS + Pursuit dual scores (master CV) — for immediate display + persisted on confirm.
+            if master.essence_json:
+                try:
+                    from app.agents.dual_scorer import compute_dual_scores
+                    _dual = await compute_dual_scores(
+                        master.essence_json, master.content_md, raw_text, "master",
+                        anthropic_key=anthropic_key)
+                    ats_master = _dual["ats"].get("total")
+                    pursuit_master = _dual["pursuit"].get("total")
+                    score_components = {"master": {"ats": _dual["ats"], "pursuit": _dual["pursuit"]}}
+                except Exception as e:  # noqa: BLE001
+                    print(f"⚠️ dual score (parse) failed: {e}")
             _pu = get_session_usage()
             s1_tokens = _pu["tokens"] or None
             s1_cost_inr = round(_pu["cost_inr"], 2) or None
@@ -942,6 +1016,9 @@ async def _parse_raw_text(
         "s1_tokens": s1_tokens,
         "s1_cost_inr": s1_cost_inr,
         "source": source,
+        "ats_master": ats_master,
+        "pursuit_master": pursuit_master,
+        "score_components": score_components,
     }
 
     return JDParseResult(
@@ -966,4 +1043,6 @@ async def _parse_raw_text(
         s1_tokens=s1_tokens,
         s1_cost_inr=s1_cost_inr,
         stage=parse_stage,
+        ats_master=ats_master,
+        pursuit_master=pursuit_master,
     )

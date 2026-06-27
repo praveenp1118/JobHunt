@@ -11,6 +11,8 @@ import TokenBadge from '../../components/ui/TokenBadge'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import Pagination from '../../components/ui/Pagination'
+import DualRingPill from '../../components/ui/DualRingPill'
+import ScoreToggle from '../../components/ui/ScoreToggle'
 import AddJobModal from './AddJobModal'
 import { toast } from '../../store/toast'
 import JobDetail from './JobDetail'
@@ -51,6 +53,7 @@ const COLUMNS = [
   { label: 'Company', key: 'company' },
   { label: 'Role', key: 'role' },
   { label: 'Market', key: 'market' },
+  { label: 'Match', key: null, dual: true },
   { label: 'B', key: 's1' },
   { label: 'Best Fit', key: 'best_fit' },
   { label: 'T', key: null },
@@ -70,6 +73,7 @@ export default function JobsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [tailorJobId, setTailorJobId] = useState(null)
   const [page, setPage] = useState(1)
+  const [scoreView, setScoreView] = useState('pursuit')  // ats | pursuit | combined (default from prefs)
 
   // Filter + sort state lives in the URL so views are shareable/bookmarkable.
   const statusFilter = sp.get('status')
@@ -322,7 +326,12 @@ export default function JobsPage() {
                 <tr>
                   {COLUMNS.map((col) => (
                     <th key={col.label || 'tailor'} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
-                      {col.key ? (
+                      {col.dual ? (
+                        <div className="flex items-center gap-2">
+                          <span title="ATS (automated screening) outer ring · Pursuit (should you pursue?) inner ring">Match</span>
+                          <ScoreToggle value={scoreView} onChange={setScoreView} size="sm" />
+                        </div>
+                      ) : col.key ? (
                         <button
                           onClick={() => toggleSort(col.key)}
                           className="flex items-center gap-1 hover:text-gray-700 transition-colors"
@@ -371,6 +380,13 @@ export default function JobsPage() {
                     </td>
                     <td className="px-4 py-3">
                       {job.market ? <MarketBadge market={job.market} /> : <span className="text-gray-300 text-xs">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <DualRingPill atsScore={job.ats_master} pursuitScore={job.pursuit_master}
+                        defaultView={scoreView} size="md"
+                        tooltipData={{ company: job.company, role: job.role,
+                          topGap: job.score_components?.master?.ats?.top_gap,
+                          recommendation: job.score_components?.master?.pursuit?.recommendation }} />
                     </td>
                     <td className="px-4 py-3">
                       {job.scoring_status === 'pending' ? (

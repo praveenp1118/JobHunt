@@ -521,6 +521,17 @@ async def apply_tailor(
     if job:
         job.s3_domain = s3_domain
         job.s3_master = s3_master
+        # ATS + Pursuit dual scores for the TAILORED CV (master essence + tailored text as context)
+        if master and master.essence_json:
+            try:
+                from app.agents.dual_scorer import compute_dual_scores
+                _essence = dict(master.essence_json)
+                _essence["tailored_cv_text"] = (final_cv_md or "")[:2500]
+                await compute_dual_scores(
+                    _essence, final_cv_md or "", job.jd_md or job.jd_raw or "", "tailored",
+                    job=job, anthropic_key=anthropic_key, session=None)
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠️ dual score (tailor apply) failed: {e}")
 
     await session.commit()
 
