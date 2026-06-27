@@ -116,6 +116,7 @@ class PreferencesUpdate(BaseModel):
     enable_email_to_jobhunt: Optional[bool] = None
     default_score_view: Optional[str] = None   # ats / pursuit / combined
     score_pill_style: Optional[str] = None     # dual_ring / single / number_only
+    auto_dual_score_on_scan: Optional[bool] = None
 
 
 # ── Admin schemas ─────────────────────────────────────────────────────────────

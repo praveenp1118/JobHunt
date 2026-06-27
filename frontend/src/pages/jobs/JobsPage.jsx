@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
 import { getJobs, getJobStats } from '../../api/jobs'
+import { getPreferences } from '../../api/auth'
 import { getDomainCVs } from '../../api/cvs'
 import { clsx } from 'clsx'
 import { StatusBadge, MarketBadge, SourceBadge } from '../../components/ui/Badge'
@@ -74,6 +75,11 @@ export default function JobsPage() {
   const [tailorJobId, setTailorJobId] = useState(null)
   const [page, setPage] = useState(1)
   const [scoreView, setScoreView] = useState('pursuit')  // ats | pursuit | combined (default from prefs)
+  const { data: prefsData } = useQuery({ queryKey: ['preferences'], queryFn: getPreferences })
+  useEffect(() => {
+    const v = prefsData?.data?.default_score_view
+    if (v) setScoreView(v)
+  }, [prefsData])
 
   // Filter + sort state lives in the URL so views are shareable/bookmarkable.
   const statusFilter = sp.get('status')
@@ -99,8 +105,11 @@ export default function JobsPage() {
     else patchSp({ sort: null })  // asc → desc → unsorted (default Added DESC)
   }
 
+  // The score field the toggle is currently filtering/sorting on.
+  const scoreField = scoreView === 'ats' ? 'ats_master' : scoreView === 'combined' ? 'combined' : 'pursuit_master'
+
   // Server-side pagination: fetch one page; filters/sort are also server-side so counts stay accurate.
-  const filterKey = `${statusFilter}|${sourceFilter}|${scoreFilter}|${domainFilter}|${needsHitl}|${hidePartial}|${search}|${sortKey}:${sortDir}`
+  const filterKey = `${statusFilter}|${sourceFilter}|${scoreFilter}|${domainFilter}|${needsHitl}|${hidePartial}|${search}|${sortKey}:${sortDir}|${scoreView}`
   // Reset to page 1 whenever any filter / search / sort changes.
   useEffect(() => { setPage(1) }, [filterKey])
   const params = {
@@ -108,7 +117,7 @@ export default function JobsPage() {
     skip: (page - 1) * PER_PAGE,
     ...(statusFilter && { status: statusFilter }),
     ...(sourceFilter && { source: sourceFilter }),
-    ...(scoreFilter && { score: scoreFilter }),
+    ...(scoreFilter && { score: scoreFilter, score_field: scoreField }),
     ...(domainFilter && { domain: domainFilter }),
     ...(search && { search }),
     ...(needsHitl && { needs_hitl: true }),
@@ -259,6 +268,11 @@ export default function JobsPage() {
                   count={scoreCount(f.value)}
                   onClick={() => patchSp({ score: f.value })}>{f.label}</FilterPill>
               ))}
+              {scoreFilter && (
+                <span className="text-[10px] text-gray-400 ml-1">
+                  {scoreView === 'ats' ? 'ATS' : scoreView === 'combined' ? 'Combined' : 'Pursuit'}
+                </span>
+              )}
             </FilterGroup>
           </div>
 
@@ -328,7 +342,12 @@ export default function JobsPage() {
                     <th key={col.label || 'tailor'} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
                       {col.dual ? (
                         <div className="flex items-center gap-2">
-                          <span title="ATS (automated screening) outer ring · Pursuit (should you pursue?) inner ring">Match</span>
+                          <button onClick={() => toggleSort(scoreField)}
+                            className="flex items-center gap-1 hover:text-gray-700"
+                            title="ATS (automated screening) outer ring · Pursuit (should you pursue?) inner ring · click to sort">
+                            Match
+                            {sortKey === scoreField && <span className="text-emerald-600">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                          </button>
                           <ScoreToggle value={scoreView} onChange={setScoreView} size="sm" />
                         </div>
                       ) : col.key ? (

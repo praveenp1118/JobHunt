@@ -12,6 +12,7 @@ import Spinner from '../../components/ui/Spinner'
 import { toast } from '../../store/toast'
 import CareerWidget from '../../components/dashboard/CareerWidget'
 import FeedPerformance from '../../components/dashboard/FeedPerformance'
+import ScoreToggle from '../../components/ui/ScoreToggle'
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -44,6 +45,7 @@ export default function Dashboard() {
   const [tab, setTab] = useState('overview')
   const [polling, setPolling] = useState(false)
   const [scoringAll, setScoringAll] = useState(false)
+  const [dashScoreView, setDashScoreView] = useState('pursuit')
 
   // Filter: ?filter=source:rss | feed:{uuid} | domain:{uuid} | market:NL
   const filter = sp.get('filter') || ''
@@ -257,6 +259,9 @@ export default function Dashboard() {
                 ))}
               </div>
 
+              {/* Score overview — ATS + Pursuit */}
+              <ScoreOverviewCard stats={stats} view={dashScoreView} setView={setDashScoreView} />
+
               {/* Career readiness widget */}
               <CareerWidget />
 
@@ -453,6 +458,46 @@ export default function Dashboard() {
       {tab === 'feed-performance' && (
         <FeedPerformance onSelectFeed={(id) => setFilter(`feed:${id}`)} />
       )}
+    </div>
+  )
+}
+
+// ATS + Pursuit overview — avg scores + recommendation buckets + an insight line.
+function ScoreOverviewCard({ stats, view, setView }) {
+  const ats = stats.avg_ats_master
+  const pursuit = stats.avg_pursuit_master
+  if (ats == null && pursuit == null) return null
+  let insight = null
+  if (ats != null && pursuit != null) {
+    if (pursuit > ats + 10) insight = 'Strong human fit but keyword gaps — consider referrals for top roles.'
+    else if (ats > pursuit + 10) insight = 'Good keyword match but human-fit gaps — tailor more carefully.'
+    else if (ats > 80 && pursuit > 80) insight = 'Strong all-round — apply now.'
+  }
+  const filterLabel = stats.filter_label
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Score overview</h3>
+          {filterLabel && <p className="text-[11px] text-gray-400">{filterLabel} · {stats.total ?? 0} jobs</p>}
+        </div>
+        <ScoreToggle value={view} onChange={setView} size="sm" />
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center">
+          <p className="text-2xl font-bold text-emerald-700">{pursuit != null ? Math.round(pursuit) : '—'}</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">Avg Pursuit</p>
+        </div>
+        <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-center">
+          <p className="text-2xl font-bold text-amber-700">{ats != null ? Math.round(ats) : '—'}</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">Avg ATS</p>
+        </div>
+        <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-3 text-center">
+          <p className="text-2xl font-bold text-indigo-700">{stats.apply_now_count ?? 0}</p>
+          <p className="text-[11px] text-gray-500 mt-0.5">Apply now</p>
+        </div>
+      </div>
+      {insight && <p className="text-[11px] text-gray-500 mt-3">{insight}</p>}
     </div>
   )
 }

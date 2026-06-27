@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { getFeedPerformance } from '../../api/feeds'
+import ScoreToggle from '../ui/ScoreToggle'
 
 const TYPE_BADGE = {
   rss: { label: 'RSS', cls: 'bg-blue-50 text-blue-600' },
@@ -35,6 +36,7 @@ export default function FeedPerformance({ onSelectFeed }) {
   const rows = data?.data || []
   const [sortKey, setSortKey] = useState('quality_score')
   const [sortDir, setSortDir] = useState('desc')  // default: quality descending
+  const [metric, setMetric] = useState('pursuit')  // quality-bar metric: pursuit | ats
 
   const accessor = useMemo(() => Object.fromEntries(COLUMNS.map(([k, , , a]) => [k, a])), [])
   const sorted = useMemo(() => {
@@ -66,9 +68,13 @@ export default function FeedPerformance({ onSelectFeed }) {
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <div className="mb-4">
-        <h3 className="text-sm font-semibold text-gray-900">Which feeds are finding the best jobs?</h3>
-        <p className="text-xs text-gray-500 mt-0.5">Click any row to filter the dashboard to that feed.</p>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">Which feeds are finding the best jobs?</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Click any row to filter the dashboard to that feed.</p>
+        </div>
+        <ScoreToggle value={metric} onChange={setMetric} size="sm"
+          options={[{ value: 'pursuit', label: 'Pursuit' }, { value: 'ats', label: 'ATS' }]} />
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -100,12 +106,17 @@ export default function FeedPerformance({ onSelectFeed }) {
                   <td className="px-3 py-2.5 text-right tabular-nums text-gray-700">{r.above_threshold_count}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-gray-700">{r.applied_count}</td>
                   <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden w-24 shrink-0">
-                        <div className="h-full rounded-full" style={{ width: `${(r.quality_score ?? 0) * 100}%`, backgroundColor: qualityColor(r.avg_s1d) }} />
-                      </div>
-                      <span className="text-[11px] tabular-nums text-gray-400 w-8">{r.quality_score != null ? Math.round(r.quality_score * 100) : '—'}</span>
-                    </div>
+                    {(() => {
+                      const mv = metric === 'ats' ? r.avg_ats_master : r.avg_pursuit_master
+                      return (
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 bg-gray-100 rounded-full overflow-hidden w-24 shrink-0">
+                            <div className="h-full rounded-full" style={{ width: `${mv ?? 0}%`, backgroundColor: qualityColor(mv) }} />
+                          </div>
+                          <span className="text-[11px] tabular-nums text-gray-400 w-8">{mv != null ? Math.round(mv) : '—'}</span>
+                        </div>
+                      )
+                    })()}
                   </td>
                 </tr>
               )
@@ -114,7 +125,7 @@ export default function FeedPerformance({ onSelectFeed }) {
         </table>
       </div>
       <p className="text-[11px] text-gray-400 mt-3">
-        Quality = 60% avg best-fit + 40% applied rate · <button onClick={() => navigate('/settings#feeds')} className="text-emerald-600 hover:underline">Manage feeds in Settings →</button>
+        Quality bar = avg {metric === 'ats' ? 'ATS' : 'Pursuit'} score per feed · <button onClick={() => navigate('/settings#feeds')} className="text-emerald-600 hover:underline">Manage feeds in Settings →</button>
       </p>
     </div>
   )

@@ -222,6 +222,8 @@ async def feeds_performance(
             func.avg(Job.s1),
             func.count(Job.id).filter(Job.status == JobStatus.applied),
             func.count(Job.id).filter(func.coalesce(Job.s1d, Job.s1) >= thr),
+            func.avg(Job.ats_master),
+            func.avg(Job.pursuit_master),
         ).where(Job.user_id == user.id, Job.source_feed_id != None)
         .group_by(Job.source_feed_id))).all()
 
@@ -230,8 +232,11 @@ async def feeds_performance(
             return None
         return round((avg_s1d / 100) * 0.6 + (applied / count) * 0.4, 3)
 
+    def _r(v):
+        return round(v, 1) if v is not None else None
+
     out = []
-    for fid, count, avg_s1d, avg_s1, applied, above in rows:
+    for fid, count, avg_s1d, avg_s1, applied, above, avg_ats, avg_pur in rows:
         f = feed_map.get(str(fid))
         if not f:
             continue
@@ -240,6 +245,7 @@ async def feeds_performance(
             "feed_id": str(fid), "feed_name": f.name, "feed_type": f.feed_type,
             "job_count": count, "avg_s1d": a1d,
             "avg_s1": round(avg_s1, 1) if avg_s1 is not None else None,
+            "avg_ats_master": _r(avg_ats), "avg_pursuit_master": _r(avg_pur),
             "applied_count": applied, "above_threshold_count": above,
             "quality_score": _quality(a1d, applied, count),
         })
@@ -250,6 +256,7 @@ async def feeds_performance(
             func.count(Job.id), func.avg(Job.s1d), func.avg(Job.s1),
             func.count(Job.id).filter(Job.status == JobStatus.applied),
             func.count(Job.id).filter(func.coalesce(Job.s1d, Job.s1) >= thr),
+            func.avg(Job.ats_master), func.avg(Job.pursuit_master),
         ).where(Job.user_id == user.id, Job.source == JobSource.gmail_alert))).first()
     if g and g[0]:
         a1d = round(g[1], 1) if g[1] is not None else None
@@ -257,6 +264,7 @@ async def feeds_performance(
             "feed_id": None, "feed_name": "Gmail Alerts", "feed_type": "gmail_alert",
             "job_count": g[0], "avg_s1d": a1d,
             "avg_s1": round(g[2], 1) if g[2] is not None else None,
+            "avg_ats_master": _r(g[5]), "avg_pursuit_master": _r(g[6]),
             "applied_count": g[3], "above_threshold_count": g[4],
             "quality_score": _quality(a1d, g[3], g[0]),
         })

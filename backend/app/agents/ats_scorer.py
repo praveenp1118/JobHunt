@@ -87,16 +87,20 @@ Return JSON:
 (keyword_density max 30, required_skills max 25, experience_years max 20,
  seniority_alignment max 15, education max 10)"""
 
-    try:
-        response = await asyncio.to_thread(
-            client.messages.create,
-            model=model, max_tokens=800, system=ATS_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        await log_call("compute_ats_score", "scoring", response, model)
-        result = _parse_json(response.content[0].text)
-        result["total"] = int(result.get("total") or 0)
-        return result
-    except Exception as e:  # noqa: BLE001
-        print(f"⚠️ ATS scoring failed: {e}")
-        return {"total": 0, "components": {}, "top_gap": "scoring failed", "error": True}
+    # Try once; if the JSON is malformed, retry once with a stricter reminder; else default 50.
+    for attempt in (0, 1):
+        msg = prompt if attempt == 0 else prompt + "\n\nReturn ONLY the JSON object — no other text."
+        try:
+            response = await asyncio.to_thread(
+                client.messages.create,
+                model=model, max_tokens=800, system=ATS_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": msg}],
+            )
+            await log_call("compute_ats_score", "scoring", response, model)
+            result = _parse_json(response.content[0].text)
+            if result.get("total") is not None or result.get("components"):
+                result["total"] = int(result.get("total") or 0)
+                return result
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠️ ATS scoring attempt {attempt} failed: {e}")
+    return {"total": 50, "components": {}, "top_gap": "scoring unavailable", "error_flag": True}

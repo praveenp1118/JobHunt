@@ -7,6 +7,7 @@ import {
   getCareerAnalysis, triggerAnalysis, saveAnswer, getAnswers,
   updateRoadmapItem, getCommunityCareer, shareInsights,
 } from '../../api/career'
+import { getJobStats } from '../../api/jobs'
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip } from 'recharts'
 import TokenBadge from '../../components/ui/TokenBadge'
 import Button from '../../components/ui/Button'
@@ -49,6 +50,8 @@ export default function CareerPage() {
   }
 
   const { data, isLoading } = useQuery({ queryKey: ['career', filter], queryFn: () => getCareerAnalysis(params), retry: false })
+  const { data: statsData } = useQuery({ queryKey: ['career-stats', filter], queryFn: () => getJobStats(params) })
+  const stats = statsData?.data || {}
   const d = data?.data
   const available = d?.available
   const a = d?.analysis || {}
@@ -95,6 +98,8 @@ export default function CareerPage() {
         <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mb-4 text-xs text-indigo-700 flex items-center justify-between gap-2">
           <span>
             Analysis based on <strong>{d.jd_count}</strong> jobs · <strong>{d.filter_label || 'All jobs'}</strong>
+            {stats.avg_ats_master != null && <> · Avg ATS: <strong>{Math.round(stats.avg_ats_master)}</strong></>}
+            {stats.avg_pursuit_master != null && <> · Avg Pursuit: <strong>{Math.round(stats.avg_pursuit_master)}</strong></>}
             {d.last_analysed_at ? ` · Last updated ${format(new Date(d.last_analysed_at), 'MMM d')}` : ''}
             {d.expires_at ? ` · refreshes ${format(new Date(d.expires_at), 'MMM d')}` : ''}
           </span>

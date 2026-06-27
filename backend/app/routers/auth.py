@@ -343,6 +343,7 @@ async def get_preferences(
         "enable_email_to_jobhunt": prefs.enable_email_to_jobhunt,
         "default_score_view": prefs.default_score_view,
         "score_pill_style": prefs.score_pill_style,
+        "auto_dual_score_on_scan": prefs.auto_dual_score_on_scan,
         "community_sharing_enabled": prefs.community_sharing_enabled,
     }
 

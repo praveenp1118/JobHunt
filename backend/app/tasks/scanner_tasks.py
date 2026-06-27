@@ -372,6 +372,7 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
 
     # Save RAG-survivors above threshold; record RAG-rejected jobs (cost saved upstream).
     added = 0
+    saved_job_objs = []  # scored (non-pending) jobs, for optional dual scoring below
     source_map = {"rss": JobSource.rss, "apify_linkedin": JobSource.apify,
                   "apify_google": JobSource.apify, "apify": JobSource.apify}
     for job in rag_jobs:
@@ -424,7 +425,7 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                 jd_text = BeautifulSoup(jd_text, "html.parser").get_text(separator="\n")
             jd_text = jd_text[:50000]
 
-            session.add(Job(
+            _saved = Job(
                 user_id=user.id,
                 company=job.get("company", "Unknown"),
                 role=job.get("role", "Unknown"),
@@ -444,7 +445,10 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                 salary_range_raw=job.get("salary"),
                 source_feed_id=feed.id if feed else None,
                 detected_domain_cv_id=feed.domain_cv_id if feed else None,
-            ))
+            )
+            session.add(_saved)
+            if not pending:
+                saved_job_objs.append(_saved)
             added += 1
             if fid in stats:
                 stats[fid]["saved"] += 1
@@ -453,5 +457,26 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
             continue
 
     await session.commit()
+
+    # Optional ATS + Pursuit dual scoring on saved jobs (gated — off by default; adds ~₹0.15/job).
+    if (getattr(prefs, "auto_dual_score_on_scan", False) and anthropic_key
+            and master_essence and saved_job_objs):
+        from app.agents.dual_scorer import compute_dual_scores
+        dcv_by_id = {d["id"]: d for d in domain_cvs_input}
+        for j in saved_job_objs:
+            try:
+                jd = j.jd_md or j.jd_raw or ""
+                await compute_dual_scores(master_essence, master_cv_md, jd, "master",
+                                          job=j, anthropic_key=anthropic_key)
+                if j.best_domain_cv_id:
+                    d = dcv_by_id.get(str(j.best_domain_cv_id))
+                    if d:
+                        await compute_dual_scores(d.get("essence") or master_essence,
+                                                  d.get("content_md") or "", jd, "domain",
+                                                  job=j, anthropic_key=anthropic_key)
+            except Exception as e:  # noqa: BLE001
+                print(f"⚠️ dual score (scan) failed: {e}")
+        await session.commit()
+
     print(f"✅ User {user.email}: {found} found, {added} added (RAG ₹{rag_stats.get('cost_inr')})")
     return found, added, list(stats.values()), rag_stats

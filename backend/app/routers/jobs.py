@@ -318,6 +318,7 @@ async def list_jobs(
     needs_hitl: Optional[bool] = None,
     min_s1: Optional[float] = None,
     score: Optional[float] = None,   # min effective score (coalesce s1d, s1)
+    score_field: str = "s1",         # which score the `score` min applies to: s1 | ats_master | pursuit_master | combined
     domain: Optional[str] = None,    # best_domain_cv_id
     feed: Optional[str] = None,      # source_feed_id (Dashboard feed filter)
     hide_partial: bool = True,       # hide partial-JD (LinkedIn-gated, unscored) jobs by default
@@ -349,8 +350,16 @@ async def list_jobs(
     if min_s1 is not None:
         filters.append(Job.s1 >= min_s1)
     if score is not None:
-        # score filter uses the best domain fit when present, else base fit
-        filters.append(func.coalesce(Job.s1d, Job.s1) >= score)
+        if score_field == "ats_master":
+            filters.append(Job.ats_master >= score)
+        elif score_field == "pursuit_master":
+            filters.append(Job.pursuit_master >= score)
+        elif score_field == "combined":
+            filters.append(
+                func.coalesce(Job.ats_master, 0) * 0.4 + func.coalesce(Job.pursuit_master, 0) * 0.6 >= score)
+        else:
+            # default/legacy: best domain fit when present, else base fit
+            filters.append(func.coalesce(Job.s1d, Job.s1) >= score)
     if domain:
         try:
             filters.append(Job.best_domain_cv_id == uuid.UUID(domain))
@@ -384,6 +393,9 @@ async def list_jobs(
     sort_map = {
         "best_fit": Job.s1d,                 # Best Fit column = best domain-CV score
         "s1": Job.s1,
+        "ats_master": Job.ats_master,
+        "pursuit_master": Job.pursuit_master,
+        "combined": func.coalesce(Job.ats_master, 0) * 0.4 + func.coalesce(Job.pursuit_master, 0) * 0.6,
         "company": func.lower(Job.company),
         "role": func.lower(Job.role),
         "market": Job.market,
@@ -394,7 +406,7 @@ async def list_jobs(
     sort_key = sort if sort in sort_map else "created_at"
     col = sort_map[sort_key]
     primary = col.asc() if order.lower() == "asc" else col.desc()
-    if sort_key in ("best_fit", "s1"):
+    if sort_key in ("best_fit", "s1", "ats_master", "pursuit_master"):
         primary = nullslast(primary)         # unscored jobs always sink to the bottom
     order_clauses = [primary]
     if sort_key != "created_at":

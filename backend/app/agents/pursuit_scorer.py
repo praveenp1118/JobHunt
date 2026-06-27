@@ -84,16 +84,19 @@ max 25, achievability max 20, effort_reward max 15). Return JSON:
   "recommendation_reason": "one sentence why"
 }}"""
 
-    try:
-        response = await asyncio.to_thread(
-            client.messages.create,
-            model=model, max_tokens=1000, system=PURSUIT_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        await log_call("compute_pursuit_score", "scoring", response, model)
-        result = _parse_json(response.content[0].text)
-        result["total"] = int(result.get("total") or 0)
-        return result
-    except Exception as e:  # noqa: BLE001
-        print(f"⚠️ Pursuit scoring failed: {e}")
-        return {"total": 0, "components": {}, "recommendation": "Review first", "error": True}
+    for attempt in (0, 1):
+        msg = prompt if attempt == 0 else prompt + "\n\nReturn ONLY the JSON object — no other text."
+        try:
+            response = await asyncio.to_thread(
+                client.messages.create,
+                model=model, max_tokens=1000, system=PURSUIT_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": msg}],
+            )
+            await log_call("compute_pursuit_score", "scoring", response, model)
+            result = _parse_json(response.content[0].text)
+            if result.get("total") is not None or result.get("components"):
+                result["total"] = int(result.get("total") or 0)
+                return result
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠️ Pursuit scoring attempt {attempt} failed: {e}")
+    return {"total": 50, "components": {}, "recommendation": "Review first", "error_flag": True}

@@ -147,3 +147,79 @@ async def test_stats_expose_recommendation_buckets(client, user_creds):
     r = await client.get("/api/jobs/stats", headers=user_creds["headers"])
     body = r.json()
     assert "apply_now_count" in body and "get_referral_count" in body and "skip_count" in body
+
+
+# ── Filter / sort by ATS vs Pursuit ──
+async def _mk_scored_jobs(client, user_creds):
+    """Two jobs with opposite ATS/Pursuit so the score_field selection is testable:
+    A = ats 85 / pursuit 50 · B = ats 50 / pursuit 85."""
+    from app.models.job import Job, JobSource, JobStatus
+    uid = uuid.UUID((await client.get("/api/auth/me", headers=user_creds["headers"])).json()["id"])
+    a, b = uuid.uuid4(), uuid.uuid4()
+    eng, S = _sm()
+    async with S() as s:
+        s.add(Job(id=a, user_id=uid, company="AA", role="PM", market="NL",
+                  source=JobSource.manual, status=JobStatus.new, jd_raw="x", ats_master=85, pursuit_master=50))
+        s.add(Job(id=b, user_id=uid, company="BB", role="PM", market="NL",
+                  source=JobSource.manual, status=JobStatus.new, jd_raw="x", ats_master=50, pursuit_master=85))
+        await s.commit()
+    await eng.dispose()
+    return str(a), str(b)
+
+
+async def test_tracker_filters_by_pursuit_when_toggle_pursuit(client, user_creds):
+    a, b = await _mk_scored_jobs(client, user_creds)
+    r = await client.get("/api/jobs?limit=200&score=70&score_field=pursuit_master", headers=user_creds["headers"])
+    ids = {j["id"] for j in r.json()["jobs"]}
+    assert b in ids and a not in ids  # only the high-Pursuit job
+
+
+async def test_tracker_filters_by_ats_when_toggle_ats(client, user_creds):
+    a, b = await _mk_scored_jobs(client, user_creds)
+    r = await client.get("/api/jobs?limit=200&score=70&score_field=ats_master", headers=user_creds["headers"])
+    ids = {j["id"] for j in r.json()["jobs"]}
+    assert a in ids and b not in ids  # only the high-ATS job
+
+
+async def test_stats_returns_filtered_avg_scores(client, user_creds):
+    await _mk_scored_jobs(client, user_creds)
+    body = (await client.get("/api/jobs/stats", headers=user_creds["headers"])).json()
+    assert body["avg_ats_master"] is not None and body["avg_pursuit_master"] is not None
+
+
+async def test_feeds_performance_returns_avg_ats_pursuit(client, user_creds):
+    from app.models.job import Job, JobSource, JobStatus
+    from app.models.domain import UserFeed
+    uid = uuid.UUID((await client.get("/api/auth/me", headers=user_creds["headers"])).json()["id"])
+    fid = uuid.uuid4()
+    eng, S = _sm()
+    try:
+        async with S() as s:
+            s.add(UserFeed(id=fid, user_id=uid, feed_type="rss", name="T", url_or_actor="http://x", is_active=True))
+            await s.flush()
+            s.add(Job(id=uuid.uuid4(), user_id=uid, company="AA", role="PM", market="NL",
+                      source=JobSource.rss, status=JobStatus.new, jd_raw="x",
+                      source_feed_id=fid, ats_master=80, pursuit_master=75))
+            await s.commit()
+        rows = (await client.get("/api/feeds/performance", headers=user_creds["headers"])).json()
+        row = next((r for r in rows if r.get("feed_id") == str(fid)), None)
+        assert row is not None and row["avg_ats_master"] == 80 and row["avg_pursuit_master"] == 75
+    finally:
+        await eng.dispose()
+
+
+async def test_auto_dual_score_pref_gates_scan_scoring(client, user_creds):
+    # Default off; settable via preferences (the scanner reads this flag to gate dual scoring).
+    prefs = (await client.get("/api/auth/me/preferences", headers=user_creds["headers"])).json()
+    assert prefs.get("auto_dual_score_on_scan") in (False, None)
+    await client.patch("/api/auth/me/preferences", json={"auto_dual_score_on_scan": True},
+                       headers=user_creds["headers"])
+    prefs2 = (await client.get("/api/auth/me/preferences", headers=user_creds["headers"])).json()
+    assert prefs2["auto_dual_score_on_scan"] is True
+
+
+async def test_score_view_loaded_from_preferences(client, user_creds):
+    # GET /preferences exposes the display fields the Tracker loads its toggle from.
+    prefs = (await client.get("/api/auth/me/preferences", headers=user_creds["headers"])).json()
+    assert prefs.get("default_score_view") in ("pursuit", "ats", "combined")
+    assert prefs.get("score_pill_style") in ("dual_ring", "single", "number_only")

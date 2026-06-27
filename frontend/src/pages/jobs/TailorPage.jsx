@@ -12,6 +12,8 @@ import { getPreferences, getSettingsMode } from '../../api/auth'
 import useAuthStore from '../../store/auth'
 import { MarketBadge } from '../../components/ui/Badge'
 import ScorePill from '../../components/ui/ScorePill'
+import DualRingPill from '../../components/ui/DualRingPill'
+import ScoreToggle from '../../components/ui/ScoreToggle'
 import TokenBadge from '../../components/ui/TokenBadge'
 import CommunityInsights from '../../components/community/CommunityInsights'
 import Button from '../../components/ui/Button'
@@ -60,6 +62,7 @@ export default function TailorPage() {
 
   const [selectedDomainCvId, setSelectedDomainCvId] = useState(null)
   const [showCvPicker, setShowCvPicker] = useState(false)
+  const [tScoreView, setTScoreView] = useState('pursuit')
   const [tailoredCvId, setTailoredCvId] = useState(null)
   const [highlights, setHighlights] = useState(null)
   const [generating, setGenerating] = useState(false)
@@ -253,6 +256,9 @@ export default function TailorPage() {
               <ScorePill score={job.s3_master} label="F" type="s3" />
             </div>
           </div>
+
+          {/* ATS + Pursuit dual scores per CV entity */}
+          <DualScorePanel job={job} view={tScoreView} setView={setTScoreView} />
 
           {/* Domain CV used */}
           <div>
@@ -603,6 +609,69 @@ export default function TailorPage() {
             </div>
             <p className="mt-3 text-[11px] text-gray-400">Trim removes the lowest-impact changes (reorder → keyword → rephrase) and never removes deselects.</p>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ATS + Pursuit per CV entity (Master → Domain → Tailored) with deltas + an insight line.
+function DualScorePanel({ job, view, setView }) {
+  const pick = (e) => view === 'ats' ? job[`ats_${e}`]
+    : view === 'combined'
+      ? (job[`ats_${e}`] != null && job[`pursuit_${e}`] != null ? Math.round(job[`ats_${e}`] * 0.4 + job[`pursuit_${e}`] * 0.6) : null)
+      : job[`pursuit_${e}`]
+  const rows = [
+    { key: 'master', label: 'Master CV', prev: null },
+    { key: 'domain', label: 'Domain CV', prev: 'master' },
+    { key: 'tailored', label: 'Tailored', prev: 'domain' },
+  ]
+  const delta = (e, prev) => {
+    if (!prev) return null
+    const a = pick(e), b = pick(prev) ?? pick('master')
+    if (a == null || b == null) return null
+    return Math.round(a - b)
+  }
+  // Insight: which entity adds the most, and on which axis.
+  const d = (e, prev, axis) => {
+    const a = job[`${axis}_${e}`], b = job[`${axis}_${prev}`] ?? job[`${axis}_master`]
+    return (a != null && b != null) ? a - b : null
+  }
+  let insight = null
+  const domAts = d('domain', 'master', 'ats'), domPur = d('domain', 'master', 'pursuit')
+  const tailAts = d('tailored', 'domain', 'ats'), tailPur = d('tailored', 'domain', 'pursuit')
+  if (tailAts != null && tailPur != null && (tailAts > 0 || tailPur > 0)) {
+    insight = tailAts >= tailPur ? `Tailoring adds ATS most (+${Math.round(tailAts)})` : `Tailoring adds Pursuit most (+${Math.round(tailPur)})`
+  } else if (domAts != null && domPur != null && (domAts > 0 || domPur > 0)) {
+    insight = domPur >= domAts ? `Domain CV adds Pursuit most (+${Math.round(domPur)})` : `Domain CV adds ATS most (+${Math.round(domAts)})`
+  }
+  const anyScore = rows.some((r) => pick(r.key) != null)
+
+  return (
+    <div className="rounded-xl border border-gray-200 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">ATS · Pursuit</span>
+        <ScoreToggle value={view} onChange={setView} size="sm" options={[{ value: 'ats', label: 'ATS' }, { value: 'pursuit', label: 'Pursuit' }]} />
+      </div>
+      {!anyScore && <p className="text-[11px] text-gray-400">Not yet scored — add via Settings → backfill, or it computes after Apply.</p>}
+      {anyScore && (
+        <div className="space-y-2">
+          {rows.map((r) => {
+            const dv = delta(r.key, r.prev)
+            return (
+              <div key={r.key} className="flex items-center gap-2.5">
+                <DualRingPill atsScore={job[`ats_${r.key}`]} pursuitScore={job[`pursuit_${r.key}`]} defaultView={view} size="sm" showTooltip={false} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-gray-700">{r.label}</p>
+                  <p className="text-[10px] text-gray-400">ATS {job[`ats_${r.key}`] != null ? Math.round(job[`ats_${r.key}`]) : '—'} · Pur {job[`pursuit_${r.key}`] != null ? Math.round(job[`pursuit_${r.key}`]) : '—'}</p>
+                </div>
+                {dv != null && dv !== 0 && (
+                  <span className={`text-[11px] font-medium ${dv > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{dv > 0 ? `+${dv} ↑` : `${dv} ↓`}</span>
+                )}
+              </div>
+            )
+          })}
+          {insight && <p className="text-[11px] text-emerald-600 pt-1 border-t border-gray-100 mt-1">{insight}</p>}
         </div>
       )}
     </div>

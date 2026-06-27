@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow, format } from 'date-fns'
-import { getJob, getJobEmails, updateJobStatus, updateJob, deleteJob, draftFollowUp, fetchJobJd, addFullJd, scoreNow } from '../../api/jobs'
+import { getJob, getJobEmails, updateJobStatus, updateJob, deleteJob, draftFollowUp, fetchJobJd, addFullJd, scoreNow, getJobScores } from '../../api/jobs'
 import { sendReply } from '../../api/jobs'
 import { toast } from '../../store/toast'
 import { StatusBadge, MarketBadge } from '../../components/ui/Badge'
 import { ThreeScores } from '../../components/ui/ScorePill'
+import DualRingPill from '../../components/ui/DualRingPill'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import CommunityInsights from '../../components/community/CommunityInsights'
@@ -216,7 +217,7 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
 
       {/* Tabs */}
       <div className="flex gap-0 border-b border-gray-100 bg-white px-4">
-        {['details', 'emails', 'jd', 'community'].map((t) => (
+        {['details', 'scores', 'emails', 'jd', 'community'].map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -226,7 +227,7 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {t === 'jd' ? 'JD' : t === 'community' ? '💡 Community' : t}
+            {t === 'jd' ? 'JD' : t === 'community' ? '💡 Community' : t === 'scores' ? 'Scores' : t}
             {t === 'emails' && emails.length > 0 && (
               <span className="ml-1.5 bg-gray-100 text-gray-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
                 {emails.length}
@@ -418,6 +419,9 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
           </div>
         )}
 
+        {/* ── Scores tab (ATS + Pursuit breakdown) ── */}
+        {tab === 'scores' && <ScoresTab jobId={jobId} job={job} />}
+
         {/* ── JD tab ── */}
         {tab === 'jd' && (
           <div className="p-5">
@@ -511,6 +515,83 @@ export default function JobDetail({ jobId, onClose, onUpdate, onTailor }) {
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+const ATS_MAX = { keyword_density: 30, required_skills: 25, experience_years: 20, seniority_alignment: 15, education: 10 }
+const ATS_LABEL = { keyword_density: 'Keyword density', required_skills: 'Required skills', experience_years: 'Experience years', seniority_alignment: 'Seniority', education: 'Education' }
+const PUR_MAX = { human_excitement: 40, career_move_quality: 25, achievability: 20, effort_reward: 15 }
+const PUR_LABEL = { human_excitement: 'Human excitement', career_move_quality: 'Career move', achievability: 'Achievability', effort_reward: 'Effort-reward' }
+
+function CompBar({ label, score, max }) {
+  const pct = Math.max(0, Math.min(100, ((score || 0) / max) * 100))
+  return (
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="w-28 text-gray-600 shrink-0">{label}</span>
+      <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+        <div className="h-full rounded-full bg-emerald-400" style={{ width: `${pct}%` }} />
+      </div>
+      <span className="w-10 text-right tabular-nums text-gray-500">{score ?? 0}/{max}</span>
+    </div>
+  )
+}
+
+function ScoresTab({ jobId, job }) {
+  const [entity, setEntity] = useState('master')
+  const { data, isLoading } = useQuery({ queryKey: ['job-scores', jobId], queryFn: () => getJobScores(jobId) })
+  const scores = data?.data
+  const entHas = (e) => job?.[`ats_${e}`] != null || job?.[`pursuit_${e}`] != null
+
+  if (isLoading) return <div className="p-5 text-sm text-gray-400">Loading…</div>
+  if (!entHas('master') && !entHas('domain') && !entHas('tailored')) {
+    return <div className="p-5 text-sm text-gray-400">No ATS / Pursuit scores yet. Add them via Settings → Scoring → “Compute scores for existing jobs”, or they compute when you tailor.</div>
+  }
+
+  const block = scores?.[entity] || {}
+  const ats = block.ats || {}
+  const pur = block.pursuit || {}
+  const rec = pur.recommendation
+  const recCls = rec === 'Apply now' ? 'bg-emerald-50 text-emerald-700' : rec === 'Skip' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-700'
+
+  return (
+    <div className="p-5 space-y-4">
+      <div className="flex items-center gap-3">
+        <DualRingPill atsScore={job?.[`ats_${entity}`]} pursuitScore={job?.[`pursuit_${entity}`]} defaultView="pursuit" size="lg" showTooltip={false} />
+        <div className="flex gap-1">
+          {['master', 'domain', 'tailored'].map((e) => (
+            <button key={e} onClick={() => setEntity(e)} disabled={!entHas(e)}
+              className={`text-xs px-2.5 py-1 rounded-lg capitalize ${entity === e ? 'bg-emerald-100 text-emerald-700 font-medium' : entHas(e) ? 'text-gray-500 hover:bg-gray-50' : 'text-gray-300 cursor-not-allowed'}`}>
+              {e}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {ats.components && (
+        <div>
+          <p className="text-xs font-semibold text-gray-700 mb-1.5">ATS breakdown <span className="text-gray-400">· {ats.total ?? '—'}/100</span></p>
+          <div className="space-y-1">
+            {Object.keys(ATS_MAX).map((k) => <CompBar key={k} label={ATS_LABEL[k]} score={ats.components?.[k]?.score} max={ATS_MAX[k]} />)}
+          </div>
+          {ats.dealbreaker_applied && <p className="text-[11px] text-rose-500 mt-1">⚠ Dealbreaker applied (capped at 40)</p>}
+        </div>
+      )}
+      {pur.components && (
+        <div>
+          <p className="text-xs font-semibold text-gray-700 mb-1.5">Pursuit breakdown <span className="text-gray-400">· {pur.total ?? '—'}/100</span></p>
+          <div className="space-y-1">
+            {Object.keys(PUR_MAX).map((k) => <CompBar key={k} label={PUR_LABEL[k]} score={pur.components?.[k]?.score} max={PUR_MAX[k]} />)}
+          </div>
+        </div>
+      )}
+      {(pur.top_strength || pur.top_gap || rec) && (
+        <div className="border-t border-gray-100 pt-3 space-y-1 text-xs">
+          {pur.top_strength && <p className="text-emerald-600">✓ {pur.top_strength}</p>}
+          {(pur.top_gap || ats.top_gap) && <p className="text-rose-500">✗ {pur.top_gap || ats.top_gap}</p>}
+          {rec && <span className={`inline-block mt-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${recCls}`}>{rec}</span>}
+        </div>
+      )}
     </div>
   )
 }

@@ -70,7 +70,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (124 tests, all passing):
+- Current coverage (130 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -243,7 +243,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_email_to_jobhunt → v3_optimization → v3_email_source → v3_ats_pursuit
+│   │   └── versions/        # chain tip: … → v3_optimization → v3_email_source → v3_ats_pursuit → v3_dual_scan_gate
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -1126,7 +1126,23 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 27, 2026 — **ATS + Pursuit dual scoring** (migration `v3_ats_pursuit`): two scores per
+*Last updated: June 27, 2026 — **ATS + Pursuit — all surfaces + filter integration** (migration
+`v3_dual_scan_gate`): completed the dual-scoring rollout. **UI surfaces wired:** Jobs Tracker **Match**
+column (DualRingPill + header toggle + tooltip, default view loaded from prefs), **Tailor** left panel
+(Master→Domain→Tailored DualScorePanel with deltas + an insight line), **Dashboard** Score-overview card
+(avg Pursuit/ATS + apply-now + insight), **Job Detail** Scores tab (lg pill + Master/Domain/Tailored entity
+tabs + 5 ATS / 4 Pursuit component bars + top strength/gap + recommendation, from `GET /jobs/{id}/scores`),
+**Feed Performance** quality-bar ATS/Pursuit toggle, **Career Insights** banner (avg ATS/Pursuit for the
+filtered set). **Filter integration:** `GET /jobs` `score_field` (s1 | ats_master | pursuit_master |
+combined) + sort_map entries (ats_master/pursuit_master/combined) — Tracker score pills + Match-header sort
+follow the active toggle; `/feeds/performance` returns `avg_ats_master`/`avg_pursuit_master`; `/jobs/stats`
+averages already scope to the dashboard filter. **Scanner gate:** `UserPreferences.auto_dual_score_on_scan`
+(default **False**) — when on, the scanner computes master + (best-)domain dual scores for saved jobs.
+**Retry/fallback:** both scorers retry once on malformed JSON, else default 50/50 with `error_flag`.
+**Live-verified** (Haiku): AstraZeneca AI-strategy director → ATS 26 (**dealbreaker correctly applied** —
+product leader vs pharma role), Pursuit 41, valid JSON both. **Deferred:** Career radar dimension-swap (8e)
+— the analysis produces gap axes, not ATS/Pursuit component dimensions; the context bar covers the filter
+value. 130 tests. **ATS + Pursuit dual scoring** (migration `v3_ats_pursuit`): two scores per
 CV entity — **ATS** (simulated automated screening, 5 components, dealbreaker cap at 40) and **Pursuit**
 (should-you-pursue judgment, 4 components + a recommendation), per master/domain/tailored. New agents
 `agents/ats_scorer.py` (Haiku), `agents/pursuit_scorer.py` (Haiku), and `agents/dual_scorer.py`
@@ -1322,4 +1338,4 @@ by-category) + `/export` CSV; `UsageTab.jsx` (10-colour token badges, category b
 row-expand, verify-on-console links); Activity scanner cards show per-run usage totals. **Support chat system** (rule-based FAQ + human admin, **NO Claude/AI**: `chat` router REST + WebSocket, 12-rule `chat_faq.py`, `v3_chat` migration → conversations/messages/tickets/admin_presence, lazy `ChatWidget` on all app pages, `/admin/chat` console w/ presence heartbeat + canned replies + internal notes + tickets, file upload ≤5 MB, ticket/admin-reply emails); **Stripe checkout/webhook live-verified in test mode** (checkout→active, cancel→expired, non-admin tailor 402) + **webhook bug fixed** (stripe SDK 15.x `StripeObject` has no `.get()` → bracket-access `_g` helper); V3 Multi-domain-CV scoring; Apify feeds fixed (+ count floor); LinkedIn alert-email parsing + has_partial_jd; JD storage fix; full-screen 3-column Tailor page; Jobs Tracker filter counts (Option C); /feeds merged into Settings → Feeds & Scanning; 3 bug fixes (tailor apply-button gating, admin users API path, CV preservation rules); tailor enhancements (auto-mode "Suggest changes" gating, email recipient/attachments/greeting); **clean neutral PDF filenames `{FirstnameLastname}_CV.pdf`**; **send-mode banner in Email Draft tab + `GET /api/settings/mode`**; **sidebar nav reordered** (Dashboard · Jobs · My CVs · Activity · Settings · Wallet · Admin); **server-side Jobs Tracker sort** (`GET /jobs` `sort`/`order`, NULLs last, `created_at DESC` tiebreak — fixes Best Fit sort missing high-s1d rows beyond the page limit); **Stripe payments + subscription system** (JobHunt Pro ₹500/mo — billing router, `require_active_subscription` 402 gate on paid endpoints w/ admin bypass, PlanKeysTab plan card + key docs, AppLayout status banner, `/billing/success`, onboarding Subscribe step, `v3_stripe_subscriptions` migration); **partial-JD jobs saved unscored + "Fetch full JD" re-score** (`POST /jobs/{id}/fetch-jd` → `fetch_and_rescore_partial_job`; tracker shows "—" for NULL scores); GitHub repo + Pages docs site live. **Community follow-ups:** insights on the Add-Job parse screen
 (compact card, decide before tailoring), Contributions "View →" deep-link fixed (`/jobs?open={id}` →
 JobsPage opens the detail panel), and **`normalize_company`** matching so company-name casing/punctuation
-no longer splits buckets. All 124 smoke tests passing*
+no longer splits buckets. All 130 smoke tests passing*
