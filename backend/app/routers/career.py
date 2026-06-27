@@ -191,6 +191,64 @@ async def _run_analysis(user, session, source=None, feed_id=None, domain_cv_id=N
     return _resp(ca, roadmap, True, {"tokens_used": usage.get("tokens_used"), "cost_inr": usage.get("cost_inr")})
 
 
+# ── Real readiness from aggregated ATS + Pursuit scores (no Claude call) ──────
+_ATS_MAX = {"keyword_density": 30, "required_skills": 25, "experience_years": 20, "seniority_alignment": 15, "education": 10}
+_ATS_LABEL = {"keyword_density": "Keywords", "required_skills": "Required skills", "experience_years": "Experience", "seniority_alignment": "Seniority", "education": "Education"}
+_PUR_MAX = {"human_excitement": 40, "career_move_quality": 25, "achievability": 20, "effort_reward": 15}
+_PUR_LABEL = {"human_excitement": "Human appeal", "career_move_quality": "Career fit", "achievability": "Achievability", "effort_reward": "Timing"}
+
+
+def _agg_components(jobs, metric, maxes, labels):
+    """Average each component score across jobs, normalised to 0-100, + the weakest (top gap)."""
+    sums = {k: 0.0 for k in maxes}
+    cnts = {k: 0 for k in maxes}
+    for j in jobs:
+        comps = (((j.score_components or {}).get("master") or {}).get(metric) or {}).get("components") or {}
+        for k in maxes:
+            v = (comps.get(k) or {}).get("score")
+            if isinstance(v, (int, float)):
+                sums[k] += float(v)
+                cnts[k] += 1
+    out = {}
+    for k in maxes:
+        out[k] = {"score": (round((sums[k] / cnts[k]) / maxes[k] * 100) if cnts[k] else None),
+                  "label": labels[k], "max": 100}
+    valid = {k: v["score"] for k, v in out.items() if v["score"] is not None}
+    top_gap = min(valid, key=valid.get) if valid else None
+    return out, top_gap
+
+
+@router.get("/readiness-scores")
+async def readiness_scores(
+    source: Optional[str] = Query(None), feed_id: Optional[str] = Query(None),
+    domain_cv_id: Optional[str] = Query(None), market: Optional[str] = Query(None),
+    user: User = Depends(current_active_user), session: AsyncSession = Depends(get_db),
+):
+    """Instant, free readiness from real aggregated ATS + Pursuit scores (no Claude call).
+    Honours the same filter params as the rest of Career Insights."""
+    clauses, _h, filter_label, _f = await _resolve_filter(session, source, feed_id, domain_cv_id, market)
+    jobs = (await session.execute(select(Job).where(
+        Job.user_id == user.id, Job.ats_master.isnot(None), Job.pursuit_master.isnot(None),
+        Job.score_components.isnot(None), *clauses))).scalars().all()
+    if not jobs:
+        return {"no_data": True, "jobs_scored": 0, "filter_label": filter_label}
+
+    ats_comps, ats_gap = _agg_components(jobs, "ats", _ATS_MAX, _ATS_LABEL)
+    pur_comps, pur_gap = _agg_components(jobs, "pursuit", _PUR_MAX, _PUR_LABEL)
+    n = len(jobs)
+    avg_ats = round(sum(j.ats_master for j in jobs) / n)
+    avg_pur = round(sum(j.pursuit_master for j in jobs) / n)
+    return {
+        "ats": {"overall": avg_ats, "components": ats_comps, "top_gap": ats_gap,
+                "top_gap_label": _ATS_LABEL.get(ats_gap), "jobs_scored": n},
+        "pursuit": {"overall": avg_pur, "components": pur_comps, "top_gap": pur_gap,
+                    "top_gap_label": _PUR_LABEL.get(pur_gap), "jobs_scored": n},
+        "overall": round(avg_ats * 0.4 + avg_pur * 0.6),
+        "avg_ats": avg_ats, "avg_pursuit": avg_pur,
+        "filter_label": filter_label, "jobs_scored": n,
+    }
+
+
 @router.get("/analysis")
 async def get_analysis(
     source: Optional[str] = Query(None), feed_id: Optional[str] = Query(None),

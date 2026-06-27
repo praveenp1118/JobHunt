@@ -5,7 +5,7 @@ import useAuthStore from '../../store/auth'
 import { listConversations } from '../../api/chat'
 import { getPreferences } from '../../api/auth'
 import { getMyContributions } from '../../api/community'
-import { getCareerAnalysis } from '../../api/career'
+import { getCareerAnalysis, getReadinessScores } from '../../api/career'
 
 const NAV = [
   {
@@ -93,9 +93,14 @@ export default function Sidebar({ hitlCount = 0 }) {
   const { data: contribData } = useQuery({ queryKey: ['my-contributions'], queryFn: getMyContributions, retry: false })
   const showCommunity = !!prefsData?.data?.community_sharing_enabled || (contribData?.data?.length > 0)
 
-  // Career readiness % badge on the nav item (if an analysis exists).
+  // Career readiness % badge — prefer real Pursuit readiness, fall back to the Claude estimate.
   const { data: careerData } = useQuery({ queryKey: ['career'], queryFn: getCareerAnalysis, retry: false })
-  const readiness = careerData?.data?.available ? Math.round(careerData.data.readiness_score) : null
+  const { data: readinessData } = useQuery({ queryKey: ['career-readiness', ''], queryFn: () => getReadinessScores(), retry: false })
+  const real = readinessData?.data
+  const hasReal = real && !real.no_data && real.jobs_scored > 0
+  const readiness = hasReal ? real.pursuit.overall
+    : (careerData?.data?.available ? Math.round(careerData.data.readiness_score) : null)
+  const readinessTitle = hasReal ? `Pursuit readiness · based on ${real.jobs_scored} scored jobs` : 'Career readiness'
 
   const navItems = [...NAV]
   if (showCommunity && !navItems.some((n) => n.to === '/community/contributions')) {
@@ -155,7 +160,7 @@ export default function Sidebar({ hitlCount = 0 }) {
             )}
             {/* Career readiness % badge */}
             {item.to === '/career' && readiness != null && (
-              <span className="ml-auto bg-slate-700 text-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+              <span title={readinessTitle} className="ml-auto bg-slate-700 text-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                 {readiness}%
               </span>
             )}

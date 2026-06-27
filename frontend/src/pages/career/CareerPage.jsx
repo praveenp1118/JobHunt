@@ -5,9 +5,10 @@ import JobFilterSelect, { filterToParams } from '../../components/dashboard/JobF
 import { format } from 'date-fns'
 import {
   getCareerAnalysis, triggerAnalysis, saveAnswer, getAnswers,
-  updateRoadmapItem, getCommunityCareer, shareInsights,
+  updateRoadmapItem, getCommunityCareer, shareInsights, getReadinessScores,
 } from '../../api/career'
 import { getJobStats } from '../../api/jobs'
+import ScoreToggle from '../../components/ui/ScoreToggle'
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip } from 'recharts'
 import TokenBadge from '../../components/ui/TokenBadge'
 import Button from '../../components/ui/Button'
@@ -52,6 +53,10 @@ export default function CareerPage() {
   const { data, isLoading } = useQuery({ queryKey: ['career', filter], queryFn: () => getCareerAnalysis(params), retry: false })
   const { data: statsData } = useQuery({ queryKey: ['career-stats', filter], queryFn: () => getJobStats(params) })
   const stats = statsData?.data || {}
+  // Real aggregated ATS + Pursuit readiness (instant, free, filter-aware).
+  const { data: readinessData } = useQuery({ queryKey: ['career-readiness', filter], queryFn: () => getReadinessScores(params) })
+  const readiness = readinessData?.data
+  const hasReal = readiness && !readiness.no_data && readiness.jobs_scored > 0
   const d = data?.data
   const available = d?.available
   const a = d?.analysis || {}
@@ -93,15 +98,20 @@ export default function CareerPage() {
         </div>
       </div>
 
-      {/* Filter context banner */}
-      {available && (
+      {/* Filter context banner — real readiness when available, else the Claude-analysis context */}
+      {hasReal ? (
+        <div className="bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 mb-4 text-xs text-emerald-700 flex items-center justify-between gap-2">
+          <span>
+            Readiness from <strong>{readiness.jobs_scored}</strong> real scores · ATS avg: <strong>{readiness.avg_ats}</strong> ·
+            Pursuit avg: <strong>{readiness.avg_pursuit}</strong> · <strong>{readiness.filter_label || 'All jobs'}</strong>
+          </span>
+          {filter && <button onClick={() => setFilter('')} className="text-emerald-600 hover:underline shrink-0">Clear ✕</button>}
+        </div>
+      ) : available && (
         <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 mb-4 text-xs text-indigo-700 flex items-center justify-between gap-2">
           <span>
             Analysis based on <strong>{d.jd_count}</strong> jobs · <strong>{d.filter_label || 'All jobs'}</strong>
-            {stats.avg_ats_master != null && <> · Avg ATS: <strong>{Math.round(stats.avg_ats_master)}</strong></>}
-            {stats.avg_pursuit_master != null && <> · Avg Pursuit: <strong>{Math.round(stats.avg_pursuit_master)}</strong></>}
             {d.last_analysed_at ? ` · Last updated ${format(new Date(d.last_analysed_at), 'MMM d')}` : ''}
-            {d.expires_at ? ` · refreshes ${format(new Date(d.expires_at), 'MMM d')}` : ''}
           </span>
           {filter && <button onClick={() => setFilter('')} className="text-indigo-500 hover:underline shrink-0">Clear ✕</button>}
         </div>
@@ -129,7 +139,7 @@ export default function CareerPage() {
             ))}
           </div>
 
-          {tab === 'Readiness' && <ReadinessTab a={a} navigate={navigate} />}
+          {tab === 'Readiness' && <ReadinessTab a={a} readiness={readiness} navigate={navigate} setTab={setTab} />}
           {tab === 'Keywords' && <KeywordsTab kw={a.keywords || {}} navigate={navigate} />}
           {tab === 'Skills' && <SkillsTab sk={a.skills || {}} />}
           {tab === 'Experience' && <ExperienceTab ex={a.experience || {}} navigate={navigate} />}
@@ -153,39 +163,115 @@ function Section({ title, children }) {
   )
 }
 
-function ReadinessTab({ a, navigate }) {
+// Real ATS/Pursuit readiness from aggregated scores — dual radar with a toggle.
+function RealReadiness({ readiness, view, setView, setTab }) {
+  const block = view === 'ats' ? readiness.ats : readiness.pursuit
+  const color = view === 'ats' ? '#f59e0b' : '#10b981'
+  const comps = Object.entries(block.components || {})
+  const radarData = comps.map(([, v]) => ({ axis: v.label, score: v.score ?? 0 }))
+  const insightAction = view === 'ats'
+    ? { text: 'add missing terms to improve ATS screening', label: 'Go to Keywords tab →', tab: 'Keywords' }
+    : { text: 'often high competition — focus on referrals and differentiation', label: 'Go to Roadmap tab →', tab: 'Roadmap' }
+
+  return (
+    <Section title={`Readiness from ${readiness.jobs_scored} scored jobs`}>
+      <div className="flex items-center justify-between gap-3 -mt-1 mb-3">
+        <p className="text-[11px] text-gray-400">Real data · updates automatically as jobs are scored</p>
+        <ScoreToggle value={view} onChange={setView} size="sm"
+          options={[{ value: 'ats', label: 'ATS Readiness' }, { value: 'pursuit', label: 'Pursuit Readiness' }]} />
+      </div>
+
+      {/* Weighted overall */}
+      <div className="flex items-end gap-4 flex-wrap mb-1">
+        <p className="text-4xl font-bold" style={{ color }}>{block.overall ?? '—'}<span className="text-lg text-gray-400">%</span></p>
+        <div className="text-xs text-gray-500 pb-1">
+          <p>ATS <strong className="text-amber-600">{readiness.ats.overall}</strong> · Pursuit <strong className="text-emerald-600">{readiness.pursuit.overall}</strong></p>
+          <p>Overall <strong>{readiness.overall}%</strong> <span className="text-gray-400">(ATS×0.4 + Pursuit×0.6)</span></p>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <ResponsiveContainer width="100%" height={300}>
+          <RadarChart data={radarData} outerRadius="72%">
+            <PolarGrid />
+            <PolarAngleAxis dataKey="axis" tick={{ fontSize: 12, fill: '#64748b' }} />
+            <Radar dataKey="score" stroke={color} fill={color} fillOpacity={0.3} />
+            <Tooltip formatter={(v) => [`${v}%`, view === 'ats' ? 'ATS' : 'Pursuit']} />
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {comps.map(([k, v]) => (
+          <div key={k} className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 w-28">{v.label}</span>
+            <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${v.score || 0}%`, backgroundColor: barColor(v.score) }} />
+            </div>
+            <span className="text-xs text-gray-500 w-10 text-right tabular-nums">{v.score ?? '—'}%</span>
+          </div>
+        ))}
+      </div>
+
+      {block.top_gap_label && (
+        <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-600">
+          Weakest: <strong>{block.top_gap_label}</strong> ({block.components[block.top_gap]?.score}%) — {insightAction.text}.
+          <button onClick={() => setTab(insightAction.tab)} className="ml-1 text-emerald-600 font-medium hover:underline">{insightAction.label}</button>
+        </div>
+      )}
+    </Section>
+  )
+}
+
+// Fallback: the old Claude-estimate radar (5 readiness axes).
+function ClaudeReadiness({ a }) {
   const scores = a.scores || {}
   const radarData = SCORE_LABELS.map(([k, label]) => ({ axis: label, score: scores[k] ?? 0 }))
   return (
-    <div>
-      <Section title="Overall readiness">
-        <p className="text-4xl font-bold text-gray-900">{a.readiness_score ?? '—'}<span className="text-lg text-gray-400">%</span></p>
-
-        {/* Radar across the 5 dimensions */}
-        <div className="mt-4">
-          <ResponsiveContainer width="100%" height={300}>
-            <RadarChart data={radarData} outerRadius="72%">
-              <PolarGrid />
-              <PolarAngleAxis dataKey="axis" tick={{ fontSize: 12, fill: '#64748b' }} />
-              <Radar dataKey="score" stroke="#10b981" fill="#10b981" fillOpacity={0.3} />
-              <Tooltip formatter={(v) => [`${v}%`, 'Score']} />
-            </RadarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Summary bars below the radar */}
-        <div className="mt-3 space-y-2">
-          {SCORE_LABELS.map(([k, label]) => (
-            <div key={k} className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 w-24">{label}</span>
-              <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${scores[k] || 0}%`, backgroundColor: barColor(scores[k]) }} />
-              </div>
-              <span className="text-xs text-gray-500 w-10 text-right tabular-nums">{scores[k] ?? '—'}%</span>
+    <Section title="Overall readiness (Claude estimate)">
+      <p className="text-4xl font-bold text-gray-900">{a.readiness_score ?? '—'}<span className="text-lg text-gray-400">%</span></p>
+      <div className="mt-4">
+        <ResponsiveContainer width="100%" height={300}>
+          <RadarChart data={radarData} outerRadius="72%">
+            <PolarGrid />
+            <PolarAngleAxis dataKey="axis" tick={{ fontSize: 12, fill: '#64748b' }} />
+            <Radar dataKey="score" stroke="#10b981" fill="#10b981" fillOpacity={0.3} />
+            <Tooltip formatter={(v) => [`${v}%`, 'Score']} />
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-3 space-y-2">
+        {SCORE_LABELS.map(([k, label]) => (
+          <div key={k} className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 w-24">{label}</span>
+            <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${scores[k] || 0}%`, backgroundColor: barColor(scores[k]) }} />
             </div>
-          ))}
-        </div>
-      </Section>
+            <span className="text-xs text-gray-500 w-10 text-right tabular-nums">{scores[k] ?? '—'}%</span>
+          </div>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
+function ReadinessTab({ a, readiness, navigate, setTab }) {
+  const [view, setView] = useState('ats')
+  const hasReal = readiness && !readiness.no_data && readiness.jobs_scored > 0
+  return (
+    <div>
+      {hasReal ? (
+        <RealReadiness readiness={readiness} view={view} setView={setView} setTab={setTab} />
+      ) : (
+        <>
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-4 text-sm text-amber-800">
+            ⚡ Real-time readiness not yet computed. Run the backfill to see ATS + Pursuit readiness from your actual job scores.
+            <button onClick={() => navigate('/settings')} className="block mt-2 text-amber-700 font-medium hover:underline">Go to Settings → Backfill →</button>
+            <p className="text-[11px] text-amber-600 mt-2">In the meantime, showing the Claude estimate below.</p>
+          </div>
+          <ClaudeReadiness a={a} />
+        </>
+      )}
 
       {a.top_action && (
         <Section title="Top action">
