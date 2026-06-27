@@ -242,7 +242,26 @@ export default function ScoringSettings() {
             </label>
           ))}
         </div>
-        <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+        {/* Scanner dual scoring — auto-compute ATS + Pursuit on each scan */}
+        <div className="border-t border-gray-100 pt-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm text-gray-800">Auto-compute ATS + Pursuit on each scan</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                When on, new jobs from weekly scans and Gmail alerts get ATS + Pursuit scores automatically
+                — adds <strong>~₹0.09 per saved job</strong> (~₹1.80 for a typical 20-job scan). When off, use
+                the button below to score jobs manually after a scan.
+              </p>
+            </div>
+            <button
+              type="button" role="switch" aria-checked={!!p.auto_dual_score_on_scan}
+              onClick={() => savePref({ auto_dual_score_on_scan: !(p.auto_dual_score_on_scan ?? false) })}
+              className={`shrink-0 mt-0.5 w-10 h-6 rounded-full transition-colors relative ${p.auto_dual_score_on_scan ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${p.auto_dual_score_on_scan ? 'translate-x-4' : ''}`} />
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center justify-between border-t border-gray-100 pt-3 mt-3">
           <p className="text-[11px] text-gray-400">Existing jobs have no ATS/Pursuit scores until computed (~₹0.15/job).</p>
           <Button size="sm" variant="secondary" loading={backfilling} onClick={runBackfill}>Compute scores for existing jobs</Button>
         </div>
