@@ -68,8 +68,17 @@ JOB DESCRIPTION:
 </job_description>
 
 Score each component strictly and mechanically.
-Dealbreaker: if the JD has hard requirements the CV clearly fails (e.g. "must speak Dutch
-fluently" and the CV has no Dutch) → cap the total at 40 and set dealbreaker_applied=true.
+
+DEALBREAKER (apply VERY conservatively — only for EXPLICIT hard requirements):
+Cap the total at 40 and set dealbreaker_applied=true ONLY when the JD states a requirement
+the CV clearly fails using mandatory language — "must", "must have", "required", "essential",
+"mandatory", "only candidates with", "you have" / "you will need". Example: "Must speak Dutch
+fluently" and the CV has no Dutch.
+DO NOT apply the cap for soft/optional wording — "preferred", "nice to have", "ideally", "a
+plus", "bonus", "desirable", "would be great". A missing *preferred* qualification just lowers
+the relevant component score; it is NOT a dealbreaker.
+If the requirement's strength is ambiguous, treat it as PREFERRED (do not cap). Quote the exact
+JD phrase in required_skills.dealbreaker when you do apply the cap.
 
 Return JSON:
 {{
