@@ -84,7 +84,7 @@ Return ONLY the JSON object, no markdown, no preamble."""
 
     response = client.messages.create(
         model=model or settings.anthropic_model,
-        max_tokens=1200,
+        max_tokens=2200,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_prompt}],
     )

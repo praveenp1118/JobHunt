@@ -102,7 +102,7 @@ Return JSON:
         try:
             response = await asyncio.to_thread(
                 client.messages.create,
-                model=model, max_tokens=800, system=ATS_SYSTEM_PROMPT,
+                model=model, max_tokens=1500, system=ATS_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": msg}],
             )
             await log_call("compute_ats_score", "scoring", response, model)

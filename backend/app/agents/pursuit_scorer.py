@@ -89,7 +89,7 @@ max 25, achievability max 20, effort_reward max 15). Return JSON:
         try:
             response = await asyncio.to_thread(
                 client.messages.create,
-                model=model, max_tokens=1000, system=PURSUIT_SYSTEM_PROMPT,
+                model=model, max_tokens=2000, system=PURSUIT_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": msg}],
             )
             await log_call("compute_pursuit_score", "scoring", response, model)
