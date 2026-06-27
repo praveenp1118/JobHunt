@@ -1133,9 +1133,13 @@ column (DualRingPill + header toggle + tooltip, default view loaded from prefs),
 (avg Pursuit/ATS + apply-now + insight), **Job Detail** Scores tab (lg pill + Master/Domain/Tailored entity
 tabs + 5 ATS / 4 Pursuit component bars + top strength/gap + recommendation, from `GET /jobs/{id}/scores`),
 **Feed Performance** quality-bar ATS/Pursuit toggle, **Career Insights** banner (avg ATS/Pursuit for the
-filtered set). **Filter integration:** `GET /jobs` `score_field` (s1 | ats_master | pursuit_master |
-combined) + sort_map entries (ats_master/pursuit_master/combined) — Tracker score pills + Match-header sort
-follow the active toggle; `/feeds/performance` returns `avg_ats_master`/`avg_pursuit_master`; `/jobs/stats`
+filtered set). **Filter integration:** `GET /jobs` `score_field` accepts **`{ats|pursuit|combined}_{master|domain|tailored}`**
+(+ legacy `s1`) resolved by a shared `_score_expr` helper used by **both** the score filter and the sort, so
+both follow the active CV entity. The Tracker pill, score-filter pills, and Match-header sort use **domain**
+scores when a Domain filter is active (`scoreField` = `ats_domain` etc; pill falls back to master + a "Master*"
+label when a job has no domain score), else **master**; sublabel shows "Pursuit · Domain". Tracker score pills
++ Match-header sort follow the active ATS/Pursuit/Combined toggle (the toggle's saved default is applied **once**
+on load via a `useRef` guard — a prefs refetch no longer snaps it back); `/feeds/performance` returns `avg_ats_master`/`avg_pursuit_master`; `/jobs/stats`
 averages already scope to the dashboard filter. **Scanner gate:** `UserPreferences.auto_dual_score_on_scan`
 (default **False**) — when on, the scanner computes master + (best-)domain dual scores for saved jobs.
 **Retry/fallback:** both scorers retry once on malformed JSON, else default 50/50 with `error_flag`.

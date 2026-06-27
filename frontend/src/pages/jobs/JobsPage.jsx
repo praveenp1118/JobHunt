@@ -111,8 +111,11 @@ export default function JobsPage() {
     else patchSp({ sort: null })  // asc → desc → unsorted (default Added DESC)
   }
 
-  // The score field the toggle is currently filtering/sorting on.
-  const scoreField = scoreView === 'ats' ? 'ats_master' : scoreView === 'combined' ? 'combined' : 'pursuit_master'
+  // The score field the toggle is filtering/sorting on — follows the active CV entity
+  // (domain scores when a Domain filter is selected, else master).
+  const scoreEntity = domainFilter ? 'domain' : 'master'
+  const scoreField = scoreView === 'ats' ? `ats_${scoreEntity}`
+    : scoreView === 'combined' ? `combined_${scoreEntity}` : `pursuit_${scoreEntity}`
 
   // Server-side pagination: fetch one page; filters/sort are also server-side so counts stay accurate.
   const filterKey = `${statusFilter}|${sourceFilter}|${scoreFilter}|${domainFilter}|${needsHitl}|${hidePartial}|${search}|${sortKey}:${sortDir}|${scoreView}`
@@ -276,7 +279,7 @@ export default function JobsPage() {
               ))}
               {scoreFilter && (
                 <span className="text-[10px] text-gray-400 ml-1">
-                  {scoreView === 'ats' ? 'ATS' : scoreView === 'combined' ? 'Combined' : 'Pursuit'}
+                  {scoreView === 'ats' ? 'ATS' : scoreView === 'combined' ? 'Combined' : 'Pursuit'}{domainFilter ? ' · Domain' : ''}
                 </span>
               )}
             </FilterGroup>

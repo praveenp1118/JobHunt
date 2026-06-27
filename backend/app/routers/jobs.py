@@ -338,6 +338,35 @@ async def list_jobs(
     surface at the top when sorting by Best Fit)."""
     from sqlalchemy import func, nullslast
 
+    # Map an ATS/Pursuit score_field (e.g. "ats_domain", "combined_tailored") to a SQL
+    # expression. Used by both the score filter and the sort so they follow the active
+    # entity (master / domain / tailored). Falls back to the legacy s1d/s1 fit for "s1".
+    _SCORE_COLS = {
+        "master": (Job.ats_master, Job.pursuit_master),
+        "domain": (Job.ats_domain, Job.pursuit_domain),
+        "tailored": (Job.ats_tailored, Job.pursuit_tailored),
+    }
+
+    def _score_expr(field):
+        if field in (None, "", "s1"):
+            return func.coalesce(Job.s1d, Job.s1)
+        if field == "combined":
+            field = "combined_master"
+        if "_" not in field:
+            return None
+        metric, entity = field.rsplit("_", 1)
+        cols = _SCORE_COLS.get(entity)
+        if not cols:
+            return None
+        ats_c, pur_c = cols
+        if metric == "ats":
+            return ats_c
+        if metric == "pursuit":
+            return pur_c
+        if metric == "combined":
+            return func.coalesce(ats_c, 0) * 0.4 + func.coalesce(pur_c, 0) * 0.6
+        return None
+
     filters = [Job.user_id == user.id]
     if status_filter:
         filters.append(Job.status.in_(status_filter))
@@ -350,16 +379,8 @@ async def list_jobs(
     if min_s1 is not None:
         filters.append(Job.s1 >= min_s1)
     if score is not None:
-        if score_field == "ats_master":
-            filters.append(Job.ats_master >= score)
-        elif score_field == "pursuit_master":
-            filters.append(Job.pursuit_master >= score)
-        elif score_field == "combined":
-            filters.append(
-                func.coalesce(Job.ats_master, 0) * 0.4 + func.coalesce(Job.pursuit_master, 0) * 0.6 >= score)
-        else:
-            # default/legacy: best domain fit when present, else base fit
-            filters.append(func.coalesce(Job.s1d, Job.s1) >= score)
+        _expr = _score_expr(score_field)
+        filters.append((_expr if _expr is not None else func.coalesce(Job.s1d, Job.s1)) >= score)
     if domain:
         try:
             filters.append(Job.best_domain_cv_id == uuid.UUID(domain))
@@ -393,9 +414,6 @@ async def list_jobs(
     sort_map = {
         "best_fit": Job.s1d,                 # Best Fit column = best domain-CV score
         "s1": Job.s1,
-        "ats_master": Job.ats_master,
-        "pursuit_master": Job.pursuit_master,
-        "combined": func.coalesce(Job.ats_master, 0) * 0.4 + func.coalesce(Job.pursuit_master, 0) * 0.6,
         "company": func.lower(Job.company),
         "role": func.lower(Job.role),
         "market": Job.market,
@@ -403,11 +421,18 @@ async def list_jobs(
         "source": Job.source,
         "created_at": Job.created_at,
     }
-    sort_key = sort if sort in sort_map else "created_at"
-    col = sort_map[sort_key]
+    # ATS/Pursuit/Combined sorts (any entity) resolve via _score_expr.
+    _score_sort = _score_expr(sort) if (sort and sort not in sort_map and sort != "created_at") else None
+    if sort in sort_map:
+        sort_key, col = sort, sort_map[sort]
+    elif _score_sort is not None:
+        sort_key, col = sort, _score_sort
+    else:
+        sort_key, col = "created_at", Job.created_at
     primary = col.asc() if order.lower() == "asc" else col.desc()
-    if sort_key in ("best_fit", "s1", "ats_master", "pursuit_master"):
-        primary = nullslast(primary)         # unscored jobs always sink to the bottom
+    # NULL scores sink to the bottom (combined uses coalesce → 0, naturally last on desc).
+    if sort_key in ("best_fit", "s1") or sort_key.startswith(("ats_", "pursuit_")):
+        primary = nullslast(primary)
     order_clauses = [primary]
     if sort_key != "created_at":
         order_clauses.append(Job.created_at.desc())  # stable tiebreaker (same score → newest first)
