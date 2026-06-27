@@ -1130,7 +1130,15 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 27, 2026 — **Career Readiness from real scores**: the Career Insights **Readiness tab**
+*Last updated: June 27, 2026 — **Jobs Tracker migrated off the old RAG fit columns to ATS + Pursuit dual
+pills.** Removed the **B** (s1) column entirely — the **Match** dual-ring pill (master ATS/Pursuit) replaces
+it. **Best Fit** is now a **domain** ATS/Pursuit dual pill (`ats_domain`/`pursuit_domain`) + the domain-CV
+label (was the old s1d number/popover); **T** became **Tailored** (`ats_tailored`/`pursuit_tailored` dual
+pill, "—" until tailored). **F** (factual-integrity send-gate) is kept — it's a distinct metric ATS/Pursuit
+don't replace. A single ATS/Pursuit/Combined toggle in the Match header drives the view for all three dual
+pills; each pill's tooltip pulls `score_components.{master|domain|tailored}`. (B=s1 was the old single base-fit
+score; it's superseded by master ATS [will it pass screening] + Pursuit [should you pursue]. Filter/sort still
+support all entities via `_score_expr`.) **Career Readiness from real scores**: the Career Insights **Readiness tab**
 now aggregates **real ATS + Pursuit component scores** from `jobs.score_components` instead of a Claude
 estimate — instant, free, always current, over ALL scored jobs. New **`GET /api/career/readiness-scores`**
 (filter-aware: source/feed_id/domain_cv_id/market) Python-aggregates the master entity's components,

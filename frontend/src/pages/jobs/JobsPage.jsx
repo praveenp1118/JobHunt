@@ -54,11 +54,10 @@ const COLUMNS = [
   { label: 'Company', key: 'company' },
   { label: 'Role', key: 'role' },
   { label: 'Market', key: 'market' },
-  { label: 'Match', key: null, dual: true },
-  { label: 'B', key: 's1' },
-  { label: 'Best Fit', key: 'best_fit' },
-  { label: 'T', key: null },
-  { label: 'F', key: null },
+  { label: 'Match', key: null, dual: true },   // master ATS / Pursuit
+  { label: 'Best Fit', key: null },            // domain ATS / Pursuit
+  { label: 'Tailored', key: null },            // tailored ATS / Pursuit
+  { label: 'F', key: null },                   // factual integrity (send-gate)
   { label: 'Status', key: 'status' },
   { label: 'Source', key: 'source' },
   { label: 'Added', key: 'created_at' },
@@ -409,43 +408,33 @@ export default function JobsPage() {
                     <td className="px-4 py-3">
                       {job.market ? <MarketBadge market={job.market} /> : <span className="text-gray-300 text-xs">—</span>}
                     </td>
-                    <td className="px-4 py-3">
-                      {(() => {
-                        // Domain filter active → show domain scores (fall back to master if not yet scored).
-                        const useDomain = !!domainFilter && job.ats_domain != null
-                        const entity = useDomain ? 'domain' : 'master'
-                        const ats = useDomain ? job.ats_domain : job.ats_master
-                        const pursuit = useDomain ? job.pursuit_domain : job.pursuit_master
-                        const label = domainFilter ? (useDomain ? 'Domain' : 'Master*') : null
-                        return (
-                          <DualRingPill atsScore={ats} pursuitScore={pursuit}
-                            defaultView={scoreView} size="md" scoreLabel={label}
-                            tooltipData={{ company: job.company, role: job.role,
-                              topGap: job.score_components?.[entity]?.ats?.top_gap,
-                              recommendation: job.score_components?.[entity]?.pursuit?.recommendation }} />
-                        )
-                      })()}
-                    </td>
+                    {/* Match — master ATS / Pursuit */}
                     <td className="px-4 py-3">
                       {job.scoring_status === 'pending' ? (
                         <span className="text-amber-500 text-base" title="Score pending — will be computed at 2:00 AM IST, or click the job → Score now">⏳</span>
                       ) : (
-                        <div className="flex flex-col items-center gap-1"
-                          title={job.has_partial_jd ? 'Score unavailable — LinkedIn requires login. Click View → to read the job description.' : undefined}>
-                          <ScorePill score={job.s1} />
-                          {job.s1_tokens != null && <TokenBadge tokens={job.s1_tokens} cost_inr={job.s1_cost_inr} />}
-                        </div>
+                        <DualRingPill atsScore={job.ats_master} pursuitScore={job.pursuit_master}
+                          defaultView={scoreView} size="md"
+                          tooltipData={{ company: job.company, role: job.role,
+                            topGap: job.score_components?.master?.ats?.top_gap,
+                            recommendation: job.score_components?.master?.pursuit?.recommendation }} />
                       )}
                     </td>
-                    <td className="px-4 py-3"
-                      title={job.has_partial_jd ? 'Score unavailable — LinkedIn requires login. Click View → to read the job description.' : undefined}>
-                      {job.scoring_status === 'pending'
-                        ? <span className="text-[11px] text-amber-500">⏳ pending</span>
-                        : <BestFitCell job={job} />}
-                    </td>
+                    {/* Best Fit — domain ATS / Pursuit + domain CV label */}
                     <td className="px-4 py-3">
-                      <ScorePill score={job.s2} />
+                      <BestFitDualCell job={job} view={scoreView} />
                     </td>
+                    {/* Tailored — ATS / Pursuit of the tailored CV (— until tailored) */}
+                    <td className="px-4 py-3">
+                      {(job.ats_tailored != null || job.pursuit_tailored != null) ? (
+                        <DualRingPill atsScore={job.ats_tailored} pursuitScore={job.pursuit_tailored}
+                          defaultView={scoreView} size="md"
+                          tooltipData={{ company: job.company, role: job.role,
+                            topGap: job.score_components?.tailored?.ats?.top_gap,
+                            recommendation: job.score_components?.tailored?.pursuit?.recommendation }} />
+                      ) : <span className="text-gray-300 text-xs">—</span>}
+                    </td>
+                    {/* F — factual integrity (send-gate) */}
                     <td className="px-4 py-3">
                       <ScorePill score={job.s3_master} type="s3" />
                     </td>
@@ -568,6 +557,23 @@ function scoreColor(score) {
 }
 
 // "Best Fit" cell — best domain CV label + score, expandable to all domain CV scores.
+// Domain ATS / Pursuit dual pill + the best-domain-CV label (replaces the old s1d Best Fit).
+function BestFitDualCell({ job, view }) {
+  if (job.ats_domain == null && job.pursuit_domain == null) return <span className="text-gray-300 text-xs">—</span>
+  const labels = job.domain_cv_labels || {}
+  const bestId = job.best_domain_cv_id ? String(job.best_domain_cv_id) : null
+  const label = (bestId && labels[bestId]) || 'Domain'
+  return (
+    <div className="flex items-center gap-2">
+      <DualRingPill atsScore={job.ats_domain} pursuitScore={job.pursuit_domain} defaultView={view} size="md"
+        tooltipData={{ company: job.company, role: job.role,
+          topGap: job.score_components?.domain?.ats?.top_gap,
+          recommendation: job.score_components?.domain?.pursuit?.recommendation }} />
+      <span className="text-[11px] text-gray-500 truncate max-w-[80px]" title={label}>{label}</span>
+    </div>
+  )
+}
+
 function BestFitCell({ job }) {
   const [open, setOpen] = useState(false)
   const scores = job.domain_cv_scores || {}
