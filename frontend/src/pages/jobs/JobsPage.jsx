@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
@@ -76,9 +76,15 @@ export default function JobsPage() {
   const [page, setPage] = useState(1)
   const [scoreView, setScoreView] = useState('pursuit')  // ats | pursuit | combined (default from prefs)
   const { data: prefsData } = useQuery({ queryKey: ['preferences'], queryFn: getPreferences })
+  // Apply the saved default ONCE on first load — never override the user's manual toggle
+  // (prefs refetch on window-focus would otherwise keep snapping the toggle back).
+  const scoreViewInit = useRef(false)
   useEffect(() => {
     const v = prefsData?.data?.default_score_view
-    if (v) setScoreView(v)
+    if (v && !scoreViewInit.current) {
+      setScoreView(v)
+      scoreViewInit.current = true
+    }
   }, [prefsData])
 
   // Filter + sort state lives in the URL so views are shareable/bookmarkable.
