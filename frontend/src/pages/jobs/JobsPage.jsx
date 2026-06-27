@@ -407,11 +407,21 @@ export default function JobsPage() {
                       {job.market ? <MarketBadge market={job.market} /> : <span className="text-gray-300 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <DualRingPill atsScore={job.ats_master} pursuitScore={job.pursuit_master}
-                        defaultView={scoreView} size="md"
-                        tooltipData={{ company: job.company, role: job.role,
-                          topGap: job.score_components?.master?.ats?.top_gap,
-                          recommendation: job.score_components?.master?.pursuit?.recommendation }} />
+                      {(() => {
+                        // Domain filter active → show domain scores (fall back to master if not yet scored).
+                        const useDomain = !!domainFilter && job.ats_domain != null
+                        const entity = useDomain ? 'domain' : 'master'
+                        const ats = useDomain ? job.ats_domain : job.ats_master
+                        const pursuit = useDomain ? job.pursuit_domain : job.pursuit_master
+                        const label = domainFilter ? (useDomain ? 'Domain' : 'Master*') : null
+                        return (
+                          <DualRingPill atsScore={ats} pursuitScore={pursuit}
+                            defaultView={scoreView} size="md" scoreLabel={label}
+                            tooltipData={{ company: job.company, role: job.role,
+                              topGap: job.score_components?.[entity]?.ats?.top_gap,
+                              recommendation: job.score_components?.[entity]?.pursuit?.recommendation }} />
+                        )
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       {job.scoring_status === 'pending' ? (

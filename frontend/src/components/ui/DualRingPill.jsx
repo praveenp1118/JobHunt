@@ -44,7 +44,7 @@ function Arc({ cx, cy, r, score, color, track, sw }) {
  */
 export default function DualRingPill({
   atsScore = null, pursuitScore = null, defaultView = 'pursuit',
-  size = 'md', showTooltip = true, tooltipData = null, style,
+  size = 'md', showTooltip = true, tooltipData = null, scoreLabel = null, style,
 }) {
   const [hover, setHover] = useState(false)
   const px = SIZES[size] || SIZES.md
@@ -59,7 +59,7 @@ export default function DualRingPill({
   const numColor = shown == null ? '#94a3b8' : '#0f172a'
 
   return (
-    <span className="relative inline-flex" style={style}
+    <span className="relative inline-flex flex-col items-center" style={style}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <svg width={px} height={px} viewBox={`0 0 ${px} ${px}`} className="block">
         <Arc cx={c} cy={c} r={outerR} score={atsScore} color={ringColor(atsScore)} track={trackColor(atsScore)} sw={3} />
@@ -70,6 +70,7 @@ export default function DualRingPill({
           {shown == null ? '—' : Math.round(shown)}
         </text>
       </svg>
+      {scoreLabel && <span className="text-[9px] text-gray-400 leading-none mt-0.5 whitespace-nowrap">{scoreLabel}</span>}
       {showTooltip && hover && tooltipData && (
         <ScoreTooltip {...tooltipData} ats={atsScore} pursuit={pursuitScore} />
       )}
