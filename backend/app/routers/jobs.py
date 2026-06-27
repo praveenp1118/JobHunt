@@ -414,6 +414,7 @@ async def list_jobs(
     sort_map = {
         "best_fit": Job.s1d,                 # Best Fit column = best domain-CV score
         "s1": Job.s1,
+        "s3": Job.s3_master,                 # F column = factual-integrity score
         "company": func.lower(Job.company),
         "role": func.lower(Job.role),
         "market": Job.market,
@@ -431,7 +432,7 @@ async def list_jobs(
         sort_key, col = "created_at", Job.created_at
     primary = col.asc() if order.lower() == "asc" else col.desc()
     # NULL scores sink to the bottom (combined uses coalesce → 0, naturally last on desc).
-    if sort_key in ("best_fit", "s1") or sort_key.startswith(("ats_", "pursuit_")):
+    if sort_key in ("best_fit", "s1", "s3") or sort_key.startswith(("ats_", "pursuit_")):
         primary = nullslast(primary)
     order_clauses = [primary]
     if sort_key != "created_at":

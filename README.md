@@ -35,6 +35,12 @@ scraping (Apify) API keys.
   inject keywords, deselect — never invent), gated by a factual-integrity score before sending.
 - **Multi-domain scoring** — every job is scored against the master CV **and all** active domain
   CVs; the best-fit domain surfaces automatically and pre-selects when you tailor.
+- **ATS + Pursuit dual scoring** — beyond fit, every job gets two judgement scores per CV entity
+  (master / domain / tailored): an **ATS** score (simulated automated screening — keyword/skills/experience/
+  seniority/education, with a hard-requirement dealbreaker cap) and a **Pursuit** score (should you pursue it?
+  — human appeal, career-move quality, achievability, timing). Shown as a dual-ring pill (ATS outer, Pursuit
+  inner) across the Tracker, Tailor page, Job detail, Dashboard, and Career Insights, with an ATS/Pursuit/
+  Combined toggle. Career **Readiness** aggregates these real scores (no AI call) into a live dual radar.
 - **Hybrid-RAG scoring pipeline** — a 3-stage funnel cuts scoring cost ~**82%** with no quality loss on
   saved jobs: Stage 1 keyword pre-filter (free) → Stage 2 essence scoring (Haiku) → Stage 3 full-CV scoring
   (Sonnet, borderline jobs only). The CV "essence" is extracted once and cached. Three presets (Maximum
@@ -109,6 +115,9 @@ scraping (Apify) API keys.
 | **S1d** | Contextual fit — JD vs **best-matching domain CV** (scored against all, highest wins) | At ingest |
 | **S2** | Tailored fit — JD vs the **tailored CV** | After applying tailor changes |
 | **S3** | **Factual integrity** — % of the tailored CV traceable to the master CV | After applying — hard send-gate (≥90 green · 85–89 amber · <85 blocked) |
+
+Plus a complementary **dual-judgement** layer per CV entity: **ATS** (will it pass automated screening?) and
+**Pursuit** (should you pursue it?), each 0–100 with a component breakdown — surfaced as a dual-ring pill.
 
 ## Architecture
 
@@ -202,8 +211,9 @@ docker-compose exec backend pytest tests/ -v
 ```
 
 The suite runs **in-container against the live uvicorn server** over real HTTP against the real
-Postgres DB — **114 smoke tests** covering the API, scanner, Gmail alert parser, multi-domain scoring,
-the hybrid-RAG pipeline, tiered-model optimization, billing, governance, templates, and more.
+Postgres DB — **136 smoke tests** covering the API, scanner, Gmail alert parser, multi-domain scoring,
+the hybrid-RAG pipeline, tiered-model optimization, ATS + Pursuit dual scoring, career readiness, billing,
+governance, templates, and more.
 
 ## Documentation
 
@@ -218,7 +228,8 @@ multi-domain scoring, the **hybrid-RAG scoring pipeline** + tiered-model cost op
 Gmail alert parsing, **Email-to-JobHunt**, auto-detected applications, the activity dashboard, Career
 Insights, API usage visibility, support chat, community insights, Stripe subscriptions, CV templates, and a
 security-first governance layer (rate limiting, prompt-injection hardening, audit logs, GDPR export/erasure)
-with static legal pages + registration consent. **114 smoke tests passing.**
+with static legal pages + registration consent, and an **ATS + Pursuit dual-scoring** layer with a real-data
+career-readiness radar. **136 smoke tests passing.**
 
 ## License
 

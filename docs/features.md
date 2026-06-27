@@ -9,9 +9,10 @@ The central pipeline for every opportunity.
 - **Status lifecycle:** `new → bookmarked → applied → screening → interview (r1/r2) →
   offer received → accepted / declined`, plus `rejected`, `ghosted`, `withdrawn`,
   `not interested`.
-- **Scoring at a glance:** each job row shows **B** (S1, base fit), **Best Fit** (S1d, best
-  domain CV with an expandable popover of all domain scores), **T** (S2, tailored fit) and
-  **F** (S3, integrity).
+- **Scoring at a glance:** each job row shows a **dual-ring ATS/Pursuit pill** per CV entity —
+  **Match** (master), **Best Fit** (best domain CV + label), **Tailored** — plus **F** (S3 factual
+  integrity, the send-gate). One **ATS / Pursuit / Combined** toggle in the filter bar drives all the
+  pills at once; every score column is click-to-sort.
 - **Filtering & sorting:** clickable column sort plus combinable Source / Score / Domain
   filters, all persisted in the URL so a view can be shared or bookmarked.
 - **Partial-JD awareness:** jobs extracted from alert-email snippets are flagged so you open the
@@ -78,6 +79,24 @@ JobHunt scores a high volume of jobs, so every Claude call uses the cheapest mod
 - **Tiered models everywhere** — email classification is rules-first (free) then **Haiku**; JD highlights run
   on Haiku and are **cached per job**; feed-keyword generation and CV→markdown use Haiku; Career Insights runs
   on the CV essence. The **API Usage** tab shows the model tier (Haiku / Sonnet / Opus) and ₹ cost per call.
+
+## ATS + Pursuit Dual Scoring
+
+Beyond fit, each job is judged on two axes per CV entity (master / domain / tailored):
+
+- **ATS score (0–100)** — simulates an automated screening pass: keyword density, required skills,
+  experience years, seniority alignment, and education, with a **hard-requirement dealbreaker** cap (only
+  for mandatory language like "must"/"required", never "preferred").
+- **Pursuit score (0–100)** — a recruiter's judgement of whether you should pursue it: human appeal,
+  career-move quality, achievability (competition), and timing — plus a recommendation
+  (*Apply now / Get referral / Review first / Skip*).
+- **Dual-ring pill** — ATS as the outer ring, Pursuit the inner, with a centre number that follows the
+  **ATS / Pursuit / Combined** toggle. Surfaced in the Tracker, the Tailor page (Master → Domain → Tailored
+  with deltas), Job detail (full component breakdown), the Dashboard, and Career Insights.
+- **Career Readiness from real data** — the Readiness tab aggregates these actual component scores across all
+  your scored jobs into a **live dual radar** (ATS 5-axis / Pursuit 4-axis) — instant, free, always current,
+  and filter-aware — instead of a one-off AI estimate. Both scorers run on Haiku (~₹0.15/job); existing jobs
+  are scored via an opt-in backfill, and new scanned jobs optionally via a per-scan toggle.
 
 ## Gmail Integration
 

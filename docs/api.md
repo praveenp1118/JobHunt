@@ -29,8 +29,9 @@ implementation spec.
 
 | Method & path | Purpose |
 |---|---|
-| `GET /` | List jobs (status / source / score / domain filters, search) |
-| `GET /stats` | Pipeline counts + analytics (by domain CV, score, source) |
+| `GET /` | List jobs (status / source / domain filters, search; `score`+`score_field` = ATS/Pursuit/Combined per entity; `sort` by any score field) |
+| `GET /stats` | Pipeline counts + analytics (by domain CV, score, source; avg ATS/Pursuit + apply-now/referral/skip buckets) |
+| `GET /{id}/scores`, `POST /backfill-scores` | Full ATS+Pursuit breakdown per entity; opt-in backfill (returns cost estimate) |
 | `POST /parse/text`, `POST /parse/url` | Ingest a job (tiered RAG: Haiku-essence → Sonnet if borderline) |
 | `GET /{id}`, `PATCH /{id}/status` | Job detail + status updates |
 | `GET /{id}/emails` | Recruiter email thread for a job |
@@ -84,6 +85,7 @@ implementation spec.
 
 | Method & path | Purpose |
 |---|---|
+| `GET /readiness-scores` | Real aggregated ATS + Pursuit readiness (no AI call) — filter-aware dual-radar data |
 | `GET /analysis` | Cached gap analysis (or `available: false`) — never auto-charges |
 | `POST /analyse` | Run a fresh batch analysis (subscription-gated; returns tokens + cost) |
 | `GET/POST /questions` | The 5 sharpening questions |

@@ -54,10 +54,10 @@ const COLUMNS = [
   { label: 'Company', key: 'company' },
   { label: 'Role', key: 'role' },
   { label: 'Market', key: 'market' },
-  { label: 'Match', key: null, dual: true },   // master ATS / Pursuit
-  { label: 'Best Fit', key: null },            // domain ATS / Pursuit
-  { label: 'Tailored', key: null },            // tailored ATS / Pursuit
-  { label: 'F', key: null },                   // factual integrity (send-gate)
+  { label: 'Match', sortEntity: 'master' },    // master ATS / Pursuit (sorts on active toggle)
+  { label: 'Best Fit', sortEntity: 'domain' }, // domain ATS / Pursuit
+  { label: 'Tailored', sortEntity: 'tailored' }, // tailored ATS / Pursuit
+  { label: 'F', key: 's3' },                   // factual integrity (send-gate)
   { label: 'Status', key: 'status' },
   { label: 'Source', key: 'source' },
   { label: 'Added', key: 'created_at' },
@@ -110,11 +110,12 @@ export default function JobsPage() {
     else patchSp({ sort: null })  // asc → desc → unsorted (default Added DESC)
   }
 
-  // The score field the toggle is filtering/sorting on — follows the active CV entity
-  // (domain scores when a Domain filter is selected, else master).
+  // Build the {metric}_{entity} score field for the active ATS/Pursuit/Combined view.
+  const fieldFor = (entity) => scoreView === 'ats' ? `ats_${entity}`
+    : scoreView === 'combined' ? `combined_${entity}` : `pursuit_${entity}`
+  // The score-filter pills follow the active CV entity (domain when a Domain filter is selected, else master).
   const scoreEntity = domainFilter ? 'domain' : 'master'
-  const scoreField = scoreView === 'ats' ? `ats_${scoreEntity}`
-    : scoreView === 'combined' ? `combined_${scoreEntity}` : `pursuit_${scoreEntity}`
+  const scoreField = fieldFor(scoreEntity)
 
   // Server-side pagination: fetch one page; filters/sort are also server-side so counts stay accurate.
   const filterKey = `${statusFilter}|${sourceFilter}|${scoreFilter}|${domainFilter}|${needsHitl}|${hidePartial}|${search}|${sortKey}:${sortDir}|${scoreView}`
@@ -282,6 +283,9 @@ export default function JobsPage() {
                 </span>
               )}
             </FilterGroup>
+            <FilterGroup label="View">
+              <ScoreToggle value={scoreView} onChange={setScoreView} size="sm" />
+            </FilterGroup>
           </div>
 
           {/* Row 2: Domain dropdown + Partial-JD toggle (kept on one line) */}
@@ -348,16 +352,13 @@ export default function JobsPage() {
                 <tr>
                   {COLUMNS.map((col) => (
                     <th key={col.label || 'tailor'} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
-                      {col.dual ? (
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => toggleSort(scoreField)}
-                            className="flex items-center gap-1 hover:text-gray-700"
-                            title="ATS (automated screening) outer ring · Pursuit (should you pursue?) inner ring · click to sort">
-                            Match
-                            {sortKey === scoreField && <span className="text-emerald-600">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-                          </button>
-                          <ScoreToggle value={scoreView} onChange={setScoreView} size="sm" />
-                        </div>
+                      {col.sortEntity ? (
+                        <button onClick={() => toggleSort(fieldFor(col.sortEntity))}
+                          className="flex items-center gap-1 hover:text-gray-700 transition-colors"
+                          title="ATS (automated screening) outer ring · Pursuit (should you pursue?) inner ring · click to sort">
+                          {col.label}
+                          {sortKey === fieldFor(col.sortEntity) && <span className="text-emerald-600">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+                        </button>
                       ) : col.key ? (
                         <button
                           onClick={() => toggleSort(col.key)}

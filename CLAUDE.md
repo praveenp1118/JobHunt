@@ -1130,7 +1130,13 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 27, 2026 — **Jobs Tracker migrated off the old RAG fit columns to ATS + Pursuit dual
+*Last updated: June 27, 2026 — **Tracker score toggle moved to the filter bar + all score columns sortable.**
+The ATS/Pursuit/Combined toggle now lives in the filter bar ("View" group, beside Domain/Partial) and drives
+**all** dual pills at once (Match/master, Best Fit/domain, Tailored) — freeing the Match header. Every score
+column is now clickable-to-sort: **Match** → `{metric}_master`, **Best Fit** → `{metric}_domain`, **Tailored**
+→ `{metric}_tailored` (metric = the active toggle), **F** → `s3` (added to the sort_map + nullslast). All
+resolve via the backend `_score_expr`/sort_map (verified: pursuit_domain/ats_domain/combined_domain/
+pursuit_tailored/s3 sorts all 200). **Jobs Tracker migrated off the old RAG fit columns to ATS + Pursuit dual
 pills.** Removed the **B** (s1) column entirely — the **Match** dual-ring pill (master ATS/Pursuit) replaces
 it. **Best Fit** is now a **domain** ATS/Pursuit dual pill (`ats_domain`/`pursuit_domain`) + the domain-CV
 label (was the old s1d number/popover); **T** became **Tailored** (`ats_tailored`/`pursuit_tailored` dual
