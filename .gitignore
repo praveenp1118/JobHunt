@@ -50,8 +50,10 @@ Thumbs.db
 *.key
 *.cert
 
-# Claude Code — local session, memory, and settings data
-.claude/
+# Claude Code — ignore local session/settings data, but track shared rules + commands
+.claude/*
+!.claude/rules/
+!.claude/commands/
 
 # Personal config workbook (job-search strategy / target companies — not source)
 # Remove this line if you want it tracked in the (private) repo.
