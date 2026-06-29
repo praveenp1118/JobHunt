@@ -388,7 +388,7 @@ in `run_log.details`, surfaced on the Activity → System scanner cards.
 | PDF | Playwright HTML template → PDF |
 | Payments | Stripe (JobHunt Pro subscription) |
 | Real-time | WebSockets (support chat) |
-| Storage | Local filesystem (S3 migration planned) |
+| Storage | Local filesystem, user-scoped (`users/{user_id}/tailored\|cover_letters\|exports/`); S3 migration planned |
 | Testing | pytest + pytest-asyncio (in-container, live-server smoke tests) |
 
 ---

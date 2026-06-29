@@ -199,7 +199,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
 | Job scanning | RSS feeds + Apify actors |
 | PDF | Playwright → HTML template → PDF |
 | Payments | **Stripe** — JobHunt Pro subscription ₹500/mo (Razorpay wallet code present but unused) |
-| Storage | Local /app/storage/ (S3 migration in V3) |
+| Storage | Local /app/storage/, user-scoped (`users/{user_id}/tailored|cover_letters|exports/`); S3 migration planned |
 | Testing | pytest + pytest-asyncio (API smoke tests, run in-container against live server) |
 
 ---
@@ -252,7 +252,7 @@ D:\JobHunt\
 │   │   ├── utils/
 │   │   │   ├── pdf_generator.py     # Playwright CV + CL PDF generation
 │   │   │   ├── encryption.py        # AES-256 for API keys
-│   │   │   ├── storage.py           # local file storage helpers
+│   │   │   ├── storage.py           # local file storage helpers (user-scoped: users/{user_id}/{tailored|cover_letters|exports}/; readable PDF names {user8}_{job8}_{Company}_{cv|cl}.pdf)
 │   │   │   ├── subscription.py      # V3: require_active_subscription gate (402; admin bypass)
 │   │   │   └── model.py             # V2: get_user_model() helper
 │   │   ├── auth/            # FastAPI-Users config
@@ -1151,7 +1151,17 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 27, 2026 — **Tracker score toggle moved to the filter bar + all score columns sortable.**
+*Last updated: June 29, 2026 — **Storage refactor + Claude Code config + infra cleanup.** PDFs now save to a
+**user-scoped layout** — `users/{user_id}/tailored/` (CV) and `users/{user_id}/cover_letters/` (CL), with
+readable storage names `{user8}_{job8}_{Company}_{cv|cl}.pdf` (`storage.py` helpers `tailored_pdf_path` /
+`cover_letter_pdf_path` / `export_path` / `pdf_storage_name`; folders auto-create on first write). **Existing
+files untouched** (their old paths still resolve via `/app/storage/{path}`); only new generations use the new
+structure. The GDPR export ZIP stays in-memory (no disk path). `.gitignore` now also ignores `cv.md` / `*.pdf`
+/ `/storage/`. Added **`.claude/rules/`** (security/testing/api/cost/db/frontend conventions) + **`.claude/
+commands/`** (test/backfill/scan/logs) — Claude Code guidance only, zero runtime impact. Removed a long-orphaned
+**`jobhunt_app` Streamlit container** (old V1 prototype, crash-looping on a missing `dashboard/app.py`, not in
+the compose file); the live stack is the 6 defined services. **Tracker score toggle moved to the filter bar +
+all score columns sortable.**
 The ATS/Pursuit/Combined toggle now lives in the filter bar ("View" group, beside Domain/Partial) and drives
 **all** dual pills at once (Match/master, Best Fit/domain, Tailored) — freeing the Match header. Every score
 column is now clickable-to-sort: **Match** → `{metric}_master`, **Best Fit** → `{metric}_domain`, **Tailored**

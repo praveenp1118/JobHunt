@@ -160,6 +160,7 @@ See the full write-up in **[docs/architecture.md](docs/architecture.md)**.
 | Email | Gmail IMAP (poll) + SMTP (send), BeautifulSoup HTML parsing |
 | Job scanning | RSS feeds + Apify actors |
 | Browser / PDF | Playwright (title pre-filter + HTML→PDF) |
+| Storage | Local filesystem, user-scoped (`users/{user_id}/tailored\|cover_letters\|exports/`) — S3 migration planned |
 | Payments | Stripe (JobHunt Pro subscription) |
 | Real-time | WebSockets (support chat) |
 | Security | AES-256, bcrypt, JWT, security headers, per-user rate limiting, Redis login lockout, audit log |
