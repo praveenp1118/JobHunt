@@ -55,6 +55,11 @@ Thumbs.db
 !.claude/rules/
 !.claude/commands/
 
+# User-generated content — never commit personal CVs, PDFs, or local storage
+cv.md
+*.pdf
+/storage/
+
 # Personal config workbook (job-search strategy / target companies — not source)
 # Remove this line if you want it tracked in the (private) repo.
 JobHunt_Feed_Config.xlsx

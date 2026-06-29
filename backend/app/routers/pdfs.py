@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.database import get_db
 from app.models.user import User, UserCredentials
 from app.models.cv import MasterCV, DomainCV, TailoredCV
+from app.models.job import Job
 from app.auth.dependencies import current_active_user
 from app.utils.pdf_generator import cv_md_to_pdf, cl_md_to_pdf, make_filename
 
@@ -105,9 +106,11 @@ async def download_tailored_cv_pdf(
 
     pdf = await cv_md_to_pdf(tailored.cv_md, await _user_pdf_styles(session, user.id, tailored.domain_cv_id))
 
-    # Save PDF path for email attachment
-    from app.utils.storage import cv_pdf_path, save_binary_file
-    path = cv_pdf_path(user.id, f"tailored_{tailored_cv_id}.pdf")
+    # Save to the user-scoped tailored folder (folder auto-created on first write).
+    from app.utils.storage import tailored_pdf_path, pdf_storage_name, save_binary_file
+    job = (await session.execute(select(Job).where(Job.id == tailored.job_id))).scalar_one_or_none()
+    fname = pdf_storage_name(user.id, tailored.job_id, job.company if job else "", "cv")
+    path = tailored_pdf_path(user.id, fname)
     await save_binary_file(pdf, path)
     tailored.cv_pdf_path = path
     await session.commit()
@@ -146,9 +149,11 @@ async def download_cover_letter_pdf(
         user_contact=contact or "",
     )
 
-    # Save for email attachment
-    from app.utils.storage import cv_pdf_path, save_binary_file
-    path = cv_pdf_path(user.id, f"cl_{tailored_cv_id}.pdf")
+    # Save to the user-scoped cover_letters folder (folder auto-created on first write).
+    from app.utils.storage import cover_letter_pdf_path, pdf_storage_name, save_binary_file
+    job = (await session.execute(select(Job).where(Job.id == tailored.job_id))).scalar_one_or_none()
+    fname = pdf_storage_name(user.id, tailored.job_id, job.company if job else "", "cl")
+    path = cover_letter_pdf_path(user.id, fname)
     await save_binary_file(pdf, path)
     tailored.cl_pdf_path = path
     await session.commit()

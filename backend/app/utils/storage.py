@@ -3,6 +3,7 @@ File storage abstraction.
 Local in Phase 4 — swap to S3 in V2 by changing the backend.
 """
 import os
+import re
 import uuid
 import aiofiles
 from pathlib import Path
@@ -66,4 +67,34 @@ def cl_tailored_path(user_id: uuid.UUID, job_id: uuid.UUID) -> str:
 
 
 def cv_pdf_path(user_id: uuid.UUID, filename: str) -> str:
+    # Legacy path (kept so existing stored PDFs still resolve). New generations use the
+    # user-scoped helpers below.
     return f"pdfs/{user_id}/{filename}"
+
+
+# ── User-scoped storage layout: users/{user_id}/{tailored|cover_letters|exports}/ ──
+
+def _safe(s: str, n: int = 24) -> str:
+    """Filesystem-safe slug from arbitrary text (alphanumerics only, capped)."""
+    return re.sub(r"[^A-Za-z0-9]+", "", (s or ""))[:n] or "x"
+
+
+def pdf_storage_name(user_id, job_id, company: str, suffix: str = "") -> str:
+    """Readable + unique + user-scoped storage filename:
+    {user_id[:8]}_{job_id[:8]}_{Company}[_suffix].pdf"""
+    u = str(user_id).replace("-", "")[:8]
+    j = str(job_id).replace("-", "")[:8] if job_id else "nojob"
+    suf = f"_{suffix}" if suffix else ""
+    return f"{u}_{j}_{_safe(company)}{suf}.pdf"
+
+
+def tailored_pdf_path(user_id: uuid.UUID, filename: str) -> str:
+    return f"users/{user_id}/tailored/{filename}"
+
+
+def cover_letter_pdf_path(user_id: uuid.UUID, filename: str) -> str:
+    return f"users/{user_id}/cover_letters/{filename}"
+
+
+def export_path(user_id: uuid.UUID, filename: str) -> str:
+    return f"users/{user_id}/exports/{filename}"
