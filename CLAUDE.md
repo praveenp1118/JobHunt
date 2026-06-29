@@ -30,6 +30,27 @@ Multi-domain-CV scoring, Activity Dashboard, Gmail Job Alert Parser)
 
 ---
 
+## Claude Code Configuration
+
+Rules and commands live in the `.claude/` folder. Claude Code auto-loads rules when editing
+relevant files.
+
+### Rules (auto-applied):
+- `security.md` — user_id filters, key safety, prompt injection protection
+- `testing.md` — test requirements, naming
+- `api-conventions.md` — endpoint patterns
+- `cost-optimization.md` — model selection, caching, RAG pipeline
+- `db-conventions.md` — migrations, query patterns
+- `frontend-conventions.md` — components, styling
+
+### Commands (slash commands):
+- `/project:test` — run full test suite
+- `/project:backfill` — run score backfill
+- `/project:scan` — trigger manual scan
+- `/project:logs` — show service logs
+
+---
+
 ## Infrastructure
 
 ```
