@@ -5,7 +5,7 @@
 - Test count must NEVER decrease
 - Run full suite before every commit:
   docker-compose exec backend pytest tests/ -v
-- Current count: 136 tests — must stay ≥ 136
+- Current count: 138 tests — must stay ≥ 138
 
 ## Test patterns
 - Use conftest.py fixtures (client, user_creds)

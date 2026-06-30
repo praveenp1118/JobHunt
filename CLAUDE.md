@@ -91,7 +91,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (136 tests, all passing):
+- Current coverage (138 tests, all passing):
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -142,6 +142,10 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
     sonnet for borderline; confident save ≥ borderline_high skips Stage 3; domain scoring skipped below
     min_s1) via a monkeypatched `batch_score_s1` (deterministic, free); `config_from_prefs`; `GET
     /scoring/estimate`; `master_cvs.essence_json` round-trips.
+  - `test_cv_essence_isolation.py` (2): `_save_master_cv` returns a valid `MasterCVRead` (no `MissingGreenlet`)
+    both when essence extraction **succeeds** (commits → would expire the PK → reproduced the prod 500) and
+    when it **raises** (CV still saved, `essence_json=None`). Calls the real function with a production-like
+    `expire_on_commit=False` session + monkeypatched key/essence.
   - `test_career_readiness.py` (6): `GET /career/readiness-scores` returns `{no_data}` when unscored;
     ATS/Pursuit components normalize to 0-100 (score/max·100); the cross-job average aggregates correctly
     (kw 30 & 15 → 75); `avg_ats`/`avg_pursuit`/`overall` (weighted 0.4/0.6); and the `market`/`feed_id`
@@ -747,6 +751,7 @@ platform has a single global `s1_min_threshold` (no per-domain support).
 
 | Issue | Status | Fix |
 |---|---|---|
+| Master CV upload/text + domain apply returned a generic 500 ("internal error") even though the CV saved | ✅ Fixed | Root cause was **`MissingGreenlet`**: the one-time essence step `commit()`s, and the following `MasterCVRead.model_validate(master)` (after the earlier `session.refresh`) triggered a lazy PK reload during *synchronous* Pydantic validation → async IO outside the greenlet → 500 (NOT a JSON-parse or token-field issue). Added **`await session.refresh(master)`/`refresh(domain_cv)` after the essence call**, before serialization, in `_save_master_cv` (covers upload + text) and `apply_domain_cv_changes`. Also hardened `essence_agent._parse_json` to never raise (returns `{}`). `tokens_used`/`cost_inr` were already `Optional`. Essence extraction was already isolated in try/except (a failed Haiku call leaves `essence_json=None`, CV still saved). Proven by `test_cv_essence_isolation.py` (reverting the refresh reproduces the exact `MissingGreenlet`). |
 | PATCH /auth/me/profile drops target_roles when no preferences row | ✅ Fixed | Upsert UserPreferences in update_profile |
 | Profile fields never persisted | ✅ Fixed | Added columns + migration + ProfileTab.jsx |
 | Backend crashes: NameError Depends not defined in main.py | ✅ Fixed | Added missing imports |

@@ -205,6 +205,10 @@ async def _save_master_cv(
     await session.refresh(master)
     # Hybrid-RAG: (re)compute the CV essence (best-effort, cheap Haiku call).
     await _compute_master_essence(master, user, session)
+    # The essence step commits (on success), which expires `master` — reload it in the async
+    # context so the synchronous Pydantic serialization below can't trigger a lazy DB load
+    # (that would raise MissingGreenlet → a spurious 500 even though the CV is saved).
+    await session.refresh(master)
     return MasterCVRead.model_validate(master)
 
 
@@ -731,6 +735,8 @@ async def apply_domain_cv_changes(
     # Hybrid-RAG: (re)compute the domain CV essence (best-effort) once it's active.
     if cv_status == CVStatus.active:
         await _compute_domain_essence(domain_cv, user, session)
+        # Essence commit expired the object — reload before serialising (avoids MissingGreenlet 500).
+        await session.refresh(domain_cv)
 
     _out = DomainCVRead.model_validate(domain_cv)
     _u = get_session_usage()

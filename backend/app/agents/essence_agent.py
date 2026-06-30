@@ -53,8 +53,14 @@ def _parse_json(text: str) -> dict:
     try:
         return json.loads(t)
     except Exception:
-        m = re.search(r"\{.*\}", t, re.DOTALL)
-        return json.loads(m.group(0)) if m else {}
+        # Fallback: grab the first {...} block. Never raise — the caller treats {}/None
+        # as "no essence" and the CV is already saved, so a bad parse must not 500.
+        try:
+            m = re.search(r"\{.*\}", t, re.DOTALL)
+            return json.loads(m.group(0)) if m else {}
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠️ essence JSON parse failed: {e} · raw[:200]={t[:200]!r}")
+            return {}
 
 
 async def extract_cv_essence(
