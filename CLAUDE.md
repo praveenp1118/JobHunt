@@ -71,6 +71,58 @@ Useful commands:
 
 ---
 
+## Deployment (Production)
+
+Production runs the **same 6 services** as dev plus a **Caddy** reverse proxy that terminates TLS
+(automatic HTTPS via Let's Encrypt) — domain **aijobshunt.com** (+ www → apex redirect). Artifacts:
+
+- `docker-compose.prod.yml` — prod topology (built images, no `--reload`, no source bind-mounts).
+- `Caddyfile` — TLS + same-origin routing.
+- `frontend/Dockerfile.prod` — multi-stage: `node:20` build (`npm ci && npm run build`) → `nginx:alpine` static serve.
+- `frontend/nginx.conf` — SPA server on :80 (`try_files … /index.html`, gzip, immutable cache on hashed assets, no-cache on index.html).
+- `.env.production.example` — full env template (copy → `.env.production`, which is **gitignored**).
+
+### Prod architecture
+```
+Internet ──443/80──▶ Caddy (jobhunt_caddy, auto-HTTPS)
+                       ├── /api/*  ──▶ backend:8000   (FastAPI)
+                       └── else    ──▶ frontend:80    (nginx static Vite build)
+   backend / worker / beat ──▶ db:5432 (pgdata vol) · redis:6379 (appendonly)
+```
+- **Same-origin:** the SPA calls the relative path `/api` (axios `baseURL:'/api'`), Caddy routes `/api/*`
+  to the backend and everything else to the static frontend. No CORS preflight in prod; CORS is still
+  pinned to `FRONTEND_URL` (`https://aijobshunt.com`) as defence-in-depth.
+- **Only Caddy publishes host ports (80/443).** db/redis/backend/frontend have **no** host port mappings —
+  they talk over the internal Docker network only.
+- **Persistence:** named volumes `pgdata` (Postgres), `redis_data` (AOF), `cv_storage` (PDFs, on backend +
+  worker), `caddy_data` + `caddy_config` (certs/state).
+- **`ENV` stays `test` by default** — outbound application/HITL email is redirected to `NOTIFICATION_EMAIL`.
+  Set `ENV=production` **only** after verifying real recruiter email sending is intended.
+
+### Two-phase deploy runbook
+On the server (Docker + Compose installed, DNS A-records for `aijobshunt.com` + `www` → the host, ports 80/443 open):
+
+```bash
+# Phase 1 — configure + build + start (Caddy fetches TLS certs automatically)
+cp .env.production.example .env.production      # then fill in real secrets
+#   SECRET_KEY:  openssl rand -hex 32
+#   FERNET_KEY:  python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"
+docker-compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+
+# Phase 2 — apply DB migrations (once the backend/db are up)
+docker-compose -f docker-compose.prod.yml --env-file .env.production exec backend alembic upgrade head
+
+# Verify
+docker-compose -f docker-compose.prod.yml ps          # all Up; caddy healthy
+docker-compose -f docker-compose.prod.yml logs caddy --tail 30   # cert issuance
+curl -I https://aijobshunt.com                        # 200 + valid TLS
+```
+Redeploy after a code change: `git pull` → `up -d --build` → `alembic upgrade head` (if migrations changed).
+**Note:** `--env-file .env.production` is required so compose resolves `${POSTGRES_*}` interpolation (and each
+service also loads it via `env_file:`). The Stripe webhook endpoint is `https://aijobshunt.com/api/billing/webhook`.
+
+---
+
 ## Testing
 
 API smoke tests live in `backend/tests/` (pytest + pytest-asyncio). They run

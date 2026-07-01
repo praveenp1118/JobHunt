@@ -1,0 +1,19 @@
+# Automatic HTTPS via Let's Encrypt. Canonical host = apex (www redirects to it).
+
+www.aijobshunt.com {
+    redir https://aijobshunt.com{uri} permanent
+}
+
+aijobshunt.com {
+    encode gzip
+
+    # API → FastAPI backend (same-origin: the SPA calls /api/*).
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Everything else → the static frontend (nginx serving the Vite build).
+    handle {
+        reverse_proxy frontend:80
+    }
+}
