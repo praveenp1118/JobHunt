@@ -8,6 +8,7 @@ import useAuthStore from '../../store/auth'
 import { updateCredentials, updatePreferences } from '../../api/auth'
 import { saveMasterCVText, uploadMasterCVFile } from '../../api/cvs'
 import { getSubscription, createCheckoutSession } from '../../api/billing'
+import { redeemInvite } from '../../api/access'
 
 const STEPS = [
   { id: 1, label: 'Subscribe', required: false },
@@ -49,9 +50,29 @@ export default function Onboarding() {
   const [apifyToken, setApifyToken] = useState('')
 
   // Step 1 (Subscribe) state
-  const { data: subData } = useQuery({ queryKey: ['subscription'], queryFn: getSubscription, retry: false })
+  const { data: subData, refetch: refetchSub } = useQuery({ queryKey: ['subscription'], queryFn: getSubscription, retry: false })
   const subActive = subData?.data?.is_active
   const [subBusy, setSubBusy] = useState(false)
+
+  // Invite-key redemption (alternative to paying)
+  const [inviteCode, setInviteCode] = useState('')
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteOk, setInviteOk] = useState(false)
+
+  const handleRedeemInvite = async () => {
+    setError('')
+    if (!inviteCode.trim()) { setError('Enter your invitation key'); return }
+    setInviteBusy(true)
+    try {
+      await redeemInvite(inviteCode.trim())
+      setInviteOk(true)
+      await refetchSub()  // is_active flips true → Step 1 shows the entitled state
+    } catch (e) {
+      setError(e.response?.data?.detail?.message || 'That invitation key is not valid.')
+    } finally {
+      setInviteBusy(false)
+    }
+  }
 
   const handleSubscribe = async () => {
     setSubBusy(true)
@@ -246,16 +267,44 @@ export default function Onboarding() {
 
               {subActive ? (
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-emerald-700">✅ You're already on JobHunt Pro</p>
+                  <p className="text-sm font-medium text-emerald-700">
+                    {inviteOk ? '✅ Invitation redeemed — you have free access' : "✅ You're already on JobHunt Pro"}
+                  </p>
                   <Button onClick={() => setStep(2)}>Continue →</Button>
                 </div>
               ) : (
-                <div className="flex items-center justify-between">
-                  <button onClick={() => setStep(2)} className="text-sm text-gray-500 hover:text-gray-700 font-medium">
-                    Skip for now →
-                  </button>
-                  <Button loading={subBusy} onClick={handleSubscribe}>Subscribe — ₹500/month</Button>
-                </div>
+                <>
+                  {/* Invite-key path — grants free access without paying */}
+                  <div className="rounded-xl border border-gray-200 p-4 mb-4">
+                    <p className="text-sm font-medium text-gray-800 mb-1">Have an invitation key?</p>
+                    <p className="text-xs text-gray-500 mb-3">Redeem it for free access — no card required.</p>
+                    <div className="flex gap-2">
+                      <input
+                        value={inviteCode}
+                        onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                        placeholder="JH-XXXX-XXXX"
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono tracking-wide outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                      />
+                      <Button variant="secondary" loading={inviteBusy} onClick={handleRedeemInvite}>Redeem</Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 my-4">
+                    <div className="flex-1 h-px bg-gray-100" />
+                    <span className="text-xs text-gray-400">or</span>
+                    <div className="flex-1 h-px bg-gray-100" />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <button onClick={() => setStep(2)} className="text-sm text-gray-500 hover:text-gray-700 font-medium">
+                      Skip for now →
+                    </button>
+                    <Button loading={subBusy} onClick={handleSubscribe}>Subscribe — ₹500/month</Button>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-400">
+                    Skipping lets you look around, but tailoring, scoring, scanning, and sending stay locked until you redeem a key or subscribe.
+                  </p>
+                </>
               )}
             </div>
           )}

@@ -74,7 +74,8 @@ async def get_master_cv(
     return MasterCVRead.model_validate(master) if master else None
 
 
-@router.post("/master/upload", response_model=MasterCVRead, status_code=status.HTTP_201_CREATED)
+@router.post("/master/upload", response_model=MasterCVRead, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_active_subscription)])
 async def upload_master_cv(
     file: UploadFile = File(...),
     change_summary: Optional[str] = Form(None),
@@ -218,6 +219,11 @@ async def _compute_master_essence(master, user, session) -> bool:
         from app.models.user import UserPreferences
         from app.agents.essence_agent import extract_cv_essence
         from app.utils.usage_logger import set_usage_user
+        from app.utils.subscription import is_entitled
+        # Saving/editing CV markdown is free (browsing/setup), but the essence is a
+        # Claude call — skip it for un-entitled users so nothing spends tokens un-paid.
+        if not is_entitled(user):
+            return False
         key = await _get_anthropic_key(user, session)
         if not key:
             return False
@@ -242,7 +248,10 @@ async def _compute_domain_essence(dcv, user, session) -> bool:
         from app.models.user import UserPreferences
         from app.agents.essence_agent import extract_cv_essence
         from app.utils.usage_logger import set_usage_user
+        from app.utils.subscription import is_entitled
         if not dcv.content_md:
+            return False
+        if not is_entitled(user):
             return False
         key = await _get_anthropic_key(user, session)
         if not key:
@@ -745,7 +754,8 @@ async def apply_domain_cv_changes(
     return _out
 
 
-@router.post("/master/recompute-essence")
+@router.post("/master/recompute-essence",
+             dependencies=[Depends(require_active_subscription)])
 async def recompute_master_essence(user: User = Depends(current_active_user),
                                    session: AsyncSession = Depends(get_db)):
     """Manually (re)compute the master CV essence."""
@@ -759,7 +769,8 @@ async def recompute_master_essence(user: User = Depends(current_active_user),
     return {"computed": True, "keywords": len((master.essence_json or {}).get("keywords", []))}
 
 
-@router.post("/domains/{domain_cv_id}/recompute-essence")
+@router.post("/domains/{domain_cv_id}/recompute-essence",
+             dependencies=[Depends(require_active_subscription)])
 async def recompute_domain_essence(domain_cv_id: uuid.UUID, user: User = Depends(current_active_user),
                                    session: AsyncSession = Depends(get_db)):
     """Manually (re)compute a domain CV essence."""

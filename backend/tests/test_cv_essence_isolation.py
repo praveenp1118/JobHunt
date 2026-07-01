@@ -18,9 +18,14 @@ def _sm():
 
 async def _mk_user(session):
     from app.models.user import User
+    from datetime import datetime, timezone, timedelta
     uid = uuid.uuid4()
+    # Essence is now gated on entitlement (only entitled users spend tokens), so this
+    # user must be entitled for the success path to actually run the essence call.
     session.add(User(id=uid, email=f"cv_{uid.hex[:10]}@example.com",
-                     hashed_password="x", is_active=True, is_superuser=False, is_verified=False))
+                     hashed_password="x", is_active=True, is_superuser=False, is_verified=False,
+                     subscription_status="active", entitlement_source="stripe",
+                     subscription_end=datetime.now(timezone.utc) + timedelta(days=30)))
     await session.flush()
     return uid
 

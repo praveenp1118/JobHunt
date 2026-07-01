@@ -53,7 +53,12 @@ async def _poll_all_users_async():
         )
         user_creds = result.all()
 
+        from app.utils.subscription import is_entitled
         for user, creds in user_creds:
+            # Skip un-entitled users — the hourly poll classifies/scores via Claude;
+            # an inert account must not spend tokens on the platform's schedule.
+            if not is_entitled(user):
+                continue
             from app.utils.usage_logger import set_usage_user
             set_usage_user(user.id)  # attribute classify/score calls to this user
             # A RunLog per user-poll — its id is passed down so EmailAlertLog rows

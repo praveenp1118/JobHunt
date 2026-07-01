@@ -22,6 +22,7 @@ from app.models.job import Job, EmailThread, JobStatus, JobSource
 from app.models.cv import MasterCV, DomainCV
 from app.models.domain import IndustryVertical, FunctionalDiscipline
 from app.auth.dependencies import current_active_user
+from app.utils.subscription import require_active_subscription
 from app.utils.cv_parser import parse_file_to_text
 from app.utils.encryption import decrypt_if_present
 from app.utils.model import get_user_model
@@ -106,7 +107,8 @@ async def _enrich_job(job: Job, session: AsyncSession) -> JobRead:
 # SOURCE 1: MANUAL PASTE
 # ══════════════════════════════════════════════════════════════
 
-@router.post("/parse/text", response_model=JDParseResult)
+@router.post("/parse/text", response_model=JDParseResult,
+             dependencies=[Depends(require_active_subscription)])
 async def parse_jd_from_text(
     body: JobFromText,
     response: Response,
@@ -134,7 +136,8 @@ async def parse_jd_from_text(
 # SOURCE 2: URL FETCH
 # ══════════════════════════════════════════════════════════════
 
-@router.post("/parse/url", response_model=JDParseResult)
+@router.post("/parse/url", response_model=JDParseResult,
+             dependencies=[Depends(require_active_subscription)])
 async def parse_jd_from_url(
     body: JobFromURL,
     response: Response,
@@ -169,7 +172,8 @@ async def parse_jd_from_url(
 # SOURCE 3: FILE UPLOAD
 # ══════════════════════════════════════════════════════════════
 
-@router.post("/parse/file", response_model=JDParseResult)
+@router.post("/parse/file", response_model=JDParseResult,
+             dependencies=[Depends(require_active_subscription)])
 async def parse_jd_from_file(
     file: UploadFile = File(...),
     score_immediately: bool = Form(True),
@@ -772,7 +776,8 @@ async def get_job_emails(
     return [EmailThreadRead.model_validate(e) for e in result.scalars().all()]
 
 
-@router.post("/{job_id}/fetch-jd")
+@router.post("/{job_id}/fetch-jd",
+             dependencies=[Depends(require_active_subscription)])
 async def fetch_full_jd(
     job_id: uuid.UUID,
     user: User = Depends(current_active_user),
@@ -796,7 +801,8 @@ class AddFullJDBody(BaseModel):
     jd_text: str
 
 
-@router.post("/{job_id}/add-full-jd")
+@router.post("/{job_id}/add-full-jd",
+             dependencies=[Depends(require_active_subscription)])
 async def add_full_jd(
     job_id: uuid.UUID,
     body: AddFullJDBody,
@@ -832,7 +838,8 @@ async def _score_key_prefs(user, session):
     return key, prefs
 
 
-@router.post("/{job_id}/score-now")
+@router.post("/{job_id}/score-now",
+             dependencies=[Depends(require_active_subscription)])
 async def score_now(job_id: uuid.UUID, user: User = Depends(current_active_user),
                     session: AsyncSession = Depends(get_db)):
     """Score a single pending job immediately (3-stage RAG) — used by the 'Score now' button."""
@@ -853,7 +860,8 @@ async def score_now(job_id: uuid.UUID, user: User = Depends(current_active_user)
             "cost_inr": r["cost_inr"]}
 
 
-@router.post("/score-pending")
+@router.post("/score-pending",
+             dependencies=[Depends(require_active_subscription)])
 async def score_all_pending(user: User = Depends(current_active_user),
                             session: AsyncSession = Depends(get_db)):
     """Score ALL of the user's pending jobs now (Dashboard 'Score all now')."""
@@ -889,7 +897,8 @@ async def get_job_scores(job_id: uuid.UUID, user: User = Depends(current_active_
     }
 
 
-@router.post("/backfill-scores")
+@router.post("/backfill-scores",
+             dependencies=[Depends(require_active_subscription)])
 async def backfill_scores(user: User = Depends(current_active_user),
                           session: AsyncSession = Depends(get_db)):
     """Opt-in: compute ATS + Pursuit (master) for the user's existing jobs that have a
@@ -905,7 +914,8 @@ async def backfill_scores(user: User = Depends(current_active_user),
     return {"queued": True, "jobs": n, "estimated_cost_inr": round(n * DUAL_COST_PER_JOB_INR, 2)}
 
 
-@router.post("/{job_id}/score-s1")
+@router.post("/{job_id}/score-s1",
+             dependencies=[Depends(require_active_subscription)])
 async def score_job_s1(
     job_id: uuid.UUID,
     user: User = Depends(current_active_user),

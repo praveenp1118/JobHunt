@@ -85,7 +85,7 @@ def _country_rule_display(country) -> list:
     return rules
 
 
-@router.post("/jd-highlights")
+@router.post("/jd-highlights", dependencies=[Depends(require_active_subscription)])
 async def jd_highlights(
     body: TailorRequest,
     user: User = Depends(current_active_user),
@@ -598,7 +598,7 @@ async def apply_tailor(
 _TRIM_PRIORITY = ["reorder", "keyword_injection", "rephrase"]
 
 
-@router.post("/{tailored_cv_id}/trim")
+@router.post("/{tailored_cv_id}/trim", dependencies=[Depends(require_active_subscription)])
 async def trim_tailored_cv(
     tailored_cv_id: uuid.UUID,
     user: User = Depends(current_active_user),
@@ -673,7 +673,7 @@ async def trim_tailored_cv(
 # COVER LETTER REGENERATION
 # ══════════════════════════════════════════════════════════════
 
-@router.post("/{tailored_cv_id}/regenerate-cl")
+@router.post("/{tailored_cv_id}/regenerate-cl", dependencies=[Depends(require_active_subscription)])
 async def regenerate_cl(
     tailored_cv_id: uuid.UUID,
     body: RegenerateCLRequest,
@@ -729,7 +729,7 @@ async def regenerate_cl(
 # FOLLOW-UP EMAIL
 # ══════════════════════════════════════════════════════════════
 
-@router.post("/followup/{job_id}")
+@router.post("/followup/{job_id}", dependencies=[Depends(require_active_subscription)])
 async def draft_followup(
     job_id: uuid.UUID,
     body: FollowUpRequest,

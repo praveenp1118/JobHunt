@@ -62,11 +62,11 @@ async def test_jd_highlights_uses_haiku_call(monkeypatch):
     assert out["matches"] == ["x"]
 
 
-async def test_jd_highlights_cached_on_second_call(client, user_creds):
+async def test_jd_highlights_cached_on_second_call(client, active_user_creds):
     from app.models.job import Job, JobSource, JobStatus
     eng, S = _sm()
     try:
-        uid = uuid.UUID((await client.get("/api/auth/me", headers=user_creds["headers"])).json()["id"])
+        uid = uuid.UUID((await client.get("/api/auth/me", headers=active_user_creds["headers"])).json()["id"])
         jd = "Head of Product role. 8+ years leadership and API platform experience required. " * 3
         sig = hashlib.sha256(jd.encode("utf-8")).hexdigest()[:16]
         jid = uuid.uuid4()
@@ -79,7 +79,7 @@ async def test_jd_highlights_cached_on_second_call(client, user_creds):
         # the schema but only drives country_rules; a random one → no domain CV found → [].)
         r = await client.post("/api/tailor/jd-highlights",
                               json={"job_id": str(jid), "domain_cv_id": str(uuid.uuid4())},
-                              headers=user_creds["headers"])
+                              headers=active_user_creds["headers"])
         assert r.status_code == 200
         body = r.json()
         assert body["cached"] is True and body["matches"] == ["cached-m"]

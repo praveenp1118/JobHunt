@@ -123,6 +123,66 @@ service also loads it via `env_file:`). The Stripe webhook endpoint is `https://
 
 ---
 
+## Access Model — Invite-or-Pay (migration `v3_invite_or_pay`)
+
+**Registration is open, but a new account is INERT** — it can log in and browse read-only views, but
+**every Claude-calling (paid) feature returns 402** until the account is **entitled**. Entitlement comes
+two ways, both reusing the **existing Stripe columns** (`users.subscription_status` / `subscription_end`
+— NOT duplicated) plus `users.entitlement_source` (`'invite'` | `'stripe'` | NULL):
+- **Invite** — redeem a single-use key → `subscription_status='active'`, `subscription_end=now+grants_days`
+  (default 30), `entitlement_source='invite'`.
+- **Stripe** — subscribe (unchanged) → `entitlement_source='stripe'`, `subscription_end` kept fresh by the webhook.
+
+### The gate is now expiry-aware
+`utils/subscription.py::is_entitled(user)` = **admin OR (`status=='active'` AND `subscription_end` not in the
+past)**. This is how an invited user's free period ends **with no background job** — there's no Stripe webhook
+to flip an invite's status, so the past-`subscription_end` check alone lapses them → 402. `require_active_subscription`
+raises **402 `{code:"entitlement_required"}`** (renamed from `subscription_required`). Admins always bypass.
+
+### Closed the token-spend gap (jobs.py was ungated)
+The gate was previously hand-applied to only 7 endpoints and **all of `jobs.py` was missed** — parsing/scoring
+(real Claude calls) were reachable un-entitled. Now **every Claude-reachable route is gated**:
+- **jobs.py:** `parse/text`, `parse/url`, `parse/file`, `score-now`, `score-pending`, `backfill-scores`,
+  `fetch-jd`, `add-full-jd`, `score-s1`.
+- **cvs.py:** `master/upload` (Claude file→markdown), `master/recompute-essence`, `domains/{id}/recompute-essence`
+  (`generate-changelog` + `domains/{id}/apply` already gated). Free saves (`master/text`, `master` PUT, rollback)
+  stay ungated but their **optional essence call skips for un-entitled users** (`is_entitled` guard in
+  `_compute_master_essence`/`_compute_domain_essence`) — zero tokens for inert users.
+- **tailor.py:** `jd-highlights`, `trim`, `regenerate-cl`, `followup` (`generate` + `apply` already gated).
+- **feeds.py:** `feeds/suggest`, `feeds/{id}/run` (`scanner/run` already gated).
+- **career.py:** `analyse`; **gmail.py:** `poll`, `send-application` (already gated).
+- **Background tasks:** the scheduled `weekly_job_scan` + hourly `poll_gmail_all_users` per-user loops now
+  **skip un-entitled users** (they call Claude on the platform's schedule).
+- **Deliberately ungated (genuinely free):** all GET reads/list/detail, auth, billing, `jobs/confirm`,
+  `jobs/{id}/status`, PDF generation (Playwright only, no Claude), chat (rule-based FAQ), scoring config.
+- Routers are all **mixed** (free reads + paid routes), so gating is **per-route** `dependencies=[Depends(
+  require_active_subscription)]` (no fully-paid router to gate wholesale).
+
+### Endpoints (`routers/access.py`, mounted at `/api`)
+- **`POST /invites/redeem` `{code}`** — atomic + race-safe (`SELECT … FOR UPDATE` locks the key row so two
+  users racing one code can't both win), idempotent for the same user re-submitting their own key. Invalid if
+  redeemed OR revoked OR past `key_expires_at`.
+- **Admin:** `POST /admin/invites` (generate N, `grants_days`, optional `key_expires_at`; codes `JH-XXXX-XXXX`
+  from a crypto-random unambiguous alphabet, collision-checked), `GET /admin/invites` (status =
+  unredeemed/redeemed/revoked/expired), `POST /admin/invites/{id}/revoke`, `PATCH /admin/invites/{id}/extend`.
+- **Extension requests (invited-lapsed users):** `POST /extension-requests` saves a pending row **(in-app queue
+  is the source of truth)** then **best-effort** emails the admin via platform SMTP — **swallows** SMTP failure
+  (logs a warning) so the request always saves. `GET /extension-requests` (own). Admin: `GET /admin/extension-requests`
+  (+ `pending_count` nav badge), `POST /admin/extension-requests/{id}/grant` (+N days, default 30) / `/deny`.
+  Admin comp/grace tool: `PATCH /admin/users/{id}/extend-subscription` (extend ANY user directly).
+
+### Frontend
+- **Onboarding Subscribe step:** an **"Enter invitation key"** input (`JH-XXXX-XXXX`) → `/invites/redeem`; on
+  success the step shows the entitled state. Stripe path kept; **Skip for now** remains (browse-only, paid → 402).
+- **AppLayout banner:** invite-lapsed / near-lapse (≤5 days) users see **"Request extension"** (→ `POST
+  /extension-requests`) **only** when `entitlement_source==='invite'` — never for Stripe users. `GET
+  /billing/subscription` now returns `entitlement_source` + an **expiry-aware `is_active`**.
+- **Admin panel:** **Invites tab** (generate + copy-to-clipboard, status list, revoke, extend deadline) and
+  **Extension Requests tab** (pending queue, grant/deny) with a **pending-count badge** on the tab.
+- `UserRead` now exposes `subscription_status`/`subscription_plan`/`subscription_end`/`entitlement_source`.
+
+---
+
 ## Testing
 
 API smoke tests live in `backend/tests/` (pytest + pytest-asyncio). They run
@@ -143,7 +203,12 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (138 tests, all passing):
+- Current coverage (148 tests: 145 passing + 3 skipped live/owner-absent):
+  - `test_invite_or_pay.py` (10): redeem a valid key → user active + `entitlement_source=invite`;
+    redeem used/revoked/expired key → 400; unknown key → 404; **two users racing one key → exactly
+    one wins** (row-locked); non-entitled user hits `score-now` → **402**; **invited-lapsed** (active
+    status but past `subscription_end`) → **402**; **admin bypasses** (→ 404 not 402); extension-request
+    **saves even when SMTP is unset** (in-app queue is the source of truth). Admin/user rows torn down per test.
   - `test_api_smoke.py` (7): login 200, GET /cvs/master 200, GET /jobs/stats 200 +
     `by_domain_cv` present, GET /feeds 200, GET /admin/stats 403 for non-admin,
     GET /activity/alerts 200, GET /activity/system 200.
@@ -324,7 +389,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_optimization → v3_email_source → v3_ats_pursuit → v3_dual_scan_gate
+│   │   └── versions/        # chain tip: … → v3_ats_pursuit → v3_dual_scan_gate → v3_invite_or_pay
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation

@@ -5,7 +5,9 @@ import { format } from 'date-fns'
 import Sidebar from './Sidebar'
 import { getJobs } from '../../api/jobs'
 import { getSubscription } from '../../api/billing'
+import { requestExtension } from '../../api/access'
 import { getLegalUrls, recordConsent } from '../../api/legal'
+import { toast } from '../../store/toast'
 import useAuthStore from '../../store/auth'
 
 export default function AppLayout() {
@@ -48,26 +50,58 @@ export default function AppLayout() {
   const onPlanPage = location.pathname.startsWith('/settings') || location.pathname.startsWith('/billing')
   const isAdmin = user?.role === 'admin'
 
+  const [extReqBusy, setExtReqBusy] = useState(false)
+  const [extReqDone, setExtReqDone] = useState(false)
+  const doRequestExtension = async () => {
+    setExtReqBusy(true)
+    try {
+      await requestExtension()
+      setExtReqDone(true)
+      toast.success('Extension requested — we’ll review it shortly.')
+    } catch (_) {
+      toast.error('Could not send the request. Please try again.')
+    } finally { setExtReqBusy(false) }
+  }
+
   let banner = null
-  if (sub && !sub.is_active && !onPlanPage && !isAdmin) {
+  if (sub && !onPlanPage && !isAdmin) {
+    const source = sub.entitlement_source
     const end = sub.subscription_end ? format(new Date(sub.subscription_end), 'MMM d') : null
-    if (sub.status === 'past_due') {
-      banner = {
-        cls: 'bg-red-50 border-red-200 text-red-700',
-        text: '🔴 Payment failed. Update your payment method to restore full access.',
-        btn: 'Update payment →',
+    const daysLeft = sub.subscription_end
+      ? Math.ceil((new Date(sub.subscription_end).getTime() - Date.now()) / 86400000) : null
+    if (!sub.is_active) {
+      if (source === 'invite') {
+        // Invited free access has lapsed — offer an extension request (or subscribe).
+        banner = {
+          cls: 'bg-amber-50 border-amber-200 text-amber-800',
+          text: '⌛ Your free access has ended. Request an extension or subscribe to keep going.',
+          btn: 'Request extension', action: 'extend',
+        }
+      } else if (sub.status === 'past_due') {
+        banner = {
+          cls: 'bg-red-50 border-red-200 text-red-700',
+          text: '🔴 Payment failed. Update your payment method to restore full access.',
+          btn: 'Update payment →',
+        }
+      } else if (sub.status === 'cancelled') {
+        banner = {
+          cls: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+          text: `🟡 Subscription cancelled.${end ? ` Access until ${end}.` : ''} Resubscribe to keep your job search going.`,
+          btn: 'Resubscribe →',
+        }
+      } else {
+        banner = {
+          cls: 'bg-amber-50 border-amber-200 text-amber-800',
+          text: '⚠️ Your account is inactive. Redeem an invitation key or subscribe to unlock CV tailoring, scanning, and application sending.',
+          btn: 'Subscribe →',
+        }
       }
-    } else if (sub.status === 'cancelled') {
-      banner = {
-        cls: 'bg-yellow-50 border-yellow-200 text-yellow-800',
-        text: `🟡 Subscription cancelled.${end ? ` Access until ${end}.` : ''} Resubscribe to keep your job search going.`,
-        btn: 'Resubscribe →',
-      }
-    } else {
+    } else if (source === 'invite' && daysLeft !== null && daysLeft <= 5) {
+      // Near-lapse — only invite users see the extension prompt (never stripe users).
       banner = {
         cls: 'bg-amber-50 border-amber-200 text-amber-800',
-        text: '⚠️ Your subscription is inactive. Subscribe to unlock CV tailoring, scanning, and application sending.',
-        btn: 'Subscribe →',
+        text: `⌛ Your free access ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}${end ? ` (${end})` : ''}.`,
+        btn: 'Request extension', action: 'extend',
       }
     }
   }
@@ -92,12 +126,28 @@ export default function AppLayout() {
         {banner && (
           <div className={`flex items-center justify-between gap-4 px-5 py-2.5 border-b ${banner.cls}`}>
             <p className="text-sm font-medium">{banner.text}</p>
-            <button
-              onClick={() => navigate('/settings#plan')}
-              className="text-sm font-semibold whitespace-nowrap hover:underline"
-            >
-              {banner.btn}
-            </button>
+            {banner.action === 'extend' ? (
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  onClick={doRequestExtension}
+                  disabled={extReqBusy || extReqDone}
+                  className="text-sm font-semibold whitespace-nowrap hover:underline disabled:opacity-60 disabled:no-underline"
+                >
+                  {extReqDone ? 'Requested ✓' : extReqBusy ? '…' : banner.btn}
+                </button>
+                <button onClick={() => navigate('/settings#plan')}
+                  className="text-sm font-semibold whitespace-nowrap hover:underline">
+                  Subscribe →
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => navigate('/settings#plan')}
+                className="text-sm font-semibold whitespace-nowrap hover:underline"
+              >
+                {banner.btn}
+              </button>
+            )}
           </div>
         )}
         <div className="flex-1"><Outlet /></div>

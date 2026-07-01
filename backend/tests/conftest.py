@@ -42,6 +42,22 @@ async def client():
         yield c
 
 
+async def _set_entitlement(email: str, status: str = "active", source: str = "stripe",
+                           days_from_now: int = 30) -> None:
+    """Directly flip a user's entitlement in the DB (bypasses Stripe/invite) so tests
+    can exercise gated paid endpoints as an entitled non-admin user."""
+    conn = await asyncpg.connect(_sync_dsn())
+    try:
+        await conn.execute(
+            "UPDATE users SET subscription_status=$1, subscription_plan='pro', "
+            "entitlement_source=$2, subscription_end = now() + ($3 || ' days')::interval "
+            "WHERE email=$4",
+            status, source, str(days_from_now), email,
+        )
+    finally:
+        await conn.close()
+
+
 @pytest_asyncio.fixture
 async def user_creds(client):
     """Register a fresh, non-admin user, yield its credentials + auth headers,
@@ -71,6 +87,40 @@ async def user_creds(client):
         }
     finally:
         # Best-effort cleanup — never fail a passing test because teardown hiccupped.
+        try:
+            await _delete_user(email)
+        except Exception as e:  # pragma: no cover - diagnostic only
+            print(f"⚠️ test user cleanup failed for {email}: {e}")
+
+
+@pytest_asyncio.fixture
+async def active_user_creds(client):
+    """Like user_creds, but ENTITLED (subscription_status=active, 30 days left) so it
+    can call the subscription-gated paid endpoints. Re-logs in AFTER entitling so the
+    token's user reflects the active status."""
+    email = f"pytest_{uuid.uuid4().hex[:12]}@example.com"
+    password = "TestPass123!"
+
+    r = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": password, "name": "Pytest Active User"},
+    )
+    assert r.status_code in (200, 201), f"register failed: {r.status_code} {r.text}"
+
+    await _set_entitlement(email, status="active", source="stripe", days_from_now=30)
+
+    r = await client.post("/api/auth/login", json={"email": email, "password": password})
+    assert r.status_code == 200, f"login failed: {r.status_code} {r.text}"
+    token = r.json()["access_token"]
+
+    try:
+        yield {
+            "email": email,
+            "password": password,
+            "token": token,
+            "headers": {"Authorization": f"Bearer {token}"},
+        }
+    finally:
         try:
             await _delete_user(email)
         except Exception as e:  # pragma: no cover - diagnostic only

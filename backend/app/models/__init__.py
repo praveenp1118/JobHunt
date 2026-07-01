@@ -5,6 +5,7 @@ from app.models.domain import IndustryVertical, FunctionalDiscipline, CountryMas
 from app.models.cv import MasterCV, MasterCVVersion, DomainCV, DomainCVVersion, TailoredCV, ChangeLog
 from app.models.job import Job, EmailThread
 from app.models.admin import RunLog, ErrorLog, InviteCode
+from app.models.access import InvitationKey, ExtensionRequest
 
 __all__ = [
     "User", "UserCredentials", "UserPreferences", "UserRole", "UserPlan",
@@ -13,4 +14,5 @@ __all__ = [
     "MasterCV", "MasterCVVersion", "DomainCV", "DomainCVVersion", "TailoredCV", "ChangeLog",
     "Job", "EmailThread",
     "RunLog", "ErrorLog", "InviteCode",
+    "InvitationKey", "ExtensionRequest",
 ]

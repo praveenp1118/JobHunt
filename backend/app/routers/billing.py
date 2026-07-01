@@ -102,13 +102,19 @@ async def create_checkout_session(
 # ── Current subscription ──────────────────────────────────────────────────────
 @router.get("/subscription")
 async def get_subscription(user: User = Depends(current_active_user)):
+    from app.utils.subscription import is_entitled
     return {
         "plan": user.subscription_plan,
         "status": user.subscription_status,
         "subscription_end": user.subscription_end,
+        # How access was obtained — 'invite' | 'stripe' | None. Drives the UI
+        # (invite users see "Request extension"; stripe users see "Manage plan").
+        "entitlement_source": user.entitlement_source,
         # stripe_customer_id is intentionally NOT exposed to the frontend.
         "has_customer": bool(user.stripe_customer_id),
-        "is_active": user.subscription_status == "active",
+        # Expiry-aware: an invite whose free period lapsed reads is_active=False
+        # even though status is still 'active' (no webhook flips invite status).
+        "is_active": is_entitled(user),
     }
 
 

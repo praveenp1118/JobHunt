@@ -84,7 +84,8 @@ async def search_apify_actors(
 # V2: domain-CV-driven feed suggestion (powers the Add feed modal)
 # ══════════════════════════════════════════════════════════════
 
-@router.post("/feeds/suggest", response_model=FeedSuggestion)
+@router.post("/feeds/suggest", response_model=FeedSuggestion,
+             dependencies=[Depends(require_active_subscription)])
 async def suggest_feed(
     body: FeedSuggestRequest,
     user: User = Depends(current_active_user),
@@ -438,7 +439,7 @@ async def remove_target_company(
 # SCANNER CONTROL
 # ══════════════════════════════════════════════════════════════
 
-@router.post("/feeds/{feed_id}/run")
+@router.post("/feeds/{feed_id}/run", dependencies=[Depends(require_active_subscription)])
 async def run_single_feed(
     feed_id: uuid.UUID,
     user: User = Depends(current_active_user),

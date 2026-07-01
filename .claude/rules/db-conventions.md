@@ -5,7 +5,7 @@
 - Migration naming: v3_{feature_name}.py
 - Always run: alembic upgrade head after creating
 - Never edit existing migrations — create new ones
-- Current head: v3_dual_scan_gate
+- Current head: v3_invite_or_pay
 
 ## Model conventions
 - All PKs: UUID (not integer)

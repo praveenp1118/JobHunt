@@ -9,6 +9,10 @@ import { toast } from '../../store/toast'
 import useAuthStore from '../../store/auth'
 import { useNavigate } from 'react-router-dom'
 import { getGovernance, adminCancelDeletion } from '../../api/privacy'
+import {
+  adminCreateInvites, adminListInvites, adminRevokeInvite, adminExtendInvite,
+  adminListExtensionRequests, adminGrantExtension, adminDenyExtension,
+} from '../../api/access'
 import Pagination, { usePagination } from '../../components/ui/Pagination'
 
 export default function AdminPage() {
@@ -45,8 +49,18 @@ export default function AdminPage() {
 function TabContent() {
   const [tab, setTab] = useState('users')
 
+  // Pending extension-request count → nav badge.
+  const { data: extData } = useQuery({
+    queryKey: ['admin-extensions'],
+    queryFn: adminListExtensionRequests,
+    refetchInterval: 60000,
+  })
+  const pendingExt = extData?.data?.pending_count || 0
+
   const tabs = [
     { key: 'users', label: 'Users' },
+    { key: 'invites', label: 'Invites' },
+    { key: 'extensions', label: 'Extension Requests', badge: pendingExt },
     { key: 'errors', label: 'Error Log' },
     { key: 'stats', label: 'Stats' },
     { key: 'governance', label: 'Governance' },
@@ -57,17 +71,207 @@ function TabContent() {
       <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit mb-6">
         {tabs.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
               tab === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}>
             {t.label}
+            {t.badge > 0 && (
+              <span className="text-[10px] font-bold bg-amber-500 text-white rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                {t.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
       {tab === 'users' && <UsersTab />}
+      {tab === 'invites' && <InvitesTab />}
+      {tab === 'extensions' && <ExtensionsTab />}
       {tab === 'errors' && <ErrorsTab />}
       {tab === 'stats' && <StatsTab />}
       {tab === 'governance' && <GovernanceTab />}
+    </div>
+  )
+}
+
+// ── Invites tab (admin) ──
+const KEY_STATUS_STYLE = {
+  unredeemed: 'bg-emerald-100 text-emerald-700',
+  redeemed: 'bg-gray-100 text-gray-500',
+  revoked: 'bg-red-100 text-red-600',
+  expired: 'bg-amber-100 text-amber-700',
+}
+
+function InvitesTab() {
+  const qc = useQueryClient()
+  const [count, setCount] = useState(5)
+  const [grantsDays, setGrantsDays] = useState(30)
+  const [deadline, setDeadline] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const { data, isLoading } = useQuery({ queryKey: ['admin-invites'], queryFn: adminListInvites })
+  const invites = data?.data || []
+  const pg = usePagination(invites, 15)
+
+  const generate = async () => {
+    setBusy(true)
+    try {
+      const payload = { count: Number(count), grants_days: Number(grantsDays) }
+      if (deadline) payload.key_expires_at = new Date(deadline).toISOString()
+      const res = await adminCreateInvites(payload)
+      qc.invalidateQueries({ queryKey: ['admin-invites'] })
+      const codes = (res.data.keys || []).map((k) => k.code).join('\n')
+      if (codes) {
+        try { await navigator.clipboard.writeText(codes) } catch { /* clipboard may be blocked */ }
+        toast.success(`${res.data.created} key(s) generated + copied`)
+      }
+    } catch { toast.error('Failed to generate keys') } finally { setBusy(false) }
+  }
+
+  const copyOne = async (code) => {
+    try { await navigator.clipboard.writeText(code); toast.success('Copied') } catch { toast.error('Copy failed') }
+  }
+  const revoke = async (id) => {
+    try { await adminRevokeInvite(id); qc.invalidateQueries({ queryKey: ['admin-invites'] }); toast.success('Revoked') }
+    catch { toast.error('Cannot revoke (already redeemed?)') }
+  }
+  const extend = async (id) => {
+    const val = window.prompt('New redemption deadline (YYYY-MM-DD), or blank to clear:')
+    if (val === null) return
+    try {
+      await adminExtendInvite(id, val ? new Date(val).toISOString() : null)
+      qc.invalidateQueries({ queryKey: ['admin-invites'] }); toast.success('Deadline updated')
+    } catch { toast.error('Failed to update deadline') }
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-white rounded-2xl border border-gray-200 p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Generate invitation keys</h3>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs text-gray-500">Count
+            <input type="number" min="1" max="200" value={count} onChange={(e) => setCount(e.target.value)}
+              className="block mt-1 w-24 border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none" />
+          </label>
+          <label className="text-xs text-gray-500">Free days granted
+            <input type="number" min="1" value={grantsDays} onChange={(e) => setGrantsDays(e.target.value)}
+              className="block mt-1 w-32 border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none" />
+          </label>
+          <label className="text-xs text-gray-500">Redemption deadline (optional)
+            <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)}
+              className="block mt-1 border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none" />
+          </label>
+          <Button size="sm" loading={busy} onClick={generate}>Generate</Button>
+        </div>
+        <p className="text-xs text-gray-400 mt-2">Generated keys are copied to your clipboard. Each key is single-use.</p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100">
+          <p className="text-sm font-semibold text-gray-900">{invites.length} keys</p>
+        </div>
+        {isLoading ? <div className="flex justify-center py-8"><Spinner /></div> : (
+          <table className="w-full">
+            <thead className="border-b border-gray-100">
+              <tr>{['Code', 'Status', 'Days', 'Deadline', 'Redeemed', 'Actions'].map((h) => (
+                <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">{h}</th>))}</tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {pg.slice.map((k) => (
+                <tr key={k.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-sm font-mono text-gray-900">{k.code}</td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${KEY_STATUS_STYLE[k.status] || 'bg-gray-100 text-gray-500'}`}>{k.status}</span>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{k.grants_days}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400">{k.key_expires_at ? format(new Date(k.key_expires_at), 'MMM d, yyyy') : 'never'}</td>
+                  <td className="px-4 py-3 text-xs text-gray-400">{k.redeemed_at ? format(new Date(k.redeemed_at), 'MMM d, yyyy') : '—'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5 text-xs font-medium">
+                      <button onClick={() => copyOne(k.code)} className="text-gray-500 hover:text-gray-700">Copy</button>
+                      {k.status === 'unredeemed' && (
+                        <>
+                          <button onClick={() => extend(k.id)} className="text-blue-600 hover:underline">Deadline</button>
+                          <button onClick={() => revoke(k.id)} className="text-red-600 hover:underline">Revoke</button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="px-4 pb-3">
+          <Pagination currentPage={pg.page} totalPages={pg.totalPages} totalItems={pg.total} itemsPerPage={15} onPageChange={pg.setPage} label="keys" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Extension Requests tab (admin) ──
+function ExtensionsTab() {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin-extensions'], queryFn: adminListExtensionRequests, refetchInterval: 60000,
+  })
+  const rows = data?.data?.requests || []
+  const pg = usePagination(rows, 15)
+
+  const grant = async (id) => {
+    const val = window.prompt('Grant how many free days?', '30')
+    if (val === null) return
+    try {
+      await adminGrantExtension(id, Number(val) || 30)
+      qc.invalidateQueries({ queryKey: ['admin-extensions'] }); toast.success(`Granted ${val} days`)
+    } catch { toast.error('Failed to grant') }
+  }
+  const deny = async (id) => {
+    try { await adminDenyExtension(id); qc.invalidateQueries({ queryKey: ['admin-extensions'] }); toast.success('Denied') }
+    catch { toast.error('Failed to deny') }
+  }
+
+  const STATUS = { pending: 'bg-amber-100 text-amber-700', granted: 'bg-emerald-100 text-emerald-700', denied: 'bg-gray-100 text-gray-500' }
+
+  if (isLoading) return <div className="flex justify-center py-8"><Spinner /></div>
+  if (rows.length === 0) return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-10 text-center">
+      <p className="text-sm text-gray-400">No extension requests</p>
+    </div>
+  )
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+      <table className="w-full">
+        <thead className="border-b border-gray-100">
+          <tr>{['User', 'Requested', 'Status', 'Access ends', 'Actions'].map((h) => (
+            <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">{h}</th>))}</tr>
+        </thead>
+        <tbody className="divide-y divide-gray-50">
+          {pg.slice.map((r) => (
+            <tr key={r.id} className="hover:bg-gray-50">
+              <td className="px-4 py-3 text-sm text-gray-700">
+                {r.user?.email || r.user_id.slice(0, 8)}
+                {r.user?.entitlement_source && <span className="ml-1 text-[10px] text-gray-400">· {r.user.entitlement_source}</span>}
+              </td>
+              <td className="px-4 py-3 text-xs text-gray-400">{r.requested_at ? formatDistanceToNow(new Date(r.requested_at), { addSuffix: true }) : '—'}</td>
+              <td className="px-4 py-3"><span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${STATUS[r.status] || ''}`}>{r.status}</span></td>
+              <td className="px-4 py-3 text-xs text-gray-400">{r.user?.subscription_end ? format(new Date(r.user.subscription_end), 'MMM d, yyyy') : '—'}</td>
+              <td className="px-4 py-3">
+                {r.status === 'pending' ? (
+                  <div className="flex items-center gap-2.5 text-xs font-medium">
+                    <button onClick={() => grant(r.id)} className="text-emerald-600 hover:underline">Grant</button>
+                    <button onClick={() => deny(r.id)} className="text-red-600 hover:underline">Deny</button>
+                  </div>
+                ) : <span className="text-xs text-gray-300">resolved</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="px-4 pb-3">
+        <Pagination currentPage={pg.page} totalPages={pg.totalPages} totalItems={pg.total} itemsPerPage={15} onPageChange={pg.setPage} label="requests" />
+      </div>
     </div>
   )
 }

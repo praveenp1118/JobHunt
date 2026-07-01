@@ -18,6 +18,11 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     role: UserRole = UserRole.user
     plan: UserPlan = UserPlan.default
     gdpr_consent_at: Optional[datetime] = None
+    # Entitlement (invite-or-pay). Reuses the Stripe subscription columns.
+    subscription_status: str = "inactive"
+    subscription_plan: str = "none"
+    subscription_end: Optional[datetime] = None
+    entitlement_source: Optional[str] = None  # 'invite' | 'stripe' | None
 
     class Config:
         from_attributes = True

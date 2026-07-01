@@ -23,10 +23,11 @@ def test_country_rule_display():
     assert _country_rule_display(None) == []
 
 
-async def test_jd_highlights_404_for_unknown_job(client, user_creds):
+async def test_jd_highlights_404_for_unknown_job(client, active_user_creds):
+    # Entitled user → passes the subscription gate, reaches the 404 (unknown job).
     r = await client.post(
         "/api/tailor/jd-highlights",
         json={"job_id": str(uuid.uuid4()), "domain_cv_id": str(uuid.uuid4())},
-        headers=user_creds["headers"],
+        headers=active_user_creds["headers"],
     )
     assert r.status_code == 404

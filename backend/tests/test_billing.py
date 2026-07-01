@@ -43,7 +43,8 @@ async def test_subscription_required_blocks_tailor(client, user_creds):
         headers=user_creds["headers"],
     )
     assert r.status_code == 402, r.text
-    assert r.json()["detail"]["code"] == "subscription_required"
+    # Gate now covers invite-or-pay entitlement (renamed from subscription_required).
+    assert r.json()["detail"]["code"] == "entitlement_required"
 
 
 async def test_subscription_required_allows_get_jobs(client, user_creds):

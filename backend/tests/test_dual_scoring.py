@@ -126,16 +126,16 @@ async def test_null_scores_render_gracefully(client, user_creds):
         await eng.dispose()
 
 
-async def test_backfill_endpoint_estimates_cost(client, user_creds):
+async def test_backfill_endpoint_estimates_cost(client, active_user_creds):
     from app.models.job import Job, JobSource, JobStatus
     eng, S = _sm()
     try:
-        uid = uuid.UUID((await client.get("/api/auth/me", headers=user_creds["headers"])).json()["id"])
+        uid = uuid.UUID((await client.get("/api/auth/me", headers=active_user_creds["headers"])).json()["id"])
         async with S() as s:
             s.add(Job(id=uuid.uuid4(), user_id=uid, company="ZZ", role="PM", market="NL",
                       source=JobSource.manual, status=JobStatus.new, jd_raw="a real jd here"))
             await s.commit()
-        r = await client.post("/api/jobs/backfill-scores", headers=user_creds["headers"])
+        r = await client.post("/api/jobs/backfill-scores", headers=active_user_creds["headers"])
         assert r.status_code == 200
         body = r.json()
         assert body["jobs"] >= 1 and body["estimated_cost_inr"] > 0

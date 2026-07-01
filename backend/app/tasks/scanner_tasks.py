@@ -64,8 +64,14 @@ async def _weekly_scan_async():
             )
             user_creds = result.all()
 
+            from app.utils.subscription import is_entitled
             for user, creds in user_creds:
                 try:
+                    # Skip un-entitled users — the scheduled scan calls Claude for
+                    # scoring, and an inert (invite-lapsed / never-entitled) account
+                    # must not spend tokens on the platform's schedule.
+                    if not is_entitled(user):
+                        continue
                     # Get user's active feeds
                     feeds_result = await session.execute(
                         select(UserFeed).where(

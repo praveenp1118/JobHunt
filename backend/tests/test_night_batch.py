@@ -84,11 +84,11 @@ async def test_night_batch_scores_all_pending(monkeypatch):
 
 
 # ── Score-now endpoint wiring (already-scored path — no Claude) ──
-async def test_score_now_endpoint_scores_single_job(client, user_creds):
+async def test_score_now_endpoint_scores_single_job(client, active_user_creds):
     from app.models.job import Job, JobSource, JobStatus
     eng, S = _sm()
     try:
-        uid = uuid.UUID((await client.get("/api/auth/me", headers=user_creds["headers"])).json()["id"])
+        uid = uuid.UUID((await client.get("/api/auth/me", headers=active_user_creds["headers"])).json()["id"])
         jid = uuid.uuid4()
         async with S() as s:
             s.add(Job(id=jid, user_id=uid, company="ZZ", role="PM", market="NL",
@@ -96,7 +96,7 @@ async def test_score_now_endpoint_scores_single_job(client, user_creds):
                       s1=77, scoring_status="scored"))
             await s.commit()
         # Already scored → no-op (no Claude call), returns the existing score.
-        r = await client.post(f"/api/jobs/{jid}/score-now", headers=user_creds["headers"])
+        r = await client.post(f"/api/jobs/{jid}/score-now", headers=active_user_creds["headers"])
         assert r.status_code == 200 and r.json().get("already_scored") is True and r.json()["s1"] == 77
     finally:
         await eng.dispose()
