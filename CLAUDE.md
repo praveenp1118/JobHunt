@@ -237,6 +237,11 @@ Brand **AIJobsHunt**, logo monogram **JH**, emerald `#059669` + navy `#0b1220`; 
   `include:['/']`, `crawl:false`, and switch `main.jsx` to `hydrateRoot` for prerendered routes — kept OUT
   of the default `npm run build` so the prod image build can't break; the SPA stays SPA. Lighthouse SEO/a11y
   are already high from the static head + semantic markup (headless Chrome runs the JS).
+- **Gotcha fixed — Tailwind `.ring` collision:** the mock's dual score rings must use the class
+  **`scorering`, NOT `ring`** — a bare `ring` class makes Tailwind emit its `.ring` utility (a blue
+  box-shadow, `rgb(59 130 246/.5)`) which then paints a rectangle around each ring (the scoped `.aijh .ring`
+  rule didn't reset `box-shadow`). Renaming to `scorering` avoids the utility entirely. General rule: don't
+  reuse bare Tailwind utility names (`ring`, `container`, `block`, …) as landing class names.
 
 ---
 
