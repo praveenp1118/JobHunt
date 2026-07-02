@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>JobHunt — AI-powered job search for senior product leaders</title>
+  <title>AIJobsHunt — AI-powered job search for senior product leaders</title>
   <meta name="description" content="AI-powered job search platform for senior product leaders. CV tailoring with integrity scoring, multi-domain matching, job-alert parsing, and full application tracking." />
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
@@ -18,7 +18,7 @@
     <div class="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between">
       <div class="flex items-center gap-2.5">
         <div class="w-8 h-8 rounded-lg bg-emerald-500 text-white font-bold grid place-items-center text-sm">JH</div>
-        <span class="font-semibold text-slate-900">JobHunt</span>
+        <span class="font-semibold text-slate-900">AIJobsHunt</span>
       </div>
       <nav class="flex items-center gap-5 text-sm text-slate-600">
         <a href="architecture.html" class="hover:text-emerald-600">Architecture</a>
@@ -32,23 +32,24 @@
   <section class="grad">
     <div class="max-w-6xl mx-auto px-5 pt-20 pb-16 text-center">
       <div class="w-16 h-16 rounded-2xl bg-emerald-500 text-white font-bold grid place-items-center text-2xl mx-auto mb-6 shadow-lg shadow-emerald-500/20">JH</div>
-      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900">JobHunt</h1>
+      <h1 class="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900">AIJobsHunt</h1>
       <p class="mt-3 text-lg text-emerald-700 font-medium">AI-powered job search platform for senior product leaders</p>
       <p class="mt-6 max-w-2xl mx-auto text-slate-600 leading-relaxed">
-        JobHunt automates the highest-effort parts of a senior product leadership job search.
+        AIJobsHunt automates the highest-effort parts of a senior product leadership job search.
         It scans curated feeds and Gmail job-alert digests, scores every opportunity against your
         master CV and multiple domain-specific CVs, then tailors your CV and cover letter for each
         role — making only bounded, factual edits and never inventing experience. Everything is
         tracked end-to-end, from discovery to application to recruiter follow-up.
       </p>
-      <div class="mt-8 flex items-center justify-center gap-3">
-        <a href="features.html" class="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition">Explore features</a>
+      <div class="mt-8 flex items-center justify-center gap-3 flex-wrap">
+        <a href="https://aijobshunt.com" class="px-5 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition">Visit the app → aijobshunt.com</a>
+        <a href="features.html" class="px-5 py-2.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 transition">Explore features</a>
         <a href="architecture.html" class="px-5 py-2.5 rounded-lg bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 transition">View architecture</a>
       </div>
       <div class="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-3xl mx-auto">
         <div class="bg-white rounded-xl border border-slate-200 p-4">
-          <p class="text-2xl font-bold text-emerald-600">114</p>
-          <p class="text-xs text-slate-500 mt-0.5">smoke tests passing</p>
+          <p class="text-2xl font-bold text-emerald-600">148</p>
+          <p class="text-xs text-slate-500 mt-0.5">smoke tests</p>
         </div>
         <div class="bg-white rounded-xl border border-slate-200 p-4">
           <p class="text-2xl font-bold text-emerald-600">82%</p>
@@ -97,7 +98,7 @@
 
       <div class="bg-white rounded-2xl border border-slate-200 p-6">
         <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center text-lg mb-4">📥</div>
-        <h3 class="font-semibold text-slate-900">Email-to-JobHunt</h3>
+        <h3 class="font-semibold text-slate-900">Email-to-AIJobsHunt</h3>
         <p class="mt-2 text-sm text-slate-600 leading-relaxed">Forward any job URL to your job-search Gmail with a subject like <em>jh:</em> — it's auto-fetched, parsed, scored, and saved to your tracker, with a confirmation email back. The poll also auto-detects "application sent" confirmations and marks jobs Applied.</p>
       </div>
 
@@ -145,8 +146,8 @@
 
       <div class="bg-white rounded-2xl border border-slate-200 p-6">
         <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center text-lg mb-4">◆</div>
-        <h3 class="font-semibold text-slate-900">Stripe subscriptions</h3>
-        <p class="mt-2 text-sm text-slate-600 leading-relaxed">JobHunt Pro (₹500/mo) via Stripe — bring your own API keys. Paid write actions are subscription-gated (admins bypass), with read-only access on expiry and a webhook-driven status sync.</p>
+        <h3 class="font-semibold text-slate-900">Invite-or-pay access</h3>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed">Registration is open, but a new account is inert (read-only) until entitled — by redeeming a single-use invite key (30 days free) or subscribing to AIJobsHunt Pro (₹500/mo via Stripe). Every Claude-calling route is gated (402 until entitled); the gate is expiry-aware, admins bypass, and invited users can request an extension.</p>
       </div>
 
       <div class="bg-white rounded-2xl border border-slate-200 p-6">
@@ -169,8 +170,12 @@
     <h2 class="text-2xl font-bold text-slate-900 text-center">See it in action</h2>
     <div class="mt-10 space-y-6">
       <figure class="rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
+        <img src="screenshots/dashboard.png" alt="Dashboard" class="w-full block" loading="lazy" />
+        <figcaption class="px-4 py-3 text-sm text-slate-600 border-t border-slate-100">Dashboard — ATS + Pursuit averages, career readiness and feed performance at a glance</figcaption>
+      </figure>
+      <figure class="rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
         <img src="screenshots/tracker.png" alt="Job Tracker" class="w-full block" loading="lazy" />
-        <figcaption class="px-4 py-3 text-sm text-slate-600 border-t border-slate-100">Job Tracker — every job scored against the master CV and all domain CVs (B · Best Fit · T · F)</figcaption>
+        <figcaption class="px-4 py-3 text-sm text-slate-600 border-t border-slate-100">Job Tracker — every job scored against the master CV and all domain CVs, with ATS + Pursuit dual rings</figcaption>
       </figure>
       <div class="grid gap-6 md:grid-cols-2">
         <figure class="rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
@@ -178,16 +183,20 @@
           <figcaption class="px-4 py-3 text-sm text-slate-600 border-t border-slate-100">AI Tailor — bounded change log + live preview</figcaption>
         </figure>
         <figure class="rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
-          <img src="screenshots/activity-1.png" alt="Activity dashboard" class="w-full block" loading="lazy" />
+          <img src="screenshots/activity.png" alt="Activity dashboard" class="w-full block" loading="lazy" />
           <figcaption class="px-4 py-3 text-sm text-slate-600 border-t border-slate-100">Activity dashboard — per-feed scan funnels</figcaption>
         </figure>
         <figure class="rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
-          <img src="screenshots/domain-cv.png" alt="Domain CVs" class="w-full block" loading="lazy" />
-          <figcaption class="px-4 py-3 text-sm text-slate-600 border-t border-slate-100">Domain CVs — multi-domain setup</figcaption>
+          <img src="screenshots/cvs.png" alt="My CVs" class="w-full block" loading="lazy" />
+          <figcaption class="px-4 py-3 text-sm text-slate-600 border-t border-slate-100">My CVs — master + multi-domain setup</figcaption>
         </figure>
         <figure class="rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
           <img src="screenshots/feeds.png" alt="Feeds and scanning" class="w-full block" loading="lazy" />
           <figcaption class="px-4 py-3 text-sm text-slate-600 border-t border-slate-100">Feeds &amp; scanning — RSS + Apify profiles</figcaption>
+        </figure>
+        <figure class="rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
+          <img src="screenshots/admin.png" alt="Admin invites and access" class="w-full block" loading="lazy" />
+          <figcaption class="px-4 py-3 text-sm text-slate-600 border-t border-slate-100">Admin — invite keys &amp; access control</figcaption>
         </figure>
       </div>
     </div>
@@ -292,7 +301,7 @@
     <div class="max-w-6xl mx-auto px-5 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-500">
       <div class="flex items-center gap-2">
         <div class="w-6 h-6 rounded-md bg-emerald-500 text-white font-bold grid place-items-center text-[10px]">JH</div>
-        <span>JobHunt — product documentation</span>
+        <span>AIJobsHunt — product documentation</span>
       </div>
       <nav class="flex items-center gap-4">
         <a href="architecture.html" class="hover:text-emerald-600">Architecture</a>

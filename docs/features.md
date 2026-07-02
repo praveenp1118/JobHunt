@@ -1,6 +1,6 @@
 # Features
 
-A detailed tour of what JobHunt does, by area.
+A detailed tour of what AIJobsHunt does, by area.
 
 ## Job Tracker
 
@@ -59,7 +59,7 @@ The central pipeline for every opportunity.
 
 ## Hybrid-RAG Scoring &amp; Cost Optimization
 
-JobHunt scores a high volume of jobs, so every Claude call uses the cheapest model that's good enough.
+AIJobsHunt scores a high volume of jobs, so every Claude call uses the cheapest model that's good enough.
 
 - **3-stage scoring pipeline** — instead of running every job through one expensive full-CV call, scoring
   is a funnel:
@@ -103,8 +103,8 @@ Beyond fit, each job is judged on two axes per CV entity (master / domain / tail
 - **Job-alert parsing** — hourly inbox poll detects job-alert digests (rule-based, no AI cost),
   extracts job cards directly from the email body for login-gated sources (LinkedIn/Indeed), and
   scores + saves the relevant ones (full 3-stage RAG on fetchable URLs) with a link back to the source email.
-- **Email-to-JobHunt** — forward any job URL to your job-search Gmail with a subject containing `jobhunt`
-  or starting with `jh:`. JobHunt fetches the page, parses + scores it, saves it (**📥 Email** source), and
+- **Email-to-AIJobsHunt** — forward any job URL to your job-search Gmail with a subject containing `jobhunt`
+  or starting with `jh:`. AIJobsHunt fetches the page, parses + scores it, saves it (**📥 Email** source), and
   emails you a confirmation with the scores and a tracker link.
 - **Auto-detect external applications** — the poll recognises LinkedIn / Indeed "application sent / received"
   confirmations, flips the matching `new`/`bookmarked` job to **Applied** (linking the email), or adds the
@@ -158,12 +158,30 @@ Beyond fit, each job is judged on two axes per CV entity (master / domain / tail
 - **Attachments** — image / PDF / doc up to 5 MB.
 - **Admin console** — `/admin/chat` with presence heartbeat, canned replies, internal notes, and tickets.
 
-## Subscriptions & Billing
+## Access — Invite-or-Pay
 
-- **JobHunt Pro** — a Stripe subscription (₹500/mo); each user brings their own Anthropic + Apify keys.
-- **Gated writes** — paid actions (tailoring, scanning, sending, career analysis) require an active
-  subscription and return **402** otherwise; **admins bypass**. Read, auth, and billing stay open.
-- **Lifecycle** — checkout, cancel (at period end), resubscribe, and a webhook-driven status sync.
+- **Open registration, inert account** — anyone can sign up, but a new account is read-only until
+  **entitled**. Entitlement comes two ways, both reusing the existing subscription columns:
+  - **Invite key** — redeem a **single-use** `JH-XXXX-XXXX` key for **30 days free** (no card). Redemption is
+    atomic and race-safe (row-locked), so two users can't win the same key.
+  - **AIJobsHunt Pro** — a **Stripe** subscription (₹500/mo); each user brings their own Anthropic + Apify keys.
+- **Gated writes** — **every Claude-calling route** (tailoring, scanning, JD parsing/scoring, sending, career
+  analysis, CV essence…) returns **402 `entitlement_required`** until entitled; **admins bypass**. Read, auth,
+  billing, and PDF generation stay open. The gate is **expiry-aware**, so an invite's free month lapses with
+  no background job. The scheduled scanner + Gmail poll also skip un-entitled users.
+- **Extension requests** — an invited user whose free period has lapsed (or is within 5 days) can request an
+  extension from an in-app banner; the request is queued in-app (source of truth) and best-effort emails the
+  admin. Admins manage keys and extension requests (grant / deny) from the **Admin panel** (with a pending-count
+  badge), and can extend any user directly.
+- **Billing lifecycle** — Stripe checkout, cancel (at period end), resubscribe, and a webhook-driven status sync.
+
+## Public Landing Page
+
+- **Marketing site** at **[aijobshunt.com](https://aijobshunt.com)** (React/Vite) — the logged-out home:
+  animated product mocks (score rings, rotating panels), the ATS + Pursuit story, BYOK/pricing, an
+  invite-key redemption field, and a rule-based FAQ chat.
+- **SEO** — static `<title>` / meta / canonical, OpenGraph + Twitter cards (1200×630 share image), JSON-LD
+  (`SoftwareApplication` + `Organization`), `robots.txt`, `sitemap.xml`, and a PWA `manifest.json` + icons.
 
 ## Community Insights
 
@@ -201,7 +219,7 @@ Beyond fit, each job is judged on two axes per CV entity (master / domain / tail
 
 ## Privacy & GDPR
 
-- **Data summary** — see exactly what JobHunt stores about you.
+- **Data summary** — see exactly what AIJobsHunt stores about you.
 - **Export** — download all your data (profile, CVs, jobs, applications, usage) as a ZIP.
 - **Right to erasure** — request account deletion with a **30-day grace period**; a daily task purges
   scheduled accounts (storage → Stripe customer → database, CASCADE).

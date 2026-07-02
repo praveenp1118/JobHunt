@@ -2,10 +2,13 @@
 
 ## Overview
 
-JobHunt is a **local, Docker-based** platform — a single `docker-compose` stack of six
-services. It is designed for a small number of senior-product-leader users who bring their
-own AI and scraping API keys. There is no external SaaS dependency beyond the AI provider
-(Anthropic) and the job-scraping providers (Apify) the user configures.
+AIJobsHunt is a **Docker-based** platform — a `docker-compose` stack of six services, plus a **Caddy**
+reverse proxy (automatic HTTPS) in production. It runs locally for development and is live at
+**[aijobshunt.com](https://aijobshunt.com)**. It is designed for a small number of senior-product-leader
+users who bring their own AI and scraping API keys. There is no external SaaS dependency beyond the AI
+provider (Anthropic) and the job-scraping providers (Apify) the user configures. A **public React landing
+page** is served at the site root; the authenticated SPA lives behind it. **Access is invite-or-pay** — a
+new account is inert until it redeems an invite key or subscribes.
 
 ## System diagram
 
@@ -107,7 +110,7 @@ own AI and scraping API keys. There is no external SaaS dependency beyond the AI
   derived from the domain CV; a rule-based keyword pre-filter runs before any paid scoring call.
 - **Gmail Parser** — detects job-alert digest emails (rule-based), extracts job cards directly
   from the email body for login-gated sources (LinkedIn/Indeed), and scores/saves matches. Also runs the
-  **Email-to-JobHunt** classifier (save a URL by emailing it) and **auto-detects external applications**
+  **Email-to-AIJobsHunt** classifier (save a URL by emailing it) and **auto-detects external applications**
   from "application sent/received" confirmations.
 - **RAG Scorer** — the 3-stage hybrid pipeline (keyword pre-filter → essence scoring → full-CV scoring)
   shared by the scanner, the public-URL alert path, and manual adds. Reads its per-stage config from the
@@ -126,8 +129,17 @@ own AI and scraping API keys. There is no external SaaS dependency beyond the AI
   per-request contextvar, powering the inline token badges and the API Usage tab.
 - **Support Chat** — a rule-based FAQ engine (no AI) plus a **WebSocket** server for real-time admin
   hand-off; falls back to a ticket + email when no admin is online.
-- **Billing** — Stripe subscription lifecycle (checkout / cancel / webhook / verify) with a
-  `require_active_subscription` gate (402) on paid write endpoints; admins bypass.
+- **Access — invite-or-pay** — registration is open, but a new account is **inert** until **entitled**,
+  either by redeeming a **single-use invite key** (`invitation_keys`; 30 days free, atomic/race-safe
+  `SELECT … FOR UPDATE` redemption) or via a **Stripe subscription**. Entitlement reuses the existing
+  `subscription_status` / `subscription_end` columns + `entitlement_source` (`invite` | `stripe`). The
+  `require_active_subscription` gate (**402 `entitlement_required`**) is **expiry-aware** (an invite's free
+  month lapses with no background job) and applied to **every Claude-calling route** (jobs · cvs · tailor ·
+  feeds · career · gmail) plus the scheduled scanner / Gmail poll; **admins bypass**. Invited-lapsed users
+  file an **extension request** (in-app queue is the source of truth + best-effort admin email); admins
+  generate/revoke keys and grant extensions from the Admin panel.
+- **Billing** — Stripe subscription lifecycle (checkout / cancel / webhook / verify) feeding the same
+  entitlement columns the access gate reads.
 - **Community Insights** — anonymised aggregation of scores + JD highlights + tailoring patterns
   (never CV/PII), surfaced once ≥2 members contribute. Company/role are normalised for bucket matching.
 - **Security & governance layer** — a `rate_limiter` (per-user/action limits, DB-backed), a `cv_validator`
@@ -267,12 +279,13 @@ base → 7bad (initial) → f6a2 → a1b2 (user profile fields)
 → v3_chat → v3_api_usage_log → v3_job_s1_tokens → v3_community
 → v3_career_insights → v3_cv_template → v3_gdpr_consent → v3_governance
 → v3_career_filters → v3_rag_scoring → v3_night_batch → v3_auto_detect_apps
-→ v3_email_to_jobhunt → v3_optimization → v3_email_source  (head)
+→ v3_email_to_jobhunt → v3_optimization → v3_email_source
+→ v3_ats_pursuit → v3_dual_scan_gate → v3_invite_or_pay  (head)
 ```
 
 ## Scoring Pipeline — Hybrid RAG
 
-To minimise token cost without losing accuracy on saved jobs, JobHunt scores jobs through a
+To minimise token cost without losing accuracy on saved jobs, AIJobsHunt scores jobs through a
 3-stage hybrid-RAG pipeline (the scanner and the public-URL alert path both use it).
 
 ```
@@ -386,7 +399,7 @@ in `run_log.details`, surfaced on the Activity → System scanner cards.
 | Job scanning | RSS feeds + Apify actors |
 | Browser automation | Playwright (title pre-filter + PDF rendering) |
 | PDF | Playwright HTML template → PDF |
-| Payments | Stripe (JobHunt Pro subscription) |
+| Payments | Stripe (AIJobsHunt Pro subscription) |
 | Real-time | WebSockets (support chat) |
 | Storage | Local filesystem, user-scoped (`users/{user_id}/tailored\|cover_letters\|exports/`); S3 migration planned |
 | Testing | pytest + pytest-asyncio (in-container, live-server smoke tests) |

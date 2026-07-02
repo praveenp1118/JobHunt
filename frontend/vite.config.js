@@ -12,6 +12,9 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 3000,
+    // Allow reaching the dev server by Docker service name (e.g. for in-network
+    // headless-browser screenshotting). Dev-only; prod is served by nginx.
+    allowedHosts: ['frontend', 'localhost'],
     // Windows + Docker bind mounts don't propagate native file events to the
     // Linux container, so HMR needs polling to detect edits.
     watch: {

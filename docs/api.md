@@ -12,7 +12,7 @@ implementation spec.
 | `POST /forgot-password` | Start password reset |
 | `GET /me`, `PATCH /me/profile` | Current user + profile fields |
 | `GET/PUT /me/credentials` | Manage encrypted API keys (Anthropic, Apify, Gmail) |
-| `GET/PATCH /me/preferences` | Thresholds, model, automation, job-alert controls, auto-detect + Email-to-JobHunt toggles |
+| `GET/PATCH /me/preferences` | Thresholds, model, automation, job-alert controls, auto-detect + Email-to-AIJobsHunt toggles |
 | `GET /admin/users`, `PATCH /admin/users/{id}/…` | Admin user management |
 
 ## CVs — `/api/cvs`
@@ -118,8 +118,24 @@ implementation spec.
 
 | Method & path | Purpose |
 |---|---|
-| `POST /create-checkout-session`, `GET /subscription`, `POST /cancel` | Subscription lifecycle |
+| `POST /create-checkout-session`, `GET /subscription`, `POST /cancel` | Subscription lifecycle (`GET /subscription` returns `entitlement_source` + an expiry-aware `is_active`) |
 | `POST /webhook`, `GET /verify-session` | Stripe event sync + post-checkout activation |
+
+## Access — `/api` (invite-or-pay)
+
+| Method & path | Purpose |
+|---|---|
+| `POST /invites/redeem` `{code}` | Redeem a single-use invite key → 30-day entitlement (atomic, row-locked, idempotent for the same user) |
+| `POST /extension-requests`, `GET /extension-requests` | Invited-lapsed user requests more free time (in-app queue + best-effort admin email); list own |
+| `POST /admin/invites`, `GET /admin/invites` | **Admin** — generate N single-use `JH-XXXX-XXXX` keys (grants_days, optional deadline); list with status |
+| `POST /admin/invites/{id}/revoke`, `PATCH /admin/invites/{id}/extend` | **Admin** — revoke / bump redemption deadline |
+| `GET /admin/extension-requests` | **Admin** — pending queue (+ `pending_count` badge) |
+| `POST /admin/extension-requests/{id}/grant`, `/deny` | **Admin** — grant (+N days) / deny an extension |
+| `PATCH /admin/users/{id}/extend-subscription` | **Admin** — extend any user's access directly (comp / grace tool) |
+
+> **The access gate.** `require_active_subscription` returns **402 `entitlement_required`** for a non-admin
+> whose entitlement is missing or lapsed (expiry-aware), and is applied to **every Claude-calling route**
+> across jobs / cvs / tailor / feeds / career / gmail. GET reads, auth, billing, and PDF generation are ungated.
 
 ## Chat — `/api/chat`
 

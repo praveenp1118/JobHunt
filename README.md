@@ -1,9 +1,10 @@
 <div align="center">
 
-# JobHunt
+# AIJobsHunt
 
-**AI-powered job search platform for senior product leaders**
+**AI-powered job search platform for senior product leaders** — live at **[aijobshunt.com](https://aijobshunt.com)**
 
+[![Live](https://img.shields.io/badge/live-aijobshunt.com-059669)](https://aijobshunt.com)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-10b981)](https://praveenp1118.github.io/JobHunt)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![React](https://img.shields.io/badge/React-20232a?logo=react&logoColor=61dafb)
@@ -12,7 +13,7 @@
 ![Celery](https://img.shields.io/badge/Celery%20%2B%20Redis-37814a?logo=celery&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ed?logo=docker&logoColor=white)
 
-📖 **[Live documentation site →](https://praveenp1118.github.io/JobHunt)**
+🌐 **[Live app → aijobshunt.com](https://aijobshunt.com)** &nbsp;·&nbsp; 📖 **[Documentation →](https://praveenp1118.github.io/JobHunt)**
 
 </div>
 
@@ -20,14 +21,16 @@
 
 ## Overview
 
-JobHunt automates the highest-effort parts of a senior product leadership job search. It scans
+AIJobsHunt automates the highest-effort parts of a senior product leadership job search. It scans
 curated job feeds and Gmail job-alert digests, scores every opportunity against your **master CV**
 and multiple **domain-specific CVs**, then tailors your CV and cover letter for each role — making
 only bounded, factual edits and **never inventing experience**. Everything is tracked end-to-end,
 from discovery to application to recruiter follow-up.
 
-It runs entirely on a local Docker stack; each user brings their own AI (Anthropic) and
-scraping (Apify) API keys.
+It runs as a Docker stack — locally for development and in production at
+**[aijobshunt.com](https://aijobshunt.com)** (Caddy reverse proxy + automatic HTTPS). Each user brings
+their own AI (Anthropic) and scraping (Apify) API keys. **Access is invite-or-pay**: registration is open,
+but a new account is inert (read-only) until it redeems an invite key or subscribes.
 
 ## Key features
 
@@ -50,7 +53,7 @@ scraping (Apify) API keys.
   classification is rules-first (free) then Haiku; JD highlights are Haiku + **cached per job**; feed keywords
   and CV→markdown use Haiku; career insights run on the CV essence. The API Usage tab shows the model tier
   (Haiku / Sonnet / Opus) and ₹ cost per call.
-- **Email-to-JobHunt** — forward any job URL to your job-search Gmail with a subject containing `jobhunt`
+- **Email-to-AIJobsHunt** — forward any job URL to your job-search Gmail with a subject containing `jobhunt`
   or starting with `jh:`; it's auto-fetched, parsed, scored, and saved (📥 Email source) with a confirmation
   email back to you.
 - **Auto-detect external applications** — the Gmail poll recognises LinkedIn / Indeed "application sent /
@@ -73,8 +76,15 @@ scraping (Apify) API keys.
   with live WebSocket hand-off to an admin when online, or a ticket + email when offline.
 - **Community insights** — opt-in, fully anonymised sharing of job scores + JD highlights + tailoring
   patterns (never CV content or PII); recipients spend **0 tokens**. Surfaces only at ≥2 contributors.
-- **Subscriptions** — Stripe-powered JobHunt Pro (₹500/mo); paid write actions are gated, with read-only
-  access on expiry (admins bypass).
+- **Invite-or-pay access** — registration is open, but a new account is **inert** (read-only) until
+  **entitled**, either by redeeming a **single-use invite key** (30 days free) or **subscribing** to
+  AIJobsHunt Pro (₹500/mo via Stripe). **Every Claude-calling route is gated** (402 until entitled) and the
+  gate is **expiry-aware** (an invite's free month lapses with no background job). Admins bypass. Invited
+  users can request an extension (in-app queue + best-effort admin email); admins generate/revoke keys and
+  grant extensions from an **Admin panel**.
+- **Public landing page** — a fast, responsive marketing site at **[aijobshunt.com](https://aijobshunt.com)**
+  (React/Vite) with animated product mocks, invite-key redemption + signup, and full SEO (OpenGraph / Twitter
+  / JSON-LD, sitemap, PWA manifest).
 - **Templates** — one global CV template (font / size / margins / accent / bullets → deterministic PDF
   styling) plus content rules (never-modify sections, section order, page budget) injected into the tailor
   prompt; per-domain overrides, live previews, and an overflow "trim to fit" guard.
@@ -86,7 +96,15 @@ scraping (Apify) API keys.
 
 ## Screenshots
 
-**Job Tracker** — every job scored against your master CV and all domain CVs (B · Best Fit · T · F):
+**Landing page** — the public site: scored, tailored, tracked — honestly:
+
+![Landing page](docs/screenshots/landing.png)
+
+**Dashboard** — your search at a glance: ATS + Pursuit averages, career readiness, feed performance:
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+**Job Tracker** — every job scored against your master CV and all domain CVs, with ATS + Pursuit dual rings:
 
 ![Job Tracker](docs/screenshots/tracker.png)
 
@@ -94,16 +112,14 @@ scraping (Apify) API keys.
 
 ![AI Tailor](docs/screenshots/tailor.png)
 
-**Activity dashboard** — per-feed scan funnels and job-alert timelines:
-
-![Activity dashboard](docs/screenshots/activity-1.png)
-
-![Scan breakdown](docs/screenshots/activity-2.png)
-
 <table>
   <tr>
-    <td width="50%" valign="top"><b>Domain CVs</b><br/><img src="docs/screenshots/domain-cv.png" alt="Domain CVs"/></td>
+    <td width="50%" valign="top"><b>Activity dashboard</b><br/><img src="docs/screenshots/activity.png" alt="Activity dashboard"/></td>
+    <td width="50%" valign="top"><b>My CVs — master + domain</b><br/><img src="docs/screenshots/cvs.png" alt="My CVs"/></td>
+  </tr>
+  <tr>
     <td width="50%" valign="top"><b>Feeds &amp; scanning</b><br/><img src="docs/screenshots/feeds.png" alt="Feeds and scanning"/></td>
+    <td width="50%" valign="top"><b>Admin — invites &amp; access</b><br/><img src="docs/screenshots/admin.png" alt="Admin invites and access"/></td>
   </tr>
 </table>
 
@@ -121,29 +137,27 @@ Plus a complementary **dual-judgement** layer per CV entity: **ATS** (will it pa
 
 ## Architecture
 
-Local Docker deployment — six services. The Celery worker drives the input pipelines; the
-FastAPI backend serves the React tracker and orchestrates AI calls.
+Docker stack — six services behind a Caddy reverse proxy (auto-HTTPS) in production. The FastAPI
+backend serves the React SPA + public landing and orchestrates AI calls; the Celery worker drives the
+input pipelines.
 
-```
-   ┌───────────────────┐         ┌────────────────────────┐         ┌──────────────┐
-   │  React Frontend   │ ───────▶│   FastAPI Backend      │ ───────▶│  PostgreSQL  │
-   │  (Vite, :3000)    │  HTTPS  │   (:8000)              │  async  │              │
-   └───────────────────┘         └───────────┬────────────┘         └──────────────┘
-                                             │                        ┌──────────────┐
-                                             ├───────────────────────▶│    Redis     │
-                                             │   Anthropic Claude      │  (broker)    │
-                                             ▼                         └──────┬───────┘
-                                   ┌────────────────────┐                     │
-                                   │  Claude (user key) │                     ▼
-                                   └────────────────────┘            ┌──────────────────┐
-                                                                     │  Celery Worker   │
-                                                                     │  + Celery Beat   │
-        ┌──────────────────────────────────────────────────────────┴──────────────────┤
-        ▼                       ▼                        ▼                    ▼
-  ┌────────────┐         ┌────────────┐          ┌──────────────┐     ┌──────────────┐
-  │ Gmail IMAP │         │ RSS Feeds  │          │ Apify Actors │     │  Playwright  │
-  │  + SMTP    │         │            │          │              │     │  (title, PDF)│
-  └────────────┘         └────────────┘          └──────────────┘     └──────────────┘
+```mermaid
+flowchart TD
+    U([Visitor / user]) -->|HTTPS| CADDY["Caddy · auto-HTTPS<br/>aijobshunt.com"]
+    CADDY -->|/api/*| BE
+    CADDY -->|else| FE["React Frontend<br/>Vite · Tailwind · landing + SPA"]
+    FE -->|REST + WebSocket| BE["FastAPI Backend<br/>async · auth · AI orchestration · :8000"]
+    BE --> DB[("PostgreSQL<br/>jobs · CVs · feeds · logs")]
+    BE --> RD[("Redis<br/>Celery broker")]
+    BE --> AI["Claude — user's key<br/>3-stage RAG · essence · tailor · career"]
+    RD --> WK["Celery Worker + Beat<br/>feed scan · Gmail poll · night-batch · ghost check"]
+    WK --> DB
+    WK --> AI
+    WK --> GM["Gmail<br/>IMAP + SMTP"]
+    WK --> RSS["RSS Feeds<br/>Jobicy …"]
+    WK --> AP["Apify Actors<br/>LinkedIn · Google"]
+    BE --> PW["Playwright<br/>title pre-filter · PDF"]
+    WK --> PW
 ```
 
 See the full write-up in **[docs/architecture.md](docs/architecture.md)**.
@@ -161,7 +175,8 @@ See the full write-up in **[docs/architecture.md](docs/architecture.md)**.
 | Job scanning | RSS feeds + Apify actors |
 | Browser / PDF | Playwright (title pre-filter + HTML→PDF) |
 | Storage | Local filesystem, user-scoped (`users/{user_id}/tailored\|cover_letters\|exports/`) — S3 migration planned |
-| Payments | Stripe (JobHunt Pro subscription) |
+| Payments / access | Stripe (AIJobsHunt Pro subscription) + single-use invite keys (invite-or-pay gate) |
+| Deployment | Docker Compose · Caddy reverse proxy (automatic HTTPS) at aijobshunt.com |
 | Real-time | WebSockets (support chat) |
 | Security | AES-256, bcrypt, JWT, security headers, per-user rate limiting, Redis login lockout, audit log |
 | Testing | pytest + pytest-asyncio (in-container live-server smoke tests) |
@@ -205,6 +220,11 @@ docker-compose exec backend alembic upgrade head
 Each user supplies their own **Anthropic API key** (for AI) and optional **Apify token**
 (for scraping) and **Gmail app password** (for email) in the app's Settings.
 
+The first account (seeded from `ADMIN_EMAIL` in `.env`) is the **admin** and bypasses the access gate.
+New accounts are inert until entitled — generate **invite keys** from the Admin panel (or subscribe) to
+onboard others. A production deploy uses `docker-compose.prod.yml` + `Caddyfile` (see `CLAUDE.md` →
+Deployment).
+
 ## Testing
 
 ```bash
@@ -212,9 +232,10 @@ docker-compose exec backend pytest tests/ -v
 ```
 
 The suite runs **in-container against the live uvicorn server** over real HTTP against the real
-Postgres DB — **136 smoke tests** covering the API, scanner, Gmail alert parser, multi-domain scoring,
-the hybrid-RAG pipeline, tiered-model optimization, ATS + Pursuit dual scoring, career readiness, billing,
-governance, templates, and more.
+Postgres DB — **148 smoke tests** (145 passing + 3 skipped live/owner-absent) covering the API, scanner,
+Gmail alert parser, multi-domain scoring, the hybrid-RAG pipeline, tiered-model optimization, ATS + Pursuit
+dual scoring, career readiness, billing, the **invite-or-pay access gate** (key redemption, races, expiry,
+extension requests), governance, templates, and more.
 
 ## Documentation
 
@@ -224,13 +245,15 @@ governance, templates, and more.
 
 ## Status
 
-Active personal project. Core platform (V1–V3) is **feature-complete**: CV management, AI tailoring,
-multi-domain scoring, the **hybrid-RAG scoring pipeline** + tiered-model cost optimization, feed scanning,
-Gmail alert parsing, **Email-to-JobHunt**, auto-detected applications, the activity dashboard, Career
-Insights, API usage visibility, support chat, community insights, Stripe subscriptions, CV templates, and a
-security-first governance layer (rate limiting, prompt-injection hardening, audit logs, GDPR export/erasure)
-with static legal pages + registration consent, and an **ATS + Pursuit dual-scoring** layer with a real-data
-career-readiness radar. **136 smoke tests passing.**
+Active personal project — **live at [aijobshunt.com](https://aijobshunt.com)** (Docker + Caddy, automatic
+HTTPS). Core platform (V1–V3) is **feature-complete**: CV management, AI tailoring, multi-domain scoring, the
+**hybrid-RAG scoring pipeline** + tiered-model cost optimization, feed scanning, Gmail alert parsing,
+**Email-to-AIJobsHunt**, auto-detected applications, the activity dashboard, Career Insights, API usage
+visibility, support chat, community insights, CV templates, an **ATS + Pursuit dual-scoring** layer with a
+real-data career-readiness radar, a security-first governance layer (rate limiting, prompt-injection
+hardening, audit logs, GDPR export/erasure) with static legal pages + registration consent, an
+**invite-or-pay access gate** (single-use keys · 30-day entitlement · Stripe · extension requests), and a
+**public marketing landing page**. **148 smoke tests (145 passing + 3 skipped).**
 
 ## License
 

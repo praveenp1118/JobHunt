@@ -9,12 +9,17 @@
 ## Project Overview
 
 AI-powered job search platform for senior product leaders (Head of Product, VP Product, CPO, AI Product Lead).
-Target markets: Netherlands/EU (primary), Dubai, Singapore, India (backup).
-Local Docker deployment only. Multi-user capable.
+Target markets: Netherlands/EU (primary), Dubai, Singapore, India (backup). Multi-user capable.
+
+**Public brand: AIJobsHunt — LIVE at https://aijobshunt.com** (Docker + Caddy auto-HTTPS; verified 200,
+`www`→apex 301). The **codebase, repo, Docker services, and DB stay named `jobhunt`** — "AIJobsHunt" is the
+product/domain brand only (used across the landing page, README, and the GitHub Pages docs). Runs locally for
+dev and in production via `docker-compose.prod.yml` + `Caddyfile`.
 
 **Owner:** Praveen Prakash  
 **Admin email:** praveenp.1118@gmail.com  
 **Project root:** `D:\JobHunt`  
+**Live site:** https://aijobshunt.com (production)  
 **GitHub:** https://github.com/praveenp1118/JobHunt (public)  
 **Docs:** https://praveenp1118.github.io/JobHunt — GitHub Pages, served from `/docs` on `main`  
 *(Repo is **public** (as of June 24, 2026). `docs/`: `index.html` landing page +
@@ -1335,7 +1340,18 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: June 29, 2026 — **Storage refactor + Claude Code config + infra cleanup.** PDFs now save to a
+*Last updated: July 3, 2026 — **Invite-or-pay + public landing page + docs rebrand; production LIVE.**
+Shipped the **invite-or-pay access gate** (single-use `JH-XXXX-XXXX` keys · 30-day entitlement · expiry-aware
+402 gate on every Claude route · extension requests · admin panel; migration `v3_invite_or_pay`; 148 tests),
+the **public landing page** at **aijobshunt.com** (React/Vite, scoped `.aijh` CSS, SEO + OG/JSON-LD + PWA
+icons, GA via `VITE_GA_ID` build-arg; renamed the ring class off Tailwind's `.ring` utility), and **deployed
+production** (Docker + Caddy — verified live, HTTP 200). Then refreshed **README + GitHub Pages docs**:
+rebranded the product name **JobHunt → AIJobsHunt** (keeping repo/Docker/DB names + `jh:`/`JH-` prefixes +
+repo URLs), **published the live URL** (aijobshunt.com), added invite-or-pay + landing to features, updated
+the **migration chain → v3_invite_or_pay**, replaced the messy README ASCII **architecture diagram with a
+Mermaid** one, bumped the **test count → 148**, and **replaced the docs screenshots** with fresh real-app
+captures (landing · dashboard · tracker · tailor · activity · cvs · feeds · admin). Prior: June 29, 2026 —
+**Storage refactor + Claude Code config + infra cleanup.** PDFs now save to a
 **user-scoped layout** — `users/{user_id}/tailored/` (CV) and `users/{user_id}/cover_letters/` (CL), with
 readable storage names `{user8}_{job8}_{Company}_{cv|cl}.pdf` (`storage.py` helpers `tailored_pdf_path` /
 `cover_letter_pdf_path` / `export_path` / `pdf_storage_name`; folders auto-create on first write). **Existing
