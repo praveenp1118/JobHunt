@@ -7,6 +7,10 @@ import AppLayout from './components/layout/AppLayout'
 // support before signing up. Lazy so it stays off the critical path.
 const ChatWidget = lazy(() => import('./components/chat/ChatWidget'))
 
+// Public marketing landing page ("/"). Lazy-loaded as its own chunk so it never
+// bloats the logged-in app bundle (and vice-versa).
+const LandingPage = lazy(() => import('./pages/landing/LandingPage'))
+
 // Auth pages
 import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
@@ -57,6 +61,13 @@ function PublicOnly({ children }) {
   return children
 }
 
+// "/" — public landing for logged-out visitors; logged-in users go to the app.
+function LandingRoute() {
+  const { isAuthenticated } = useAuthStore()
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />
+  return <Suspense fallback={null}><LandingPage /></Suspense>
+}
+
 export default function App() {
   const location = useLocation()
   return (
@@ -66,6 +77,8 @@ export default function App() {
       {/* Public routes */}
       <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
       <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
+      {/* /signup — public alias of /register (landing CTAs point here) */}
+      <Route path="/signup" element={<PublicOnly><Register /></PublicOnly>} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
 
       {/* Onboarding */}
@@ -91,12 +104,15 @@ export default function App() {
         <Route path="/admin/chat" element={<ChatPage />} />
       </Route>
 
+      {/* Public landing */}
+      <Route path="/" element={<LandingRoute />} />
+
       {/* Default */}
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
-    {/* Support chat on every page except the admin chat console itself. */}
-    {!location.pathname.startsWith('/admin/chat') && (
+    {/* Support chat on every page except the admin chat console and the public
+        landing (which ships its own pre-login chat widget). */}
+    {!location.pathname.startsWith('/admin/chat') && location.pathname !== '/' && (
       <Suspense fallback={null}><ChatWidget /></Suspense>
     )}
   </>

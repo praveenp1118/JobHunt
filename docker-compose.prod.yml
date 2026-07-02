@@ -102,6 +102,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
+      args:
+        # GA4 Measurement ID, embedded at build time. Resolved from .env.production
+        # (--env-file). Blank/unset → analytics disabled.
+        VITE_GA_ID: ${VITE_GA_ID:-}
     container_name: jobhunt_frontend
     restart: unless-stopped
     depends_on:

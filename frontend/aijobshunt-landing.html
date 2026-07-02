@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIJobsHunt — Tailor your CV to each job's keywords, without inventing a thing.</title>
+<meta name="description" content="AIJobsHunt finds roles across every field, scores how well you fit each one, and tailors your CV to match — using only what's already true about you.">
+
+<!-- favicon: JH monogram, emerald rounded square -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='24' fill='%23059669'/%3E%3Ctext x='50' y='68' font-family='Arial,sans-serif' font-size='52' font-weight='700' fill='white' text-anchor='middle'%3EJH%3C/text%3E%3C/svg%3E">
+
+<!-- ============================================================
+     GOOGLE ANALYTICS 4 — replace G-XXXXXXXXXX with your real ID
+     ============================================================ -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-XXXXXXXXXX');
+  function trackEvent(name, params){ try{ gtag('event', name, params || {}); }catch(e){} }
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
+<style>
+:root{
+  --emerald:#10b981; --emerald-deep:#059669; --emerald-ink:#065f46;
+  --violet:#7c6cf5; --amber:#f59e0b; --rose:#f43f5e; --indigo:#4338ca;
+  --ink:#0b1220; --slate-900:#0f172a; --slate-700:#334155; --slate-600:#475569; --slate-500:#64748b; --slate-400:#94a3b8; --slate-300:#cbd5e1;
+  --line:#e6e9ef; --surface:#f6f8fb; --card:#ffffff;
+  --display:'Space Grotesk',sans-serif; --body:'Inter',sans-serif; --mono:'JetBrains Mono',monospace;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.06),0 1px 3px rgba(15,23,42,.04);
+  --shadow-md:0 10px 30px -12px rgba(15,23,42,.18);
+  --shadow-lg:0 30px 60px -20px rgba(11,18,32,.32);
+  --r:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--body);color:var(--slate-900);background:var(--surface);line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+.mono{font-family:var(--mono)}
+
+/* nav */
+header.nav{position:sticky;top:0;z-index:50;background:rgba(246,248,251,.82);backdrop-filter:blur(12px);border-bottom:1px solid transparent;transition:background .25s,box-shadow .25s,border-color .25s}
+header.nav.scrolled{background:rgba(255,255,255,.96);border-bottom-color:var(--line);box-shadow:0 4px 20px -12px rgba(15,23,42,.25)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;height:66px;transition:height .25s}
+header.nav.scrolled .nav-inner{height:56px}
+header.nav.scrolled .logo{width:30px;height:30px}
+header.nav.scrolled .brand small{opacity:0;height:0}
+.logo,.brand small{transition:.25s}
+.brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-.01em}
+.logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--emerald),var(--emerald-deep));display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:700;font-size:14px;box-shadow:var(--shadow-sm)}
+.brand small{display:block;font-family:var(--body);font-weight:500;font-size:11px;color:var(--slate-500);letter-spacing:0;margin-top:-2px}
+.nav-links{display:flex;gap:28px;align-items:center}
+.nav-links a{font-size:14.5px;font-weight:500;color:var(--slate-700)}
+.nav-links a:hover{color:var(--slate-900)}
+.nav-cta{display:flex;gap:10px;align-items:center}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-family:var(--body);font-weight:600;font-size:14.5px;padding:10px 18px;border-radius:11px;cursor:pointer;border:1px solid transparent;transition:.15s ease;white-space:nowrap}
+.btn-primary{background:var(--emerald-deep);color:#fff;box-shadow:var(--shadow-sm)}
+.btn-primary:hover{background:var(--emerald-ink);transform:translateY(-1px)}
+.btn-ghost{background:transparent;color:var(--slate-700);border-color:var(--line)}
+.btn-ghost:hover{border-color:var(--slate-400);color:var(--slate-900)}
+.btn-lg{padding:14px 26px;font-size:16px;border-radius:13px}
+.btn-white{background:#fff;color:var(--ink)}
+.btn-white:hover{background:#eafff5}
+
+/* hero — full viewport on load, rest of page flows naturally after */
+.hero{min-height:calc(100vh - 66px);display:flex;align-items:center;padding:40px 0;overflow:hidden}
+.hero .wrap{width:100%}
+.hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:52px;align-items:center}
+@media (max-height:760px){.hero{min-height:auto;padding:56px 0}}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--emerald-ink);background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.22);padding:6px 12px;border-radius:100px;text-transform:uppercase}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--emerald);box-shadow:0 0 0 4px rgba(16,185,129,.16)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(34px,4.6vw,52px);line-height:1.05;letter-spacing:-.03em;margin:20px 0 0}
+h1 .u{background:linear-gradient(120deg,var(--emerald),var(--emerald-deep));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.lede{font-size:18px;color:var(--slate-700);margin-top:18px;max-width:520px}
+.hero-cta{display:flex;gap:12px;margin-top:26px;flex-wrap:wrap}
+.access-note{margin-top:18px;font-size:14px;color:var(--slate-500);display:flex;align-items:center;gap:9px}
+
+/* persona rotator */
+.persona-wrap{margin-top:26px;height:96px;position:relative}
+.persona{position:absolute;inset:0;display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-md);opacity:0;transform:translateY(8px);transition:opacity .5s,transform .5s;pointer-events:none}
+.persona.active{opacity:1;transform:none;pointer-events:auto}
+.persona .avt{width:44px;height:44px;border-radius:12px;flex:none;align-self:flex-start;margin-top:2px}
+.persona .pinfo{flex:1;min-width:0}
+.persona .pname{font-family:var(--display);font-weight:600;font-size:14px}
+.persona .pname .role{color:var(--slate-500);font-weight:500}
+.persona .route{font-family:var(--mono);font-size:11px;color:var(--emerald-deep);margin:1px 0 3px}
+.persona .pain{font-size:12.5px;color:var(--slate-600);font-style:italic;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.persona .pscore{display:flex;gap:2px;flex:none;align-self:flex-start;margin-top:2px}
+
+/* score ring */
+.ring{width:38px;height:38px;position:relative;flex:none}
+.ring svg{transform:rotate(-90deg)}
+.ring .num{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:10.5px;color:var(--slate-900)}
+.dualpill{display:flex;align-items:center;gap:1px}
+
+/* browser mock */
+.mock{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lg);overflow:hidden}
+.mock-bar{display:flex;align-items:center;gap:7px;padding:11px 14px;border-bottom:1px solid var(--line);background:#fbfcfe}
+.mock-bar i{width:11px;height:11px;border-radius:50%;display:inline-block}
+.mock-url{margin-left:12px;font-family:var(--mono);font-size:11.5px;color:var(--slate-400);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:4px 12px;flex:1}
+.mock-body{padding:16px}
+.mock-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.mock-title{font-family:var(--display);font-weight:600;font-size:15px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--slate-500);background:var(--surface);border:1px solid var(--line);border-radius:100px;padding:4px 10px}
+.chip.on{color:#fff;background:var(--emerald-deep);border-color:var(--emerald-deep)}
+.jobrow{display:grid;grid-template-columns:1fr 32px 84px 78px;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;margin-bottom:8px;background:#fff}
+.jr-left{display:flex;flex-direction:column;gap:2px;min-width:0}
+.jr-role{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jr-co{font-size:11.5px;color:var(--slate-500)}
+.jr-right{display:contents}
+.flag{font-family:var(--mono);font-size:9.5px;font-weight:700;padding:3px 0;border-radius:6px;background:var(--surface);color:var(--slate-600);border:1px solid var(--line);text-align:center;width:32px;justify-self:center}
+.jobrow .dualpill{justify-self:center}
+.jobrow .badge{justify-self:center;text-align:center}
+.badge{font-family:var(--mono);font-size:9.5px;font-weight:600;padding:3px 9px;border-radius:100px}
+.b-applied{color:var(--emerald-ink);background:rgba(16,185,129,.12)}
+.b-new{color:#3730a3;background:rgba(124,108,245,.14)}
+.b-int{color:#92400e;background:rgba(245,158,11,.15)}
+
+/* sections */
+.section{padding:68px 0}
+.section.tight{padding:48px 0}
+.sec-head{max-width:760px;margin-bottom:40px}
+.sec-head h2{max-width:16ch}
+.sec-head p{max-width:56ch}
+.sec-head.center{margin-left:auto;margin-right:auto;text-align:center}
+.kicker{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--emerald-deep);margin-bottom:12px}
+h2{font-family:var(--display);font-weight:700;font-size:clamp(27px,3.3vw,38px);line-height:1.1;letter-spacing:-.02em}
+.sec-head p{font-size:17px;color:var(--slate-700);margin-top:13px}
+
+/* who-for band */
+.band{background:var(--ink);color:#fff;border-radius:var(--r);padding:28px 32px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;box-shadow:var(--shadow-md)}
+.band .roles{font-family:var(--display);font-weight:600;font-size:16.5px;flex:1;min-width:280px;line-height:1.4}
+.band .roles span{color:var(--emerald)}
+.band .markets{display:flex;gap:8px;flex-wrap:wrap}
+.mkt{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--slate-300);border:1px solid rgba(255,255,255,.16);border-radius:100px;padding:6px 13px}
+
+/* steps */
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;counter-reset:s}
+.step{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 18px;transition:.18s}
+.step:hover{transform:translateY(-3px);box-shadow:var(--shadow-md);border-color:transparent}
+.step .n{counter-increment:s;font-family:var(--mono);font-weight:700;font-size:12px;color:var(--emerald-deep)}
+.step .n::before{content:"0" counter(s)}
+.step h3{font-family:var(--display);font-size:16.5px;font-weight:600;margin:12px 0 8px;letter-spacing:-.01em}
+.step p{font-size:13.5px;color:var(--slate-500);line-height:1.5}
+.step .ic{width:34px;height:34px;border-radius:9px;background:rgba(16,185,129,.1);display:grid;place-items:center;margin-bottom:2px}
+.step .ic svg{width:18px;height:18px;stroke:var(--emerald-deep)}
+
+/* diff cards */
+.diff{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.dcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:32px;position:relative;overflow:hidden}
+.dcard::after{content:"";position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,rgba(16,185,129,.12),transparent 70%)}
+.dcard.v::after{background:radial-gradient(circle,rgba(124,108,245,.14),transparent 70%)}
+.dcard h3{font-family:var(--display);font-size:21px;font-weight:700;letter-spacing:-.02em;margin-bottom:12px}
+.dcard p{color:var(--slate-700);font-size:15px}
+.dcard .big{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+.scorebox{font-family:var(--mono);font-weight:700;font-size:34px;color:var(--emerald-deep);line-height:1}
+.scorebox.v{color:var(--violet)}
+.scorebox small{display:block;font-size:11px;font-weight:600;color:var(--slate-400);letter-spacing:.04em;margin-top:6px}
+
+/* ===== rotating product panels ("See it") ===== */
+.seeit{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-md);overflow:hidden}
+.panel-bar{display:flex;align-items:center;gap:6px;padding:9px 13px;border-bottom:1px solid var(--line);background:#fbfcfe}
+.panel-bar i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.panel-bar .pttl{margin-left:8px;font-family:var(--mono);font-size:10.5px;color:var(--slate-400)}
+.panel-bar .dots{margin-left:auto;display:flex;gap:5px}
+.panel-bar .dots b{width:6px;height:6px;border-radius:50%;background:var(--slate-300);transition:.3s}
+.panel-bar .dots b.on{background:var(--emerald)}
+.rotator{position:relative;height:340px;padding:15px;overflow:hidden}
+.slide{position:absolute;inset:15px;opacity:0;transform:translateY(6px);transition:opacity .5s,transform .5s;pointer-events:none;overflow:hidden}
+.slide.active{opacity:1;transform:none;pointer-events:auto}
+.slide-h{font-family:var(--display);font-weight:600;font-size:13.5px;margin-bottom:11px;display:flex;justify-content:space-between;align-items:center}
+.slide-h .tab{font-family:var(--mono);font-size:10px;color:var(--emerald-deep);background:rgba(16,185,129,.1);padding:3px 8px;border-radius:6px}
+
+/* overview slide */
+.ov-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.ov-card{border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+.ov-card.g{background:rgba(16,185,129,.06)} .ov-card.a{background:rgba(245,158,11,.07)} .ov-card.i{background:rgba(124,108,245,.07)}
+.ov-card .v{font-family:var(--display);font-weight:700;font-size:22px}
+.ov-card.g .v{color:var(--emerald-deep)} .ov-card.a .v{color:var(--amber)} .ov-card.i .v{color:var(--violet)}
+.ov-card .l{font-size:10px;color:var(--slate-500);margin-top:2px}
+.readiness{border:1px solid var(--line);border-radius:10px;padding:13px}
+.readiness .rh{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.readiness .rh b{font-family:var(--display);font-size:26px;font-weight:700;color:var(--emerald-deep)}
+.readiness .rh span{font-family:var(--mono);font-size:10px;color:var(--slate-400);text-transform:uppercase}
+.bar{height:8px;background:var(--surface);border-radius:100px;overflow:hidden;margin:5px 0 9px}
+.bar i{display:block;height:100%;border-radius:100px}
+.subm{display:flex;justify-content:space-between;font-size:10.5px;color:var(--slate-500);margin-bottom:5px}
+.subbar{height:5px;background:var(--surface);border-radius:100px;overflow:hidden}
+.subbar i{display:block;height:100%}
+
+/* analytics slide */
+.an-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;height:100%}
+.donut{display:grid;place-items:center}
+.dm-legend{margin-top:6px;font-size:10.5px;color:var(--slate-500);text-align:center}
+.dombar{margin-bottom:9px}
+.dombar .dl{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px}
+.dombar .dl b{color:var(--slate-900)}
+
+/* feed / list rows */
+.frow{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line);font-size:11.5px}
+.frow:last-child{border-bottom:none}
+.frow .fn{flex:1;font-weight:500;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .qb{width:64px;height:6px;background:var(--surface);border-radius:100px;overflow:hidden}
+.frow .qb i{display:block;height:100%}
+.tog{width:28px;height:16px;border-radius:100px;background:var(--emerald);position:relative;flex:none}
+.tog::after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#fff}
+.tag{font-family:var(--mono);font-size:9px;font-weight:600;padding:2px 6px;border-radius:5px;background:var(--surface);border:1px solid var(--line);color:var(--slate-500)}
+.tag.apify{color:var(--violet);background:rgba(124,108,245,.1);border-color:transparent}
+.tag.rss{color:var(--amber);background:rgba(245,158,11,.12);border-color:transparent}
+
+/* jobs table slide */
+.jt-row{display:grid;grid-template-columns:1fr auto auto auto auto;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:11px}
+.jt-row.h{color:var(--slate-400);font-family:var(--mono);font-size:9px;text-transform:uppercase;border-bottom:1px solid var(--line)}
+.jt-co{min-width:0}
+.jt-co b{display:block;font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jt-co span{font-size:10px;color:var(--slate-500)}
+.miniring{width:30px;height:30px;position:relative}
+.miniring .num{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:9px}
+
+/* add-job modal slide */
+.addjob{border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow-sm)}
+.aj-tabs{display:flex;gap:8px;margin-bottom:12px}
+.aj-tab{font-size:11px;font-weight:600;padding:6px 12px;border-radius:8px;border:1px solid var(--line);color:var(--slate-500)}
+.aj-tab.on{color:var(--emerald-deep);background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.3)}
+.aj-area{border:1px solid var(--line);border-radius:8px;height:120px;padding:11px;font-size:11px;color:var(--slate-400)}
+.aj-foot{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+.aj-foot .cancel{font-size:11.5px;color:var(--slate-500)}
+
+/* change log slide */
+.cl-entry{border:1px solid var(--line);border-radius:10px;padding:11px;margin-bottom:9px}
+.cl-tag{display:inline-block;font-family:var(--mono);font-size:8.5px;font-weight:600;padding:2px 7px;border-radius:5px;margin-bottom:6px}
+.cl-tag.k{color:var(--violet);background:rgba(124,108,245,.1)}
+.cl-tag.r{color:var(--indigo);background:rgba(67,56,202,.09)}
+.cl-old{font-size:10.5px;color:var(--slate-400);text-decoration:line-through;margin-bottom:4px;line-height:1.4}
+.cl-new{font-size:11px;color:var(--slate-900);line-height:1.4}
+.cl-ok{float:right;font-size:9.5px;color:var(--emerald-deep);font-weight:600}
+.integrity{background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:9px 11px;font-size:10.5px;color:var(--emerald-ink);margin-top:4px;display:flex;align-items:center;gap:8px}
+.integrity b{font-family:var(--mono);font-size:15px}
+
+/* letter / email slide */
+.doc{border:1px solid var(--line);border-radius:10px;padding:14px;font-size:10.5px;color:var(--slate-600);line-height:1.6}
+.doc p{margin-bottom:7px}
+.testmode{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:8px 11px;font-size:10px;color:#92400e;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.field{margin-bottom:8px}
+.field .fl{font-family:var(--mono);font-size:9px;color:var(--slate-400);text-transform:uppercase}
+.field .fv{font-size:11px;color:var(--slate-800);border:1px solid var(--line);border-radius:7px;padding:7px 9px;margin-top:3px}
+
+/* company grid slide */
+.cg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cg-card{border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+.cg-card b{font-size:11.5px;font-weight:600;display:block}
+.cg-card span{font-size:9.5px;color:var(--slate-500)}
+
+/* scan history slide */
+.sh-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:11px}
+.sh-row .st{font-family:var(--mono);font-size:9px;font-weight:600;padding:2px 8px;border-radius:100px}
+.sh-row .st.ok{color:var(--emerald-ink);background:rgba(16,185,129,.12)}
+.sh-row .st.part{color:#92400e;background:rgba(245,158,11,.15)}
+
+/* ===== Gmail block ===== */
+.gmail-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:stretch}
+.privacy-strip{display:inline-flex;align-items:center;gap:10px;font-family:var(--mono);font-size:11.5px;color:var(--emerald-ink);background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.22);padding:8px 14px;border-radius:100px;margin-bottom:18px}
+.funnel{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-md);padding:22px}
+.funnel-stat{display:flex;justify-content:space-between;text-align:center;margin-bottom:18px}
+.funnel-stat .fs{flex:1}
+.funnel-stat .fs b{font-family:var(--display);font-weight:700;font-size:24px;display:block;color:var(--emerald-deep)}
+.funnel-stat .fs span{font-size:10.5px;color:var(--slate-500)}
+.funnel-stat .arrow{align-self:center;color:var(--slate-300);font-size:16px}
+.mail-card{border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+.mail-card .mc-l b{font-size:12px;font-weight:600;display:block}
+.mail-card .mc-l span{font-size:10px;color:var(--slate-500)}
+.mail-card .mc-l .brk{font-family:var(--mono);font-size:9.5px;margin-top:4px;display:flex;gap:8px}
+.mail-card .mc-l .brk .g{color:var(--emerald-deep)}
+.mail-card .saved{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--emerald-ink);background:rgba(16,185,129,.1);padding:4px 9px;border-radius:100px}
+.bp{list-style:none;display:grid;gap:12px}
+.bp li{display:flex;gap:13px;align-items:flex-start}
+.bp .k{font-family:var(--mono);font-weight:700;color:var(--emerald-deep);font-size:12px;flex:none;width:26px;height:26px;border-radius:8px;background:rgba(16,185,129,.1);display:grid;place-items:center}
+.bp b{font-family:var(--display);font-size:14.5px;font-weight:600;display:block;margin-bottom:2px}
+.bp p{font-size:13px;color:var(--slate-500)}
+
+/* ===== BYOK + transparency ===== */
+.trust-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:stretch}
+.byok{background:var(--ink);color:#fff;border-radius:20px;padding:34px;position:relative;overflow:hidden}
+.byok::before{content:"";position:absolute;inset:0;background:radial-gradient(500px 200px at 15% -10%,rgba(16,185,129,.28),transparent)}
+.byok>*{position:relative}
+.byok h3{font-family:var(--display);font-size:23px;font-weight:700;letter-spacing:-.02em;margin-bottom:12px}
+.byok p{color:#cbd5e1;font-size:14.5px;margin-bottom:18px}
+.byok .bl{list-style:none;display:grid;gap:11px}
+.byok .bl li{display:flex;gap:10px;font-size:13.5px;color:#e2e8f0}
+.byok .bl svg{flex:none;margin-top:3px;stroke:var(--emerald)}
+.transp{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:30px}
+.transp h3{font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px}
+.transp .sub{font-size:13.5px;color:var(--slate-500);margin-bottom:18px}
+.usage-split{display:flex;gap:10px;margin-bottom:16px}
+.usage-box{flex:1;border:1px solid var(--line);border-radius:11px;padding:13px}
+.usage-box .ub-h{font-size:11px;color:var(--slate-500);display:flex;justify-content:space-between}
+.usage-box .ub-v{font-family:var(--display);font-weight:700;font-size:22px;margin-top:2px}
+.usage-box.claude .ub-v{color:var(--emerald-deep)} .usage-box.apify .ub-v{color:var(--violet)}
+.usage-box .ub-s{font-size:9.5px;color:var(--slate-400);margin-top:2px}
+.costtable{border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.costtable .ct-row{display:flex;justify-content:space-between;padding:9px 13px;font-size:12.5px;border-bottom:1px solid var(--line)}
+.costtable .ct-row:last-child{border-bottom:none}
+.costtable .ct-row.h{background:var(--surface);font-family:var(--mono);font-size:10px;text-transform:uppercase;color:var(--slate-400)}
+.costtable .ct-row .price{font-family:var(--mono);font-weight:600;color:var(--emerald-deep)}
+.opt-note{font-size:11.5px;color:var(--slate-500);margin-top:12px;display:flex;align-items:center;gap:7px}
+.opt-note b{color:var(--emerald-deep)}
+
+/* pricing */
+.pricing{display:grid;grid-template-columns:1.1fr 1fr;gap:22px;align-items:stretch}
+.price-card{background:var(--ink);color:#fff;border-radius:20px;padding:36px;position:relative;overflow:hidden}
+.price-card::before{content:"";position:absolute;inset:0;background:radial-gradient(600px 200px at 80% -10%,rgba(16,185,129,.28),transparent)}
+.price-card>*{position:relative}
+.price-tag{display:flex;align-items:baseline;gap:8px;margin:8px 0 2px}
+.price-tag .amt{font-family:var(--display);font-size:50px;font-weight:700;letter-spacing:-.03em}
+.price-tag .per{color:var(--slate-400);font-size:15px}
+.byok-line{font-size:12.5px;color:var(--emerald);font-family:var(--mono);margin-bottom:6px}
+.plist{list-style:none;margin:20px 0 24px;display:grid;gap:10px}
+.plist li{display:flex;gap:11px;align-items:flex-start;font-size:14px;color:#e2e8f0}
+.plist li svg{flex:none;margin-top:3px;stroke:var(--emerald)}
+.price-card .btn-white{width:100%}
+.invite-card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:36px;display:flex;flex-direction:column;justify-content:center}
+.invite-card h3{font-family:var(--display);font-size:21px;font-weight:700;letter-spacing:-.02em}
+.invite-card p{color:var(--slate-600);font-size:14.5px;margin:12px 0 20px}
+.keyrow{display:flex;gap:10px}
+.keyrow input{flex:1;font-family:var(--mono);font-size:14px;letter-spacing:.06em;text-transform:uppercase;border:1.5px solid var(--line);border-radius:11px;padding:12px 14px;outline:none;transition:.15s}
+.keyrow input:focus{border-color:var(--emerald);box-shadow:0 0 0 4px rgba(16,185,129,.14)}
+.invite-fine{font-size:12.5px;color:var(--slate-400);margin-top:14px}
+
+/* faq */
+.faq{max-width:760px}
+.qa{border-bottom:1px solid var(--line)}
+.qa button{width:100%;text-align:left;background:none;border:none;cursor:pointer;padding:22px 0;font-family:var(--display);font-size:17px;font-weight:600;color:var(--slate-900);display:flex;justify-content:space-between;align-items:center;gap:20px}
+.qa button:hover{color:var(--emerald-deep)}
+.qa .plus{flex:none;width:22px;height:22px;position:relative}
+.qa .plus::before,.qa .plus::after{content:"";position:absolute;background:var(--emerald-deep);border-radius:2px}
+.qa .plus::before{left:0;top:10px;width:22px;height:2px}
+.qa .plus::after{left:10px;top:0;width:2px;height:22px;transition:.2s}
+.qa.open .plus::after{transform:rotate(90deg);opacity:0}
+.qa .ans{max-height:0;overflow:hidden;transition:max-height .28s ease}
+.qa .ans p{padding:0 0 22px;color:var(--slate-600);font-size:15px;max-width:660px}
+
+/* finale */
+.finale{background:linear-gradient(135deg,var(--emerald-deep),var(--emerald-ink));color:#fff;border-radius:24px;padding:54px;text-align:center;box-shadow:var(--shadow-lg)}
+.finale h2{color:#fff}
+.finale p{color:rgba(255,255,255,.85);font-size:17px;margin:14px auto 26px;max-width:480px}
+.finale .btn-white{width:auto;display:inline-flex}
+
+/* footer */
+footer{padding:54px 0 40px;border-top:1px solid var(--line);margin-top:20px}
+.foot{display:flex;justify-content:space-between;gap:30px;flex-wrap:wrap}
+.foot .brand{margin-bottom:10px}
+.foot p{font-size:13px;color:var(--slate-500);max-width:280px}
+.foot-links{display:flex;gap:40px;flex-wrap:wrap}
+.foot-col b{font-family:var(--display);font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--slate-400);display:block;margin-bottom:12px}
+.foot-col a{display:block;font-size:14px;color:var(--slate-600);margin-bottom:9px}
+.foot-col a:hover{color:var(--emerald-deep)}
+.foot-bottom{margin-top:38px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--slate-400)}
+
+/* chat */
+.chat-fab{position:fixed;right:22px;bottom:22px;z-index:60;background:var(--emerald-deep);color:#fff;border:none;cursor:pointer;border-radius:100px;padding:14px 20px;font-family:var(--body);font-weight:600;font-size:14.5px;display:flex;align-items:center;gap:9px;box-shadow:var(--shadow-lg);transition:.15s}
+.chat-fab:hover{background:var(--emerald-ink);transform:translateY(-2px)}
+.chat-panel{position:fixed;right:22px;bottom:80px;z-index:60;width:340px;max-width:calc(100vw - 44px);background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-lg);overflow:hidden;display:none;flex-direction:column}
+.chat-panel.open{display:flex;animation:pop .18s ease}
+@keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.chat-top{background:var(--ink);color:#fff;padding:16px 18px}
+.chat-top b{font-family:var(--display);font-size:15px}
+.chat-top small{display:block;color:var(--slate-400);font-size:12px;margin-top:2px}
+.chat-log{padding:16px;display:flex;flex-direction:column;gap:10px;max-height:280px;overflow-y:auto;background:var(--surface)}
+.msg{font-size:13.5px;padding:10px 13px;border-radius:12px;max-width:85%}
+.msg.bot{background:#fff;border:1px solid var(--line);align-self:flex-start;border-bottom-left-radius:4px}
+.msg.me{background:var(--emerald-deep);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.chat-suggest{display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 12px;background:var(--surface)}
+.chat-suggest button{font-size:12px;border:1px solid var(--line);background:#fff;border-radius:100px;padding:6px 11px;cursor:pointer;color:var(--slate-600)}
+.chat-suggest button:hover{border-color:var(--emerald);color:var(--emerald-deep)}
+.chat-in{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+.chat-in input{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px;outline:none}
+.chat-in input:focus{border-color:var(--emerald)}
+.chat-in button{background:var(--emerald-deep);color:#fff;border:none;border-radius:10px;padding:0 14px;cursor:pointer;font-weight:600}
+
+.reveal{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease}
+.reveal.in{opacity:1;transform:none}
+
+@media (max-width:940px){
+  .hero-grid,.diff,.pricing,.seeit,.gmail-grid,.trust-grid{grid-template-columns:1fr}
+  .steps{grid-template-columns:repeat(2,1fr)}
+  .nav-links{display:none}
+  .section{padding:56px 0}
+  .finale{padding:40px 24px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}}
+</style>
+</head>
+<body id="top">
+
+<!-- NAV -->
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a href="#top" class="brand"><span class="logo">JH</span><span>AIJobsHunt<small>AI job co-pilot</small></span></a>
+    <nav class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#why">Why it's different</a>
+      <a href="#gmail">Inbox</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-cta">
+      <a href="/login" class="btn btn-ghost" onclick="trackEvent('nav_login_click')">Log in</a>
+      <a href="/signup" class="btn btn-primary" onclick="trackEvent('nav_getaccess_click')">Get access</a>
+    </div>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="reveal in">
+      <span class="eyebrow"><span class="dot"></span>Any field · Any market</span>
+      <h1>Tailor your CV to each job's keywords —<br><span class="u">without inventing a thing.</span></h1>
+      <p class="lede">AIJobsHunt finds roles across every field, scores how well you fit each one, and tailors your CV to match — using only what's already true about you.</p>
+      <div class="hero-cta">
+        <a href="/signup" class="btn btn-primary btn-lg" onclick="trackEvent('hero_getaccess_click')">Get access →</a>
+        <a href="#how" class="btn btn-ghost btn-lg" onclick="trackEvent('hero_howitworks_click')">See how it works</a>
+      </div>
+      <p class="access-note"><span class="dot"></span>₹500/mo platform · your own Claude key, at cost · invite key = 30 days free</p>
+
+      <!-- rotating personas -->
+      <div class="persona-wrap" id="personas"></div>
+    </div>
+
+    <!-- hero dashboard mock -->
+    <div class="reveal in mock" aria-hidden="true">
+      <div class="mock-bar">
+        <i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>
+        <span class="mock-url">aijobshunt.com/dashboard</span>
+      </div>
+      <div class="mock-body">
+        <div class="mock-head"><span class="mock-title">Your job search</span><span class="chip on">All jobs · 214</span></div>
+        <div class="chips">
+          <span class="chip on">Head of Product</span><span class="chip">VP Marketing</span><span class="chip">Remote</span><span class="chip">Score ≥ 80</span>
+        </div>
+        <div class="jobrow">
+          <div class="jr-left"><span class="jr-role">Head of Product</span><span class="jr-co">Adyen · Amsterdam</span></div>
+          <div class="jr-right"><span class="flag">NL</span><span class="dualpill"><span class="ring" data-v="88" data-c="emerald"></span><span class="ring" data-v="81" data-c="violet"></span></span><span class="badge b-applied">Applied</span></div>
+        </div>
+        <div class="jobrow">
+          <div class="jr-left"><span class="jr-role">VP Marketing</span><span class="jr-co">Grab · Singapore</span></div>
+          <div class="jr-right"><span class="flag">SG</span><span class="dualpill"><span class="ring" data-v="76" data-c="emerald"></span><span class="ring" data-v="90" data-c="violet"></span></span><span class="badge b-int">Interview</span></div>
+        </div>
+        <div class="jobrow">
+          <div class="jr-left"><span class="jr-role">Finance Director</span><span class="jr-co">Careem · Dubai</span></div>
+          <div class="jr-right"><span class="flag">AE</span><span class="dualpill"><span class="ring" data-v="83" data-c="emerald"></span><span class="ring" data-v="79" data-c="violet"></span></span><span class="badge b-new">New</span></div>
+        </div>
+        <p style="font-family:var(--mono);font-size:10px;color:var(--slate-400);text-align:center;margin-top:10px">ATS match &nbsp;·&nbsp; Pursuit score</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHO FOR -->
+<section class="section tight">
+  <div class="wrap reveal">
+    <div class="band">
+      <div class="roles">Built for senior &amp; leadership roles across <span>every field</span> — product, marketing, finance, operations, engineering, consulting and beyond.</div>
+      <div class="markets"><span class="mkt">EU</span><span class="mkt">Gulf</span><span class="mkt">SE Asia</span><span class="mkt">India</span><span class="mkt">+ wherever you're searching</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">How it works</div>
+      <h2>From job posting to sent application — five steps.</h2>
+      <p>AIJobsHunt does the mechanical work of a job search. You take over the moment a recruiter replies.</p>
+    </div>
+    <div class="steps reveal">
+      <div class="step"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div><div class="n"></div><h3>Find</h3><p>Pulls roles from job boards, company pages and your inbox — deduped into one list.</p></div>
+      <div class="step"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg></div><div class="n"></div><h3>Score</h3><p>Two scores per role: an <b>ATS match</b> and a <b>Pursuit score</b> — will it shortlist you, and is it worth your time?</p></div>
+      <div class="step"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div><div class="n"></div><h3>Tailor</h3><p>Reworks your CV for the role — reordering and rephrasing. Never inventing experience, metrics or skills.</p></div>
+      <div class="step"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></div><div class="n"></div><h3>Apply</h3><p>Generates a tailored CV, cover letter and short email — then sends it, or hands you the portal link.</p></div>
+      <div class="step"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg></div><div class="n"></div><h3>Track</h3><p>Follows each application through interview, offer or rejection — so nothing slips.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY DIFFERENT -->
+<section class="section" id="why" style="background:linear-gradient(180deg,transparent,rgba(16,185,129,.04))">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">Why it's different</div>
+      <h2>Most AI résumé tools make things up. This one can't.</h2>
+      <p>Two ideas do the heavy lifting: score before you spend effort, and tailor without ever fabricating.</p>
+    </div>
+    <div class="diff reveal">
+      <div class="dcard">
+        <div class="big"><div class="scorebox">88<small>ATS MATCH</small></div><div class="scorebox v">81<small>PURSUIT</small></div></div>
+        <h3>Two scores, not a guess</h3>
+        <p>ATS match tells you whether an applicant-tracking system will shortlist you. The Pursuit score tells you whether the role is worth chasing. Together they cut a list of hundreds down to the handful you should act on.</p>
+      </div>
+      <div class="dcard v">
+        <div class="big"><div class="scorebox v">100<small>FACTUAL INTEGRITY</small></div></div>
+        <h3>Tailored, never fabricated</h3>
+        <p>Every tailored line has to trace back to your real CV. A factual-integrity score checks it mathematically — anything invented drops the number and gets flagged before you send. Your CV changes how it's presented, never what you've done.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SEE IT -->
+<section class="section">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">See it with real data</div>
+      <h2>What it looks like once it's working for you.</h2>
+      <p>Live views from a real search — scored, filtered, tailored and tracked.</p>
+    </div>
+
+    <div class="seeit reveal">
+
+      <!-- TL: Overview / Analytics / Feed -->
+      <div class="panel">
+        <div class="panel-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="pttl">dashboard</span><span class="dots" data-dots="0"><b class="on"></b><b></b><b></b></span></div>
+        <div class="rotator" data-rotator="0" data-count="3">
+          <div class="slide active">
+            <div class="slide-h">Overview <span class="tab">score</span></div>
+            <div class="ov-cards">
+              <div class="ov-card g"><div class="v">61</div><div class="l">Avg Pursuit</div></div>
+              <div class="ov-card a"><div class="v">72</div><div class="l">Avg ATS</div></div>
+              <div class="ov-card i"><div class="v">45</div><div class="l">Apply now</div></div>
+            </div>
+            <div class="readiness">
+              <div class="rh"><b>65%</b><span>Career readiness</span></div>
+              <div class="subm"><span>Keywords (ATS)</span><span>71%</span></div><div class="subbar"><i style="width:71%;background:var(--amber)"></i></div>
+              <div class="subm" style="margin-top:7px"><span>Skills (ATS)</span><span>66%</span></div><div class="subbar"><i style="width:66%;background:var(--emerald)"></i></div>
+              <div class="subm" style="margin-top:7px"><span>Career fit (Pursuit)</span><span>55%</span></div><div class="subbar"><i style="width:55%;background:var(--rose)"></i></div>
+            </div>
+          </div>
+          <div class="slide">
+            <div class="slide-h">Analytics <span class="tab">insights</span></div>
+            <div class="an-grid">
+              <div>
+                <div class="donut">
+                  <svg width="120" height="120" viewBox="0 0 120 120">
+                    <circle cx="60" cy="60" r="42" fill="none" stroke="#eef2f7" stroke-width="16"/>
+                    <circle cx="60" cy="60" r="42" fill="none" stroke="var(--violet)" stroke-width="16" stroke-dasharray="252" stroke-dashoffset="10" transform="rotate(-90 60 60)"/>
+                    <circle cx="60" cy="60" r="42" fill="none" stroke="var(--amber)" stroke-width="16" stroke-dasharray="264" stroke-dashoffset="257" transform="rotate(-90 60 60)"/>
+                  </svg>
+                </div>
+                <div class="dm-legend">New 467 · Applied 8</div>
+              </div>
+              <div style="align-self:center">
+                <div style="font-family:var(--mono);font-size:10px;color:var(--slate-400);text-transform:uppercase;margin-bottom:8px">Jobs by domain</div>
+                <div class="dombar"><div class="dl"><span>AI &amp; Data</span><b>109</b></div><div class="subbar"><i style="width:100%;background:var(--emerald)"></i></div></div>
+                <div class="dombar"><div class="dl"><span>Supply Chain</span><b>23</b></div><div class="subbar"><i style="width:40%;background:var(--emerald)"></i></div></div>
+                <div class="dombar"><div class="dl"><span>eCommerce</span><b>19</b></div><div class="subbar"><i style="width:33%;background:var(--emerald)"></i></div></div>
+                <div class="dombar"><div class="dl"><span>Fintech</span><b>4</b></div><div class="subbar"><i style="width:12%;background:var(--emerald)"></i></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="slide">
+            <div class="slide-h">Feed performance <span class="tab">feeds</span></div>
+            <div class="frow"><span class="fn">D1-IN-AI-LinkedIn</span><span class="tag apify">Apify</span><span class="qb"><i style="width:65%;background:var(--amber)"></i></span></div>
+            <div class="frow"><span class="fn">D2-SG-SCM-LinkedIn</span><span class="tag apify">Apify</span><span class="qb"><i style="width:61%;background:var(--amber)"></i></span></div>
+            <div class="frow"><span class="fn">AI &amp; Data — Netherlands</span><span class="tag rss">RSS</span><span class="qb"><i style="width:63%;background:var(--amber)"></i></span></div>
+            <div class="frow"><span class="fn">D1-DE-AI-LinkedIn</span><span class="tag apify">Apify</span><span class="qb"><i style="width:57%;background:var(--rose)"></i></span></div>
+            <div class="frow"><span class="fn">Google Jobs</span><span class="tag apify">Apify</span><span class="qb"><i style="width:64%;background:var(--amber)"></i></span></div>
+            <div class="frow"><span class="fn">D1-LUX-AI-LinkedIn</span><span class="tag apify">Apify</span><span class="qb"><i style="width:46%;background:var(--rose)"></i></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TR: Jobs table / Add job -->
+      <div class="panel">
+        <div class="panel-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="pttl">jobs</span><span class="dots" data-dots="1"><b class="on"></b><b></b></span></div>
+        <div class="rotator" data-rotator="1" data-count="2">
+          <div class="slide active">
+            <div class="slide-h">Jobs · 475 <span class="tab">tracker</span></div>
+            <div class="jt-row h"><span>Company / role</span><span>Mkt</span><span>Match</span><span>Fit</span><span></span></div>
+            <div class="jt-row"><span class="jt-co"><b>Garena</b><span>AI Product Manager</span></span><span class="flag">SG</span><span class="miniring" data-v="95" data-c="emerald"></span><span class="miniring" data-v="82" data-c="emerald"></span><span style="font-size:10px;color:var(--emerald-deep);font-weight:600">Tailor→</span></div>
+            <div class="jt-row"><span class="jt-co"><b>Lenskart</b><span>Product@Lenskart</span></span><span class="flag">IN</span><span class="miniring" data-v="93" data-c="emerald"></span><span class="miniring" data-v="93" data-c="emerald"></span><span style="font-size:10px;color:var(--emerald-deep);font-weight:600">Tailor→</span></div>
+            <div class="jt-row"><span class="jt-co"><b>Crypto.com</b><span>Senior PM, AI</span></span><span class="flag">SG</span><span class="miniring" data-v="93" data-c="emerald"></span><span class="miniring" data-v="88" data-c="emerald"></span><span style="font-size:10px;color:var(--emerald-deep);font-weight:600">Tailor→</span></div>
+            <div class="jt-row"><span class="jt-co"><b>RealManage</b><span>SVP / Head of Product</span></span><span class="flag">EU</span><span class="miniring" data-v="93" data-c="emerald"></span><span class="miniring" data-v="81" data-c="emerald"></span><span style="font-size:10px;color:var(--emerald-deep);font-weight:600">Tailor→</span></div>
+            <div class="jt-row"><span class="jt-co"><b>Instacart</b><span>Senior PM, Agentic</span></span><span class="flag">EU</span><span class="miniring" data-v="90" data-c="emerald"></span><span class="miniring" data-v="94" data-c="emerald"></span><span style="font-size:10px;color:var(--emerald-deep);font-weight:600">Tailor→</span></div>
+          </div>
+          <div class="slide">
+            <div class="slide-h">Add job <span class="tab">input</span></div>
+            <div class="addjob">
+              <div class="aj-tabs"><span class="aj-tab on">Paste JD</span><span class="aj-tab">From URL</span><span class="aj-tab">Upload file</span></div>
+              <div class="aj-area">Paste the full job description here…</div>
+              <div class="aj-foot"><span class="cancel">Cancel</span><span class="btn btn-primary" style="padding:8px 14px;font-size:12px">Parse &amp; score →</span></div>
+            </div>
+            <p style="font-size:11px;color:var(--slate-400);text-align:center;margin-top:14px">Scored on both ATS &amp; Pursuit in seconds.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- BL: Tailored CV / Cover Letter / Email -->
+      <div class="panel">
+        <div class="panel-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="pttl">tailor</span><span class="dots" data-dots="2"><b class="on"></b><b></b><b></b></span></div>
+        <div class="rotator" data-rotator="2" data-count="3">
+          <div class="slide active">
+            <div class="slide-h">Tailored CV — change log <span class="tab">6 changes</span></div>
+            <div class="cl-entry"><span class="cl-tag k">KEYWORD INJECTION</span><span class="cl-ok">✓ approved</span><div class="cl-old">Product &amp; Business Leader driving digital product transformations…</div><div class="cl-new">Product &amp; Business Leader shipping AI-powered products from 0 to 1 through hands-on prototyping…</div></div>
+            <div class="cl-entry"><span class="cl-tag r">REPHRASE</span><span class="cl-ok">✓ approved</span><div class="cl-old">Designed an agentic AI ingestion system…</div><div class="cl-new">Owned end-to-end delivery of an agentic AI ingestion system from discovery to production…</div></div>
+            <div class="integrity"><b>100</b> Factual integrity — every line traces to your master CV. Nothing invented.</div>
+          </div>
+          <div class="slide">
+            <div class="slide-h">Cover Letter <span class="tab">story-led</span></div>
+            <div class="doc">
+              <p><b>Dear Hiring Team,</b></p>
+              <p>When our marketplace faced a revenue leak from lost claims, I didn't write a spec — I prototyped a solution, shipped it in weeks, and automated the recovery workflow.</p>
+              <p>I'm applying because the role sits at the intersection of what I've built and what energizes me most: taking products to production with hands-on ownership…</p>
+              <p><b>Warm regards</b></p>
+            </div>
+          </div>
+          <div class="slide">
+            <div class="slide-h">Email Draft <span class="tab">ready</span></div>
+            <div class="testmode">🟠 Test mode ON — email routes to your notification address, not the recruiter.</div>
+            <div class="field"><div class="fl">Subject</div><div class="fv">Application: AI Product Manager — Garena</div></div>
+            <div class="field"><div class="fl">Attachments</div><div class="fv">CV.pdf · CoverLetter.pdf</div></div>
+            <div class="field"><div class="fl">Body</div><div class="fv" style="color:var(--slate-500)">Dear Hiring Team, I'm applying for the AI Product Manager role…</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BR: Feeds / Companies / Scan history -->
+      <div class="panel">
+        <div class="panel-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="pttl">feeds &amp; scanning</span><span class="dots" data-dots="3"><b class="on"></b><b></b><b></b></span></div>
+        <div class="rotator" data-rotator="3" data-count="3">
+          <div class="slide active">
+            <div class="slide-h">RSS &amp; Apify feeds <span class="tab">sources</span></div>
+            <div class="frow"><span class="tog"></span><span class="fn">LinkedIn Jobs</span><span class="tag apify">Apify</span><span class="btn btn-ghost" style="padding:3px 10px;font-size:10px">Run</span></div>
+            <div class="frow"><span class="tog"></span><span class="fn">Google Jobs</span><span class="tag apify">Apify</span><span class="btn btn-ghost" style="padding:3px 10px;font-size:10px">Run</span></div>
+            <div class="frow"><span class="tog"></span><span class="fn">Jobicy NL</span><span class="tag rss">RSS</span><span class="btn btn-ghost" style="padding:3px 10px;font-size:10px">Run</span></div>
+            <div class="frow"><span class="tog"></span><span class="fn">AI &amp; Data Leadership — NL</span><span class="tag rss">RSS</span><span class="btn btn-ghost" style="padding:3px 10px;font-size:10px">Run</span></div>
+            <div class="frow"><span class="tog"></span><span class="fn">D4-LUX-Fin-LinkedIn</span><span class="tag apify">Apify</span><span class="btn btn-ghost" style="padding:3px 10px;font-size:10px">Run</span></div>
+          </div>
+          <div class="slide">
+            <div class="slide-h">Target companies · 23 <span class="tab">tracked</span></div>
+            <div class="cg">
+              <div class="cg-card"><b>Careem</b><span>Dubai · Careers →</span></div>
+              <div class="cg-card"><b>Adyen</b><span>NL · Careers →</span></div>
+              <div class="cg-card"><b>Grab</b><span>SG · Careers →</span></div>
+              <div class="cg-card"><b>Meesho</b><span>IN · Careers →</span></div>
+              <div class="cg-card"><b>Databricks</b><span>EU · Careers →</span></div>
+              <div class="cg-card"><b>Razorpay</b><span>IN · Careers →</span></div>
+            </div>
+          </div>
+          <div class="slide">
+            <div class="slide-h">Scan history <span class="tab">runs</span></div>
+            <div class="sh-row"><span class="st ok">success</span><span style="color:var(--slate-500)">Jul 3 · 530s</span><span>286 found</span><span style="color:var(--emerald-deep);font-weight:600">0 added</span></div>
+            <div class="sh-row"><span class="st ok">success</span><span style="color:var(--slate-500)">Jun 30 · 512s</span><span>267 found</span><span style="color:var(--emerald-deep);font-weight:600">0 added</span></div>
+            <div class="sh-row"><span class="st ok">success</span><span style="color:var(--slate-500)">Jun 26 · 1952s</span><span>292 found</span><span style="color:var(--emerald-deep);font-weight:600">124 added</span></div>
+            <div class="sh-row"><span class="st ok">success</span><span style="color:var(--slate-500)">Jun 24 · 588s</span><span>79 found</span><span style="color:var(--emerald-deep);font-weight:600">51 added</span></div>
+            <div class="sh-row"><span class="st part">partial</span><span style="color:var(--slate-500)">Jun 24 · 76s</span><span>0 found</span><span style="color:var(--slate-400)">0 added</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <p style="text-align:center;font-size:12.5px;color:var(--slate-400);margin-top:20px">Panels auto-rotate · representative live data</p>
+  </div>
+</section>
+
+<!-- GMAIL BLOCK -->
+<section class="section" id="gmail" style="background:linear-gradient(180deg,transparent,rgba(124,108,245,.04))">
+  <div class="wrap">
+    <div class="gmail-grid reveal">
+      <div>
+        <span class="privacy-strip">🔒 opt-in · reads only job alerts · revocable anytime</span>
+        <div class="kicker">Inbox polling</div>
+        <h2 style="margin-bottom:14px">Your inbox is already full of jobs.</h2>
+        <p style="font-size:16px;color:var(--slate-700);margin-bottom:24px">Create one Gmail just for the hunt. Point every job alert at it. AIJobsHunt polls it hourly, reads only those alerts, scores each role, and drops it into your tracker — your personal inbox stays private and clean.</p>
+        <ul class="bp">
+          <li><span class="k">1</span><div><b>Make a job-only Gmail</b><p>Subscriptions flood it — not your personal inbox. Your privacy stays in your real mailbox.</p></div></li>
+          <li><span class="k">2</span><div><b>Send every alert there</b><p>Tune LinkedIn, Indeed and company alerts to your roles and markets.</p></div></li>
+          <li><span class="k">3</span><div><b>Connect it — opt-in, revocable</b><p>An app password, encrypted. It reads job alerts, never your personal mail.</p></div></li>
+          <li><span class="k">4</span><div><b>Check your tracker, not your inbox</b><p>Hourly polling means scored jobs come to you.</p></div></li>
+          <li><span class="k">5</span><div><b>Forward strays with "jh:"</b><p>A referral or newsletter? Forward it with a "jh:" subject and it's fetched, scored and saved.</p></div></li>
+        </ul>
+      </div>
+      <div>
+        <div class="funnel">
+          <div style="font-family:var(--mono);font-size:10.5px;color:var(--slate-400);text-transform:uppercase;margin-bottom:6px">Last 7 days</div>
+          <div class="funnel-stat">
+            <div class="fs"><b>50</b><span>emails</span></div><div class="arrow">→</div>
+            <div class="fs"><b>366</b><span>links found</span></div><div class="arrow">→</div>
+            <div class="fs"><b>183</b><span>jobs saved</span></div>
+          </div>
+          <div class="mail-card">
+            <div class="mc-l"><b>Principal Product Owner, AI Enablement</b><span>linkedin.com · 6 hours ago</span><div class="brk"><span>10 links</span><span>10 gated</span><span class="g">6 saved</span></div></div>
+            <span class="saved">6 saved</span>
+          </div>
+          <div class="mail-card">
+            <div class="mc-l"><b>Head of IT Ecommerce at Dyson</b><span>linkedin.com · 8 hours ago</span><div class="brk"><span>10 links</span><span>10 gated</span><span class="g">5 saved</span></div></div>
+            <span class="saved">5 saved</span>
+          </div>
+          <div class="mail-card">
+            <div class="mc-l"><b>Deputy CTO (AI Product) at Jobgether</b><span>linkedin.com · 14 hours ago</span><div class="brk"><span>10 links</span><span>10 gated</span><span class="g">6 saved</span></div></div>
+            <span class="saved">6 saved</span>
+          </div>
+          <p style="font-size:11.5px;color:var(--slate-500);text-align:center;margin-top:12px"><b style="color:var(--emerald-deep);font-family:var(--mono)">63%</b> of tracked jobs arrive via Gmail alerts — hands-free.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BYOK + TRANSPARENCY -->
+<section class="section">
+  <div class="wrap">
+    <div class="sec-head center reveal">
+      <div class="kicker">Bring your own key</div>
+      <h2>Your Claude key. Your costs. No markup.</h2>
+      <p>You connect your own Anthropic key. Every token goes to Anthropic at their price — we never sit in the middle of your AI bill.</p>
+    </div>
+    <div class="trust-grid reveal">
+      <div class="byok">
+        <h3>No markup, ever</h3>
+        <p>The ₹500/mo covers the platform. AI compute runs on your key, paid directly to Anthropic at cost.</p>
+        <ul class="bl">
+          <li><svg width="18" height="18" fill="none" stroke-width="2.4" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>Your key — encrypted (AES-256), never shared or logged</li>
+          <li><svg width="18" height="18" fill="none" stroke-width="2.4" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>Pay Anthropic directly — exactly what it costs, no middleman</li>
+          <li><svg width="18" height="18" fill="none" stroke-width="2.4" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>Pick your model — Sonnet, Opus or Haiku, your call</li>
+          <li><svg width="18" height="18" fill="none" stroke-width="2.4" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>Cancel the platform anytime — your key stays yours</li>
+        </ul>
+      </div>
+      <div class="transp">
+        <h3>See what every action costs</h3>
+        <div class="sub">Real spend, itemised — before and after.</div>
+        <div class="usage-split">
+          <div class="usage-box claude"><div class="ub-h"><span>Anthropic (Claude)</span></div><div class="ub-v">₹593</div><div class="ub-s">3.0M tokens · 1,061 calls</div></div>
+          <div class="usage-box apify"><div class="ub-h"><span>Apify (scanning)</span></div><div class="ub-v">₹3.68</div><div class="ub-s">736 runs · your key</div></div>
+        </div>
+        <div class="costtable">
+          <div class="ct-row h"><span>Typical action</span><span>Cost</span></div>
+          <div class="ct-row"><span>Score a job</span><span class="price">₹0.10</span></div>
+          <div class="ct-row"><span>Tailor a CV</span><span class="price">₹1.30</span></div>
+          <div class="ct-row"><span>Generate domain CV</span><span class="price">₹0.90</span></div>
+          <div class="ct-row"><span>Monthly active search</span><span class="price">~₹15</span></div>
+        </div>
+        <div class="opt-note">✓ Smart model routing keeps spend low — <b>~99% saved</b> vs naive prompting on background scans.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section" id="pricing">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">Pricing</div>
+      <h2>One plan. Or a free month on us.</h2>
+      <p>A flat platform fee — AI runs on your own key, at cost. No tiers, no add-ons.</p>
+    </div>
+    <div class="pricing reveal">
+      <div class="price-card">
+        <div style="font-family:var(--display);font-weight:600;font-size:15px;color:var(--slate-300)">AIJobsHunt Pro</div>
+        <div class="price-tag"><span class="amt">₹500</span><span class="per">/ month</span></div>
+        <div class="byok-line">+ your own Claude key, paid to Anthropic at cost</div>
+        <div style="color:var(--slate-400);font-size:13px;margin-bottom:4px">Cancel anytime.</div>
+        <ul class="plist">
+          <li><svg width="18" height="18" fill="none" stroke-width="2.4" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>Full platform access — no feature limits</li>
+          <li><svg width="18" height="18" fill="none" stroke-width="2.4" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>Job scoring — ATS + Pursuit</li>
+          <li><svg width="18" height="18" fill="none" stroke-width="2.4" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>CV tailoring with factual-integrity checks</li>
+          <li><svg width="18" height="18" fill="none" stroke-width="2.4" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>Cover letters, application emails &amp; tracking</li>
+          <li><svg width="18" height="18" fill="none" stroke-width="2.4" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>Weekly scans + hourly Gmail polling</li>
+        </ul>
+        <a href="/signup" class="btn btn-white btn-lg" onclick="trackEvent('pricing_subscribe_click')">Subscribe — ₹500/mo</a>
+      </div>
+      <div class="invite-card">
+        <h3>Have an invite key?</h3>
+        <p>Redeem it for 30 days free — full access, no card needed. When the month ends, keep going for ₹500/mo or request an extension.</p>
+        <div class="keyrow"><input id="keyInput" placeholder="JH-XXXX-XXXX" maxlength="12" aria-label="Invite key"><a href="/signup" class="btn btn-primary" onclick="trackEvent('pricing_redeem_click')">Redeem</a></div>
+        <p class="invite-fine">Single-use key. Redeeming creates your account and starts your free month.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section" id="faq">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kicker">FAQ</div>
+      <h2>Questions, answered.</h2>
+      <p>Still unsure? Ask the chat in the corner — no login needed.</p>
+    </div>
+    <div class="faq reveal">
+      <div class="qa"><button onclick="toggleQA(this)">Will it invent things on my CV?<span class="plus"></span></button><div class="ans"><p>No. Tailoring only reorders and rephrases what's already in your CV. A factual-integrity score checks every line against your original — anything not traceable is flagged before you send. It changes how your experience is presented, never what you've done.</p></div></div>
+      <div class="qa"><button onclick="toggleQA(this)">Which roles and markets does it cover?<span class="plus"></span></button><div class="ans"><p>Senior and leadership roles across every field — product, marketing, finance, operations, engineering, consulting and beyond — in whatever markets you're targeting, with strong coverage across the EU, the Gulf, Southeast Asia and India.</p></div></div>
+      <div class="qa"><button onclick="toggleQA(this)">What does the ₹500/mo include, and what's BYOK?<span class="plus"></span></button><div class="ans"><p>₹500/mo is full platform access — scoring, tailoring, cover letters, scanning and tracking. AI compute runs on your own Claude key, so you pay Anthropic directly at cost. We never mark up your AI usage.</p></div></div>
+      <div class="qa"><button onclick="toggleQA(this)">Do I need an invite to join?<span class="plus"></span></button><div class="ans"><p>No. You can subscribe directly for ₹500/mo. If someone's shared an invite key with you, redeem it for your first 30 days free instead.</p></div></div>
+      <div class="qa"><button onclick="toggleQA(this)">Is reading my Gmail safe?<span class="plus"></span></button><div class="ans"><p>It's opt-in and reads only job-alert emails — best set up with a dedicated job-search Gmail so your personal inbox is never touched. You can disconnect at any time, and your data is exportable and deletable.</p></div></div>
+      <div class="qa"><button onclick="toggleQA(this)">Can I cancel anytime?<span class="plus"></span></button><div class="ans"><p>Yes — cancel whenever you like and you keep access until the end of the billing month. Your Claude key always remains yours.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FINALE -->
+<section class="section">
+  <div class="wrap reveal">
+    <div class="finale">
+      <h2>Stop searching. Start shortlisting.</h2>
+      <p>Give AIJobsHunt your CV and let it score, tailor and track — while you focus on the conversations that matter.</p>
+      <a href="/signup" class="btn btn-white btn-lg" onclick="trackEvent('finale_getaccess_click')">Get access →</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a href="#top" class="brand"><span class="logo">JH</span><span>AIJobsHunt</span></a>
+        <p>The AI job co-pilot for your next role. Scored, tailored, tracked — honestly.</p>
+      </div>
+      <div class="foot-links">
+        <div class="foot-col"><b>Product</b><a href="#how">How it works</a><a href="#why">Why it's different</a><a href="#gmail">Inbox polling</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a></div>
+        <div class="foot-col"><b>Account</b><a href="/login" onclick="trackEvent('footer_login_click')">Log in</a><a href="/signup" onclick="trackEvent('footer_signup_click')">Get access</a></div>
+        <div class="foot-col"><b>Legal</b><a href="https://praveenp1118.github.io/JobHunt/privacy.html">Privacy Policy</a><a href="https://praveenp1118.github.io/JobHunt/terms.html">Terms of Service</a><a href="https://praveenp1118.github.io/JobHunt/cookies.html">Cookie Policy</a></div>
+        <div class="foot-col"><b>Contact</b><a href="mailto:support@aijobshunt.com">support@aijobshunt.com</a></div>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 AIJobsHunt. All rights reserved.</span>
+      <span>This site uses Google Analytics to understand how visitors use it.</span>
+    </div>
+  </div>
+</footer>
+
+<!-- CHAT -->
+<button class="chat-fab" id="chatFab" onclick="toggleChat()" aria-label="Open chat">
+  <svg width="18" height="18" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  Questions?
+</button>
+<div class="chat-panel" id="chatPanel">
+  <div class="chat-top"><b>Ask about AIJobsHunt</b><small>No login needed · answers common questions</small></div>
+  <div class="chat-log" id="chatLog"><div class="msg bot">Hi 👋 Ask me about how it works, pricing, BYOK, Gmail polling, or invite keys.</div></div>
+  <div class="chat-suggest">
+    <button onclick="ask('How does pricing and BYOK work?')">Pricing &amp; BYOK</button>
+    <button onclick="ask('Will it invent things on my CV?')">Is it honest?</button>
+    <button onclick="ask('How does Gmail polling work?')">Gmail</button>
+    <button onclick="ask('How do invite keys work?')">Invite keys</button>
+  </div>
+  <div class="chat-in"><input id="chatInput" placeholder="Type a question…" onkeydown="if(event.key==='Enter')send()"><button onclick="send()" aria-label="Send">→</button></div>
+</div>
+
+<script>
+// draw score rings
+function drawRing(el){
+  const v=+el.dataset.v||70, c=el.dataset.c==='violet'?'var(--violet)':'var(--emerald)';
+  const size=el.classList.contains('miniring')?30:38, r=size===30?12:16, cx=size/2;
+  const circ=2*Math.PI*r;
+  el.innerHTML='<svg width="'+size+'" height="'+size+'"><circle cx="'+cx+'" cy="'+cx+'" r="'+r+'" fill="none" stroke="#eef2f7" stroke-width="3.5"/><circle class="rc" cx="'+cx+'" cy="'+cx+'" r="'+r+'" fill="none" stroke="'+c+'" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="'+circ+'" stroke-dashoffset="'+circ+'"/></svg><span class="num">'+v+'</span>';
+  const rc=el.querySelector('.rc');
+  const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){rc.style.transition='stroke-dashoffset .9s ease';rc.style.strokeDashoffset=circ*(1-v/100);io.disconnect();}})});
+  io.observe(el);
+}
+document.querySelectorAll('.ring,.miniring').forEach(drawRing);
+
+// rotating personas
+const personas=[
+  {i:'P',c:'#10b981',name:'Praveen',role:'Head of Product',route:'Bengaluru → Amsterdam',pain:'One CV, four markets — which EU roles will actually shortlist me?',s:[88,81]},
+  {i:'N',c:'#7c6cf5',name:'Neha',role:'Strategy Consultant',route:'Chennai → Luxembourg',pain:'Consulting travels well — but which EU firms will even see my CV?',s:[84,90]},
+  {i:'R',c:'#f59e0b',name:'Rohit',role:'Finance Director',route:'Delhi → Dubai',pain:'Strong on paper, silently filtered out by ATS every time.',s:[79,86]},
+  {i:'M',c:'#f43f5e',name:'Meera',role:'Head of Operations',route:'Pune → Netherlands',pain:'Rewriting my CV from scratch for every job, scared of overclaiming.',s:[82,77]},
+  {i:'A',c:'#4338ca',name:'Arjun',role:'Engineering Lead',route:'Hyderabad → EU',pain:'Great roles buried across boards and inboxes — nothing tracks them.',s:[85,80]}
+];
+const pw=document.getElementById('personas');
+personas.forEach((p,idx)=>{
+  const el=document.createElement('div');
+  el.className='persona'+(idx===0?' active':'');
+  el.innerHTML='<div class="avt" style="background:linear-gradient(135deg,'+p.c+',rgba(0,0,0,.15))">'+
+    '<svg viewBox="0 0 44 44" width="44" height="44"><circle cx="22" cy="16" r="7" fill="rgba(255,255,255,.9)"/><path d="M8 40c0-8 6.3-13 14-13s14 5 14 13" fill="rgba(255,255,255,.9)"/></svg></div>'+
+    '<div class="pinfo"><div class="pname">'+p.name+' <span class="role">· '+p.role+'</span></div>'+
+    '<div class="route">'+p.route+'</div>'+
+    '<div class="pain">"'+p.pain+'"</div></div>'+
+    '<div class="pscore"><span class="ring" data-v="'+p.s[0]+'" data-c="emerald"></span><span class="ring" data-v="'+p.s[1]+'" data-c="violet"></span></div>';
+  pw.appendChild(el);
+});
+pw.querySelectorAll('.ring').forEach(drawRing);
+let pi=0;
+setInterval(()=>{
+  const items=pw.querySelectorAll('.persona');
+  items[pi].classList.remove('active');
+  pi=(pi+1)%items.length;
+  items[pi].classList.add('active');
+},4200);
+
+// rotating product panels (staggered)
+document.querySelectorAll('.rotator').forEach((rot,idx)=>{
+  const slides=rot.querySelectorAll('.slide');
+  const dots=document.querySelector('.dots[data-dots="'+rot.dataset.rotator+'"]').querySelectorAll('b');
+  let ci=0;
+  setTimeout(()=>{
+    setInterval(()=>{
+      slides[ci].classList.remove('active'); dots[ci]&&dots[ci].classList.remove('on');
+      ci=(ci+1)%slides.length;
+      slides[ci].classList.add('active'); dots[ci]&&dots[ci].classList.add('on');
+    },3800);
+  }, idx*950); // stagger so they don't all flip at once
+});
+
+// sticky header shrink/solidify past hero
+const navEl=document.querySelector('header.nav');
+const onScroll=()=>{ if(window.scrollY>120) navEl.classList.add('scrolled'); else navEl.classList.remove('scrolled'); };
+window.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+// FAQ
+function toggleQA(btn){const qa=btn.parentElement,ans=qa.querySelector('.ans');const open=qa.classList.toggle('open');ans.style.maxHeight=open?ans.scrollHeight+'px':0;}
+
+// reveals
+const rio=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');rio.unobserve(e.target);}})},{threshold:.1});
+document.querySelectorAll('.reveal').forEach(el=>rio.observe(el));
+
+// chat
+const chatPanel=document.getElementById('chatPanel'),chatLog=document.getElementById('chatLog');
+function toggleChat(){chatPanel.classList.toggle('open');if(chatPanel.classList.contains('open'))trackEvent('chat_open');}
+function pushMsg(t,who){const d=document.createElement('div');d.className='msg '+who;d.textContent=t;chatLog.appendChild(d);chatLog.scrollTop=chatLog.scrollHeight;}
+function answer(q){q=q.toLowerCase();
+  if(/pric|byok|key|markup|cost|₹|500|pay|subscri/.test(q))return "₹500/month for full platform access, cancel anytime. AI runs on your own Claude key — you pay Anthropic directly at cost, no markup. An invite key gives your first 30 days free.";
+  if(/invent|honest|lie|fabricat|integr|true|real/.test(q))return "It never invents anything. Tailoring only reorders and rephrases what's already in your CV, and a factual-integrity score checks every line against your original before you send.";
+  if(/gmail|inbox|email|poll|alert/.test(q))return "Best practice: make a dedicated job-search Gmail, point all your job alerts at it, and connect it (opt-in, revocable). AIJobsHunt polls it hourly, reads only those alerts, scores each role and adds it to your tracker — ~63% of jobs arrive this way.";
+  if(/market|countr|region|where|role|field|domain/.test(q))return "Senior and leadership roles across every field — product, marketing, finance, operations, engineering, consulting and beyond — in whatever markets you target, with strong EU / Gulf / SE-Asia / India coverage.";
+  if(/invite|redeem|free|code/.test(q))return "An invite key is single-use and gives you 30 days free with full access, no card needed. Enter it during signup. When the month ends you can subscribe for ₹500/mo or request an extension.";
+  if(/cancel|refund|stop/.test(q))return "Cancel anytime and keep access until the end of your billing month. Your Claude key always stays yours.";
+  if(/score|ats|pursuit/.test(q))return "Every role gets two scores: an ATS match (will a tracking system shortlist you?) and a Pursuit score (is it worth your time?). Together they turn a long list into a short one.";
+  return "Good question — take a look at the sections above for pricing, honesty, Gmail and invite details, or get access to try it.";
+}
+function ask(q){document.getElementById('chatInput').value=q;send();}
+function send(){const inp=document.getElementById('chatInput'),t=inp.value.trim();if(!t)return;pushMsg(t,'me');inp.value='';trackEvent('chat_question',{q:t});setTimeout(()=>pushMsg(answer(t),'bot'),340);}
+</script>
+</body>
+</html>

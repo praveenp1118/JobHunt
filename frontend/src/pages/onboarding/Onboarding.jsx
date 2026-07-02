@@ -54,8 +54,15 @@ export default function Onboarding() {
   const subActive = subData?.data?.is_active
   const [subBusy, setSubBusy] = useState(false)
 
-  // Invite-key redemption (alternative to paying)
-  const [inviteCode, setInviteCode] = useState('')
+  // Invite-key redemption (alternative to paying). Prefill from the landing page's
+  // "Redeem" field, which stashes the key in sessionStorage before routing to signup.
+  const [inviteCode, setInviteCode] = useState(() => {
+    try {
+      const k = sessionStorage.getItem('pendingInviteKey')
+      if (k) { sessionStorage.removeItem('pendingInviteKey'); return k }
+    } catch (_) { /* sessionStorage may be unavailable */ }
+    return ''
+  })
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteOk, setInviteOk] = useState(false)
 

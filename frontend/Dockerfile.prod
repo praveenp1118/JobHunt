@@ -6,6 +6,11 @@ RUN npm ci
 COPY . .
 # The app calls the API at the relative path /api (same-origin), so no build-time
 # API URL is needed — Caddy routes /api/* to the backend in production.
+#
+# Google Analytics 4 Measurement ID. VITE_ vars are embedded at BUILD time, so it's
+# passed as a build arg (from docker-compose). Optional — unset → analytics is a no-op.
+ARG VITE_GA_ID=""
+ENV VITE_GA_ID=$VITE_GA_ID
 RUN npm run build
 
 # ── Serve stage: nginx serving the static build ──

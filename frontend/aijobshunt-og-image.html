@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AIJobsHunt — OG share image (1200×630)</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --emerald:#10b981;--emerald-deep:#059669;--ink:#0b1220;--violet:#7c6cf5;
+    --slate-300:#cbd5e1;--slate-400:#94a3b8;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#334155;display:grid;place-items:center;min-height:100vh;font-family:'Inter',sans-serif;padding:24px;gap:16px}
+  .hint{color:#e2e8f0;font-size:14px;font-family:'JetBrains Mono',monospace;text-align:center}
+
+  /* the actual OG card — exactly 1200x630 */
+  .og{
+    width:1200px;height:630px;position:relative;overflow:hidden;
+    background:
+      radial-gradient(900px 400px at 78% -8%, rgba(16,185,129,.28), transparent 60%),
+      radial-gradient(700px 500px at 105% 120%, rgba(124,108,245,.20), transparent 55%),
+      var(--ink);
+    color:#fff;padding:72px 76px;display:flex;flex-direction:column;justify-content:space-between;
+  }
+  /* subtle grid texture */
+  .og::before{content:"";position:absolute;inset:0;background-image:
+    linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);
+    background-size:48px 48px;mask-image:radial-gradient(circle at 30% 40%,#000,transparent 80%)}
+  .og>*{position:relative}
+
+  .top{display:flex;align-items:center;gap:16px}
+  .logo{width:60px;height:60px;border-radius:15px;background:linear-gradient(135deg,var(--emerald),var(--emerald-deep));
+    display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;font-size:24px;color:#fff;
+    box-shadow:0 8px 24px -8px rgba(16,185,129,.6)}
+  .brandname{font-family:'Space Grotesk';font-weight:700;font-size:30px;letter-spacing:-.01em}
+  .badge{margin-left:auto;font-family:'JetBrains Mono';font-size:14px;font-weight:600;color:#a7f3d0;
+    background:rgba(16,185,129,.14);border:1px solid rgba(16,185,129,.3);padding:9px 18px;border-radius:100px}
+
+  .mid{max-width:820px}
+  .kicker{font-family:'JetBrains Mono';font-size:16px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--emerald);margin-bottom:22px}
+  h1{font-family:'Space Grotesk';font-weight:700;font-size:60px;line-height:1.08;letter-spacing:-.025em}
+  h1 .u{background:linear-gradient(120deg,#34d399,var(--emerald));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .sub{font-size:22px;color:var(--slate-300);margin-top:22px;max-width:720px;line-height:1.45}
+
+  .bottom{display:flex;align-items:center;gap:26px}
+  .rings{display:flex;gap:10px}
+  .ring{width:64px;height:64px;position:relative}
+  .ring .num{position:absolute;inset:0;display:grid;place-items:center;font-family:'JetBrains Mono';font-weight:700;font-size:18px;color:#fff}
+  .ring small{position:absolute;bottom:-22px;left:0;right:0;text-align:center;font-family:'JetBrains Mono';font-size:10px;color:var(--slate-400);letter-spacing:.05em}
+  .pills{display:flex;gap:10px;margin-left:8px}
+  .pill{font-family:'JetBrains Mono';font-size:14px;font-weight:600;color:var(--slate-300);border:1px solid rgba(255,255,255,.18);border-radius:100px;padding:8px 16px}
+  .url{margin-left:auto;font-family:'JetBrains Mono';font-size:18px;font-weight:600;color:var(--emerald)}
+</style>
+</head>
+<body>
+  <div class="hint">↓ This is exactly 1200×630. Screenshot just the card (or use browser DevTools “capture node screenshot”) → save as og-image.png</div>
+
+  <div class="og" id="ogcard">
+    <div class="top">
+      <div class="logo">JH</div>
+      <div class="brandname">AIJobsHunt</div>
+      <div class="badge">AI job co-pilot</div>
+    </div>
+
+    <div class="mid">
+      <div class="kicker">Scored · Tailored · Tracked — honestly</div>
+      <h1>Tailor your CV to each job's keywords <span class="u">— without inventing a thing.</span></h1>
+      <div class="sub">Scores every role on ATS &amp; Pursuit fit, then tailors your CV to match — using only what's already true about you.</div>
+    </div>
+
+    <div class="bottom">
+      <div class="rings">
+        <div class="ring"><svg width="64" height="64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="6"/><circle cx="32" cy="32" r="27" fill="none" stroke="#10b981" stroke-width="6" stroke-linecap="round" stroke-dasharray="169.6" stroke-dashoffset="20.4" transform="rotate(-90 32 32)"/></svg><span class="num">88</span><small>ATS</small></div>
+        <div class="ring"><svg width="64" height="64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="6"/><circle cx="32" cy="32" r="27" fill="none" stroke="#7c6cf5" stroke-width="6" stroke-linecap="round" stroke-dasharray="169.6" stroke-dashoffset="32.2" transform="rotate(-90 32 32)"/></svg><span class="num">81</span><small>PURSUIT</small></div>
+      </div>
+      <div class="pills"><span class="pill">EU</span><span class="pill">Gulf</span><span class="pill">SE Asia</span><span class="pill">India</span></div>
+      <div class="url">aijobshunt.com</div>
+    </div>
+  </div>
+</body>
+</html>

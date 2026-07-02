@@ -183,6 +183,63 @@ The gate was previously hand-applied to only 7 endpoints and **all of `jobs.py` 
 
 ---
 
+## Public Landing Page (`/`) — "AIJobsHunt"
+
+The logged-out marketing site rendered at **`/`** (React/Vite, not the old `/`→`/dashboard` redirect).
+Brand **AIJobsHunt**, logo monogram **JH**, emerald `#059669` + navy `#0b1220`; fonts Space Grotesk
+(display) / Inter (body) / JetBrains Mono (metrics). Built from a static HTML prototype
+(`frontend/aijobshunt-landing.html`, kept for reference).
+
+- **Files:** `frontend/src/pages/landing/LandingPage.jsx` (all sections + animated score rings, staggered
+  auto-rotating panels, persona rotator, FAQ accordion, pre-login canned-FAQ chat, mobile hamburger) +
+  `landing.css` (**every rule scoped under `.aijh`** so none of it leaks into the app — Vite bundles CSS
+  globally; keyframes are `aijh-*`). `frontend/src/lib/analytics.js` = GA4 loader (**reads `VITE_GA_ID`
+  from env — never hardcoded**; no-op if unset) + `trackEvent()` (hooked on every CTA:
+  nav/hero/pricing/finale/footer/chat).
+- **Routing** (`App.jsx`): `/` → `LandingRoute` (logged-out → landing; **authenticated → `/dashboard`**),
+  lazy-loaded as its own chunk (48 kB / 12 kB gz JS + 32 kB / 6.5 kB gz CSS — never bloats the app bundle).
+  Added **`/signup`** as a public alias of `/register`. The app's global support `ChatWidget` is suppressed
+  on `/` (landing ships its own).
+- **Wiring (real, not stubs):** Get access/Subscribe → `/register`; Log in → `/login`; invite **Redeem**
+  stashes the key in `sessionStorage.pendingInviteKey` then routes to `/register` — **Onboarding prefills
+  the invite input from it**. (Stripe checkout + `/invites/redeem` both require auth, so the logged-out
+  entry point is signup → onboarding, where the existing Subscribe step handles both paths.)
+- **Responsive** (mobile-first, ≤1120px cap): nav links ≥940px else hamburger slide-in (Esc/scrim/link
+  close); hero `100dvh`; How-it-works 5 steps → horizontal snap-scroll on phone; all 2-col grids stack;
+  Gmail funnel horizontal→vertical on mobile; chat panel near-full-width on phones; touch targets ≥44px.
+  Honors `prefers-reduced-motion` and **pauses rotators/personas off-screen** (IntersectionObserver).
+  **Verified via headless Chromium (Playwright) at 375/768/1440: 0 console errors, 0 page errors, 0px
+  horizontal overflow, nav↔hamburger swap correct.**
+
+### SEO (Option 1 — static tags now; prerender = fast-follow)
+- **`index.html` head** (crawler-visible): title *"AIJobsHunt — AI CV tailoring & ATS scoring, without
+  inventing a thing"*, meta description, `canonical=https://aijobshunt.com/`, robots, theme-color, full
+  **Open Graph** + **Twitter** (`summary_large_image`, image `…/og-image.png` 1200×630), and two
+  **JSON-LD** blocks (`SoftwareApplication` w/ `offers` ₹500 INR "platform fee, BYOK AI at cost" +
+  `Organization`). Fonts use **preconnect + preload** (self-hosting is the follow-up). GA is injected by
+  the env-driven util, so no Measurement ID sits in static HTML.
+- **Semantic HTML:** single `<h1>` (hero), `<h2>` per section (two mention **ATS**/**Pursuit**/
+  **tailoring**), `<nav>/<main>/<footer>`, `aria-label`s, `aria-expanded` on hamburger/FAQ.
+- **Static files** in `frontend/public/` (Vite copies to build root; nginx `try_files` serves them — **no
+  Caddyfile change needed**): `robots.txt` (→ sitemap), `sitemap.xml` (just `/`), `manifest.json`,
+  `favicon.svg` (JH monogram). `index.html` links `apple-touch-icon.png` + manifest.
+- **Icons + share image — all generated** in `frontend/public/` (rendered from the JH mark / the
+  `aijobshunt-og-image.html` template via headless Chromium): `og-image.png` (1200×630),
+  `apple-touch-icon.png` (180×180), `icon-192.png`, `icon-512.png` — every referenced icon/asset path
+  resolves (verified: no 404s, all copied into `dist/`). The four "See it" panels are faithful CSS/SVG mocks
+  — a `TODO(screenshots)` comment in `LandingPage.jsx` marks where to swap in real product `<img>`s. (The OG
+  *generator* HTML lives in `frontend/` root, NOT in `public/`, so it never ships to prod.)
+- **Analytics wiring:** `VITE_GA_ID` (GA4 Measurement ID) is read at BUILD time. Dev → `frontend/.env` (see
+  the committed `frontend/.env.example`); prod → `.env.production` → **docker-compose `build.args`** →
+  `Dockerfile.prod` `ARG/ENV VITE_GA_ID` → embedded in the bundle. Unset = analytics disabled. Changing it
+  needs a rebuild (`up -d --build`), not a restart.
+- **Prerender fast-follow (NOT yet wired):** add `react-snap` (or `vite-plugin-prerender`) with
+  `include:['/']`, `crawl:false`, and switch `main.jsx` to `hydrateRoot` for prerendered routes — kept OUT
+  of the default `npm run build` so the prod image build can't break; the SPA stays SPA. Lighthouse SEO/a11y
+  are already high from the static head + semantic markup (headless Chrome runs the JS).
+
+---
+
 ## Testing
 
 API smoke tests live in `backend/tests/` (pytest + pytest-asyncio). They run
