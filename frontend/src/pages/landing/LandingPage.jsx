@@ -37,7 +37,7 @@ function Ring({ v = 70, c = 'emerald', mini = false }) {
   }, [v, circ])
 
   return (
-    <span ref={ref} className={mini ? 'miniring' : 'ring'}>
+    <span ref={ref} className={mini ? 'miniring' : 'scorering'}>
       <svg width={size} height={size}>
         <circle cx={cx} cy={cx} r={r} fill="none" stroke="#eef2f7" strokeWidth="3.5" />
         <circle className="rc" cx={cx} cy={cx} r={r} fill="none" stroke={stroke} strokeWidth="3.5"
