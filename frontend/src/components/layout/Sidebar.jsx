@@ -123,27 +123,27 @@ export default function Sidebar({ hitlCount = 0 }) {
   return (
     <aside className="w-60 shrink-0 bg-slate-900 flex flex-col h-screen sticky top-0">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-slate-800">
+      <div className="px-5 py-3.5 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center shrink-0">
             <span className="text-white font-bold text-xs">JH</span>
           </div>
           <div>
-            <p className="text-white font-semibold text-sm leading-none">JobHunt</p>
-            <p className="text-slate-500 text-[10px] mt-0.5">AI job search</p>
+            <p className="text-white font-semibold text-sm leading-none">AIJobsHunt</p>
+            <p className="text-slate-500 text-[10px] mt-0.5">AI job co-pilot</p>
           </div>
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      {/* Navigation — flex:1 middle region; only scrolls (thin bar) on very short viewports */}
+      <nav className="flex-1 min-h-0 px-3 py-3 space-y-0.5 overflow-y-auto [scrollbar-width:thin] [scrollbar-color:#334155_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-track]:bg-transparent">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
               clsx(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+                'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
                 isActive
                   ? 'bg-emerald-600 text-white'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
@@ -175,7 +175,7 @@ export default function Sidebar({ hitlCount = 0 }) {
               to="/admin"
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
                   isActive
                     ? 'bg-emerald-600 text-white'
                     : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
@@ -191,7 +191,7 @@ export default function Sidebar({ hitlCount = 0 }) {
               to="/admin/chat"
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors',
                   isActive
                     ? 'bg-emerald-600 text-white'
                     : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
@@ -212,8 +212,8 @@ export default function Sidebar({ hitlCount = 0 }) {
         )}
       </nav>
 
-      {/* User profile + logout */}
-      <div className="px-3 py-4 border-t border-slate-800">
+      {/* User profile + logout — pinned to the bottom */}
+      <div className="px-3 py-3 border-t border-slate-800 shrink-0">
         <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
           onClick={() => navigate('/settings')}>
           <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center shrink-0">

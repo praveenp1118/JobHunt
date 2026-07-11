@@ -272,9 +272,9 @@ async def _notify_admin_extension(user: User) -> None:
             f"Review in Admin → Extension Requests.",
             "plain",
         )
-        msg["From"] = f"JobHunt <{sender}>"
+        msg["From"] = f"AIJobsHunt <{sender}>"
         msg["To"] = to_addr
-        msg["Subject"] = f"[JobHunt] Extension request from {user.email}"
+        msg["Subject"] = f"[AIJobsHunt] Extension request from {user.email}"
         msg["Date"] = formatdate(localtime=True)
         msg["Message-ID"] = make_msgid()
         await aiosmtplib.send(msg, hostname="smtp.gmail.com", port=587, start_tls=True,

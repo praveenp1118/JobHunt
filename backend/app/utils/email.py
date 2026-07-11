@@ -29,7 +29,7 @@ async def send_email(to: str, subject: str, body: str) -> None:
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = f"JobHunt <{settings.gmail_address}>"
+        msg["From"] = f"AIJobsHunt <{settings.gmail_address}>"
         msg["To"] = to
         msg.attach(MIMEText(body, "html"))
 
@@ -47,29 +47,29 @@ async def send_email(to: str, subject: str, body: str) -> None:
 
 async def send_password_reset_email(email: str, token: str) -> None:
     reset_url = f"{settings.frontend_url}/auth/reset-password?token={token}"
-    subject = "JobHunt — Reset your password"
+    subject = "AIJobsHunt — Reset your password"
     body = f"""
-    <h2>Reset your JobHunt password</h2>
+    <h2>Reset your AIJobsHunt password</h2>
     <p>Click the link below to reset your password. This link expires in 1 hour.</p>
     <p><a href="{reset_url}" style="background:#1D9E75;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">Reset Password</a></p>
     <p>Or copy this URL: {reset_url}</p>
     <p>If you didn't request this, ignore this email.</p>
     <br>
-    <p style="color:#9CA3AF;font-size:12px">JobHunt — AI-powered job search</p>
+    <p style="color:#9CA3AF;font-size:12px">AIJobsHunt — AI job co-pilot</p>
     """
     await send_email(email, subject, body)
 
 
 async def send_verification_email(email: str, token: str) -> None:
     verify_url = f"{settings.frontend_url}/auth/verify?token={token}"
-    subject = "JobHunt — Verify your email"
+    subject = "AIJobsHunt — Verify your email"
     body = f"""
-    <h2>Verify your JobHunt email</h2>
+    <h2>Verify your AIJobsHunt email</h2>
     <p>Click the link below to verify your email address.</p>
     <p><a href="{verify_url}" style="background:#1D9E75;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">Verify Email</a></p>
     <p>Or copy this URL: {verify_url}</p>
     <br>
-    <p style="color:#9CA3AF;font-size:12px">JobHunt — AI-powered job search</p>
+    <p style="color:#9CA3AF;font-size:12px">AIJobsHunt — AI job co-pilot</p>
     """
     await send_email(email, subject, body)
 
@@ -87,7 +87,7 @@ async def send_chat_ticket_email(ticket_number: str, title: str, requester: str,
       <p><b>Title:</b> {title}</p>
       <p><b>Message:</b><br>{message}</p>
       <p><a href="{settings.frontend_url}/admin/chat" style="color:#1D9E75">Open in admin chat →</a></p>
-      <p style="color:#9CA3AF;font-size:12px">JobHunt — AI-powered job search</p>
+      <p style="color:#9CA3AF;font-size:12px">AIJobsHunt — AI job co-pilot</p>
     </div>
     """
     await send_email(to, subject, body)
@@ -98,13 +98,13 @@ async def send_chat_reply_email(to_email: str, ticket_number, admin_message: str
     if not to_email:
         return
     ref = f" to your ticket {ticket_number}" if ticket_number else ""
-    subject = f"JobHunt support replied{ref}"
+    subject = f"AIJobsHunt support replied{ref}"
     body = f"""
     <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto">
-      <h3 style="color:#1B2B4B">JobHunt support replied</h3>
+      <h3 style="color:#1B2B4B">AIJobsHunt support replied</h3>
       <p>{admin_message}</p>
       <p><a href="{settings.frontend_url}" style="color:#1D9E75">Continue the chat →</a></p>
-      <p style="color:#9CA3AF;font-size:12px">JobHunt — AI-powered job search</p>
+      <p style="color:#9CA3AF;font-size:12px">AIJobsHunt — AI job co-pilot</p>
     </div>
     """
     await send_email(to_email, subject, body)
@@ -114,11 +114,11 @@ async def send_notification_email(to: str, subject: str, message: str) -> None:
     """General notification email to personal address."""
     body = f"""
     <div style="font-family:Inter,sans-serif;max-width:500px;margin:0 auto">
-      <h3 style="color:#1B2B4B">JobHunt Notification</h3>
+      <h3 style="color:#1B2B4B">AIJobsHunt Notification</h3>
       <p>{message}</p>
       <br>
-      <p><a href="{settings.frontend_url}" style="color:#1D9E75">Open JobHunt →</a></p>
-      <p style="color:#9CA3AF;font-size:12px">JobHunt — AI-powered job search</p>
+      <p><a href="{settings.frontend_url}" style="color:#1D9E75">Open AIJobsHunt →</a></p>
+      <p style="color:#9CA3AF;font-size:12px">AIJobsHunt — AI job co-pilot</p>
     </div>
     """
     await send_email(to, subject, body)

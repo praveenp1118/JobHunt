@@ -46,7 +46,7 @@ FAQ_RULES = [
 1. Go to myaccount.google.com
 2. Security → enable 2-Step Verification (required)
 3. Search "App passwords" in the search bar
-4. Select app: Mail, Device: Other → type "JobHunt"
+4. Select app: Mail, Device: Other → type "AIJobsHunt"
 5. Copy the 16-character password
 6. Paste into Settings → Gmail
 
@@ -58,7 +58,7 @@ FAQ_RULES = [
         "keywords": ["price", "cost", "pricing", "how much", "subscription",
                      "₹500", "plan", "fee", "charge"],
         "category": "billing",
-        "answer": """JobHunt Pro costs ₹500/month.
+        "answer": """AIJobsHunt Pro costs ₹500/month.
 
 Includes:
 ✅ Full access to all features
@@ -87,7 +87,7 @@ Need help? Create a ticket and we'll assist you.""",
         "keywords": ["score", "s1", "s2", "s3", "b score", "best fit",
                      "what does score mean", "scoring", "fit score"],
         "category": "features",
-        "answer": """JobHunt uses 4 scores for each job:
+        "answer": """AIJobsHunt uses 4 scores for each job:
 
 B (S1): Base fit — your master CV vs job description
 Best (S1d): Domain fit — your best domain CV vs JD
@@ -104,12 +104,12 @@ T and F only appear after you tailor the CV.""",
         "category": "features",
         "answer": """CV Tailoring works like this:
 1. Click "Tailor →" on any job
-2. JobHunt suggests changes (reorder, rephrase, keywords)
+2. AIJobsHunt suggests changes (reorder, rephrase, keywords)
 3. You approve or reject each change
 4. Click "Generate tailored CV + cover letter"
 5. Review and send application
 
-Golden rule: JobHunt NEVER invents experience.
+Golden rule: AIJobsHunt NEVER invents experience.
 It only changes HOW things are presented, not WHAT you've done.""",
     },
     {
@@ -126,7 +126,7 @@ Example: you might have:
 
 Each domain CV is scored against jobs separately.
 The "Best Fit" score shows which domain CV fits best.
-JobHunt auto-selects the best domain CV when tailoring.""",
+AIJobsHunt auto-selects the best domain CV when tailoring.""",
     },
     {
         "id": "scanner",
@@ -171,7 +171,7 @@ Click "Fetch full JD" button on those jobs to try fetching.""",
 1. Go to Jobs page
 2. Click "+ Add job" button
 3. Choose: paste URL, paste JD text, or upload PDF
-4. JobHunt parses and scores automatically
+4. AIJobsHunt parses and scores automatically
 5. Job appears in your tracker""",
     },
     {

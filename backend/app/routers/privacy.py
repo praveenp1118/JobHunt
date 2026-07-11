@@ -61,7 +61,7 @@ async def export_data(request: Request, user: User = Depends(current_active_user
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("README.txt",
-                   "JobHunt data export\n"
+                   "AIJobsHunt data export\n"
                    f"Generated: {datetime.now(timezone.utc).isoformat()}\n"
                    f"Account: {user.email}\n\n"
                    "Contents: profile.json, master_cv.md, domain_cvs/, jobs.json, "

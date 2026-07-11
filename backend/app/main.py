@@ -19,8 +19,8 @@ async def lifespan(app: FastAPI):
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
-    title="JobHunt API",
-    description="AI-powered job search platform for senior product leaders",
+    title="AIJobsHunt API",
+    description="AIJobsHunt — AI job co-pilot for every professional field",
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/api/docs" if not settings.is_production else None,
@@ -201,7 +201,7 @@ async def health():
 
 @app.get("/")
 async def root():
-    return {"message": "JobHunt API — see /api/docs"}
+    return {"message": "AIJobsHunt API — see /api/docs"}
 
 
 # ── Send-mode visibility ──────────────────────────────────────────────────────

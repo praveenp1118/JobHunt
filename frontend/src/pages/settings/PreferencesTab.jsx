@@ -142,7 +142,7 @@ export default function PreferencesTab() {
         <h2 className="text-sm font-semibold text-gray-900 mb-4">🤝 Community</h2>
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
-            <p className="text-sm font-medium text-gray-700">Share job insights with the JobHunt community</p>
+            <p className="text-sm font-medium text-gray-700">Share job insights with the AIJobsHunt community</p>
             <p className="text-xs text-gray-500 mt-1">
               When ON, your <span className="font-medium">anonymised</span> job scores, JD highlights, and tailoring
               patterns help other members — at no token cost to them. Your CV is never shared.

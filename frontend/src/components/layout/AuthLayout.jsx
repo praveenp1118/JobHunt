@@ -14,9 +14,9 @@ export default function AuthLayout({ children }) {
             <div className="w-9 h-9 bg-emerald-500 rounded-xl flex items-center justify-center">
               <span className="text-white font-bold text-sm">JH</span>
             </div>
-            <span className="text-white font-semibold text-xl tracking-tight">JobHunt</span>
+            <span className="text-white font-semibold text-xl tracking-tight">AIJobsHunt</span>
           </div>
-          <p className="text-slate-400 text-sm mt-2">AI-powered job search for product leaders</p>
+          <p className="text-slate-400 text-sm mt-2">AI job co-pilot — for every field</p>
         </div>
 
         {/* Card */}

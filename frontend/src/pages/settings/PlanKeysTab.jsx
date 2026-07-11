@@ -103,7 +103,7 @@ export default function PlanKeysTab() {
         {sub.is_active ? (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold text-emerald-800">✅ JobHunt Pro</p>
+              <p className="text-sm font-semibold text-emerald-800">✅ AIJobsHunt Pro</p>
               <p className="text-xs text-emerald-700 mt-0.5">
                 {endLabel ? `Active until: ${endLabel}` : 'Active'} · ₹500/month
               </p>
@@ -137,7 +137,7 @@ export default function PlanKeysTab() {
         <p className="text-xs text-gray-500 mb-4">Encrypted with AES-256 at rest. Never shared or logged.</p>
 
         <div className="rounded-xl bg-slate-50 border border-slate-100 p-4 mb-4 text-xs text-gray-600 leading-relaxed space-y-2">
-          <p><span className="font-semibold text-gray-800">Why you need this:</span> JobHunt uses Claude AI to score job fit, tailor your CV, generate cover letters, and parse job descriptions. Your key connects to your own Anthropic account — you control the costs (~$3–5/month for active job searching).</p>
+          <p><span className="font-semibold text-gray-800">Why you need this:</span> AIJobsHunt uses Claude AI to score job fit, tailor your CV, generate cover letters, and parse job descriptions. Your key connects to your own Anthropic account — you control the costs (~$3–5/month for active job searching).</p>
           <div>
             <p className="font-semibold text-gray-800">How to get your key:</p>
             <ol className="list-decimal list-inside mt-1 space-y-0.5">

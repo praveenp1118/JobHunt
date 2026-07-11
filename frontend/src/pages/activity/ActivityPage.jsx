@@ -165,10 +165,10 @@ function AlertRow({ alert }) {
     return (
       <div className={`bg-white rounded-xl border px-4 py-3 ${ok ? 'border-blue-200' : 'border-gray-200'}`}>
         <p className={`text-sm font-medium ${ok ? 'text-blue-700' : 'text-gray-600'}`}>
-          {ok ? `📥 Email-to-JobHunt: Saved ${emailSave.role} at ${emailSave.company}`
-            : dup ? `📥 Email-to-JobHunt: Already tracked — ${emailSave.company}`
-            : emailSave.action === 'fetch_failed' ? '📥 Email-to-JobHunt: Could not fetch that URL'
-            : '📥 Email-to-JobHunt: No job URL found in the email'}
+          {ok ? `📥 Email-to-AIJobsHunt: Saved ${emailSave.role} at ${emailSave.company}`
+            : dup ? `📥 Email-to-AIJobsHunt: Already tracked — ${emailSave.company}`
+            : emailSave.action === 'fetch_failed' ? '📥 Email-to-AIJobsHunt: Could not fetch that URL'
+            : '📥 Email-to-AIJobsHunt: No job URL found in the email'}
         </p>
         <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1 text-xs text-gray-400">
           {ok && <span className="text-blue-600 font-medium">S1 {Math.round(emailSave.s1 ?? 0)} · Best Fit {emailSave.s1d != null ? Math.round(emailSave.s1d) : '—'}</span>}

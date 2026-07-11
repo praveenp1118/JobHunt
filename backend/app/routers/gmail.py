@@ -184,8 +184,8 @@ async def _handle_save_job(e, user, session, anthropic_key, model, prefs, poll_r
                 view = f"{settings.frontend_url}/jobs?id={res.get('job_id')}"
                 await send_notification_email(
                     to=to,
-                    subject=f"✅ Saved to JobHunt: {res.get('role')} at {res.get('company')}",
-                    message=(f"<strong>✅ Saved to JobHunt:</strong> {res.get('role')} at "
+                    subject=f"✅ Saved to AIJobsHunt: {res.get('role')} at {res.get('company')}",
+                    message=(f"<strong>✅ Saved to AIJobsHunt:</strong> {res.get('role')} at "
                              f"{res.get('company')}<br>S1: {round(s1) if s1 else '—'} · "
                              f"Best Fit: {round(s1d) if s1d else '—'}<br>"
                              f"<a href='{view}'>View in tracker →</a>"),

@@ -32,7 +32,7 @@ export default function SubscriptionSuccess() {
         {state === 'success' && (
           <>
             <div className="text-5xl mb-3">✅</div>
-            <h1 className="text-xl font-semibold text-gray-900">You're subscribed to JobHunt Pro!</h1>
+            <h1 className="text-xl font-semibold text-gray-900">You're subscribed to AIJobsHunt Pro!</h1>
             <p className="text-sm text-gray-500 mt-2">Your job search just got smarter.</p>
             <Button className="mt-6" onClick={() => navigate('/dashboard')}>Go to Dashboard →</Button>
           </>

@@ -933,6 +933,17 @@ platform has a single global `s1_min_threshold` (no per-domain support).
 
 ## Known Issues / Bugs
 
+### Open
+
+- **Tailored CV not persisted / re-tailors on return:** After tailoring a CV for a JD and navigating away
+  (e.g. to Home/Dashboard) then returning, the tailored draft is lost and tailoring re-runs from scratch,
+  spending Claude tokens a second time. **Likely cause:** the tailored result is held only in React state
+  (not persisted server-side), and/or the tailor view doesn't check for an existing draft before calling
+  Claude. **Fix:** persist the tailored CV + change log per (user, job); load the existing draft on return;
+  re-run Claude only on an explicit "Re-tailor" action. **Priority:** medium (cost + UX).
+
+### Fixed
+
 | Issue | Status | Fix |
 |---|---|---|
 | Master CV upload/text + domain apply returned a generic 500 ("internal error") even though the CV saved | ✅ Fixed | Root cause was **`MissingGreenlet`**: the one-time essence step `commit()`s, and the following `MasterCVRead.model_validate(master)` (after the earlier `session.refresh`) triggered a lazy PK reload during *synchronous* Pydantic validation → async IO outside the greenlet → 500 (NOT a JSON-parse or token-field issue). Added **`await session.refresh(master)`/`refresh(domain_cv)` after the essence call**, before serialization, in `_save_master_cv` (covers upload + text) and `apply_domain_cv_changes`. Also hardened `essence_agent._parse_json` to never raise (returns `{}`). `tokens_used`/`cost_inr` were already `Optional`. Essence extraction was already isolated in try/except (a failed Haiku call leaves `essence_json=None`, CV still saved). Proven by `test_cv_essence_isolation.py` (reverting the refresh reproduces the exact `MissingGreenlet`). |

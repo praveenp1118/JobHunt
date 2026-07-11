@@ -235,7 +235,7 @@ async def send_application_email(
         actual_recipient = to_email
 
     msg = MIMEMultipart()
-    msg["From"] = f"JobHunt <{gmail_address}>"
+    msg["From"] = f"AIJobsHunt <{gmail_address}>"
     msg["To"] = actual_recipient
     msg["Subject"] = subject
     msg["Date"] = formatdate(localtime=True)

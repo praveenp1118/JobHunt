@@ -174,7 +174,7 @@ export default function ChatWidget() {
       {/* Header */}
       <div className="px-4 py-3 bg-slate-800 text-white flex items-center justify-between shrink-0">
         <div>
-          <p className="text-sm font-semibold">💬 JobHunt Support</p>
+          <p className="text-sm font-semibold">💬 AIJobsHunt Support</p>
           <p className="text-[11px] text-slate-300 flex items-center gap-1.5 mt-0.5">
             <span className={`w-2 h-2 rounded-full ${adminOnline ? 'bg-green-400' : 'bg-gray-400'}`} />
             {adminOnline ? 'We’re online' : 'We’re offline — FAQ bot will help'}
@@ -202,7 +202,7 @@ export default function ChatWidget() {
           <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-gray-50">
             {messages.length === 0 && (
               <p className="text-xs text-gray-400 text-center py-4">
-                Ask me anything about JobHunt and I'll try to help.
+                Ask me anything about AIJobsHunt and I'll try to help.
               </p>
             )}
             {messages.map((m) => <MessageBubble key={m.id} m={m} />)}

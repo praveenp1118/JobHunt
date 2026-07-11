@@ -263,7 +263,7 @@ export default function GmailTab() {
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">Email to JobHunt</h2>
+            <h2 className="text-sm font-semibold text-gray-900">Email to AIJobsHunt</h2>
             <p className="text-xs text-gray-500 mt-0.5">
               Send any job URL to your job-search Gmail with a subject containing
               <strong> “jobhunt” </strong> or starting with <strong>“jh:”</strong> — it’s

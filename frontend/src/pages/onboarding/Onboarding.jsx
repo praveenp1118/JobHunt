@@ -193,7 +193,7 @@ export default function Onboarding() {
             <div className="w-9 h-9 bg-emerald-500 rounded-xl flex items-center justify-center">
               <span className="text-white font-bold text-sm">JH</span>
             </div>
-            <span className="text-white font-semibold text-xl tracking-tight">JobHunt</span>
+            <span className="text-white font-semibold text-xl tracking-tight">AIJobsHunt</span>
           </div>
         </div>
 
@@ -242,7 +242,7 @@ export default function Onboarding() {
           {/* ── Step 1: Subscribe ── */}
           {step === 1 && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">Subscribe to JobHunt Pro</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">Subscribe to AIJobsHunt Pro</h2>
               <p className="text-sm text-gray-500 mb-6">
                 One plan unlocks everything — CV tailoring, multi-domain scoring, job scanning, and application sending.
               </p>
@@ -275,7 +275,7 @@ export default function Onboarding() {
               {subActive ? (
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-emerald-700">
-                    {inviteOk ? '✅ Invitation redeemed — you have free access' : "✅ You're already on JobHunt Pro"}
+                    {inviteOk ? '✅ Invitation redeemed — you have free access' : "✅ You're already on AIJobsHunt Pro"}
                   </p>
                   <Button onClick={() => setStep(2)}>Continue →</Button>
                 </div>
@@ -542,7 +542,7 @@ export default function Onboarding() {
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-1">Add your API keys</h2>
               <p className="text-sm text-gray-500 mb-6">
-                JobHunt uses your own keys (billed directly to you). No markup.
+                AIJobsHunt uses your own keys (billed directly to you). No markup.
               </p>
 
               <div className="flex flex-col gap-4">

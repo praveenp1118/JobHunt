@@ -152,7 +152,7 @@ export default function AppLayout() {
         )}
         <div className="flex-1"><Outlet /></div>
         <footer className="border-t border-gray-200 px-5 py-3 text-xs text-gray-400 flex items-center justify-between gap-3 shrink-0">
-          <span>© 2026 JobHunt · Praveen Prakash</span>
+          <span>© 2026 AIJobsHunt · Praveen Prakash</span>
           <nav className="flex items-center gap-3">
             <a href={legal.privacy_url} target="_blank" rel="noreferrer" className="hover:text-emerald-600">Privacy Policy</a>
             <a href={legal.terms_url} target="_blank" rel="noreferrer" className="hover:text-emerald-600">Terms</a>
