@@ -33,6 +33,9 @@ frontend/.vite/
 postgres_data/
 redis_data/
 
+# Database backups / dumps — never commit
+backups/
+
 # Storage
 backend/storage/
 
