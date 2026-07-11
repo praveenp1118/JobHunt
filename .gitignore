@@ -65,6 +65,9 @@ cv.md
 # Personal config workbook (job-search strategy / target companies — not source)
 # Remove this line if you want it tracked in the (private) repo.
 JobHunt_Feed_Config.xlsx
+# Generated feed/company migration export — contains personal target companies + feeds.
+# The GENERATOR (export_feeds_companies.py) is tracked; the generated .sql is not.
+feeds_companies_export.sql
 
 # Celery Beat runtime schedule (regenerated at runtime)
 backend/celerybeat-schedule*

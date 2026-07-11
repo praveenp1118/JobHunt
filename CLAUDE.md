@@ -1351,7 +1351,20 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: July 3, 2026 — **Invite-or-pay + public landing page + docs rebrand; production LIVE.**
+*Last updated: July 11, 2026 — **App-wide brand rename + sidebar fit + feed/company migration tool.**
+Renamed **user-visible** brand text **JobHunt → AIJobsHunt** across the app (login/sidebar wordmarks +
+taglines → "AI job co-pilot" / "for every field", onboarding/plan copy → "AIJobsHunt Pro", chat widget,
+footer, Email-to-AIJobsHunt labels; backend transactional emails, support-chat FAQ, FastAPI title/description/
+root) — **display strings only**; deliberately left ALL identifiers (`jobhunt_*` services/DB, `email_to_jobhunt`
+enum + `jobhunt`/`jh:` subject keyword, JH monogram, CSS classes, module comments, AI-prompt content, repo
+URLs). Fixed the **sidebar internal scrollbar** (flex column: header · `flex-1 min-h-0` nav · pinned footer;
+tightened padding/row height; thin fallback scrollbar) — verified 0px overflow with all items + footer at
+768/900px. Added the tailor-CV-persistence bug to Known Issues (**Open** subsection). Added a **feed/company
+migration tool** (`backend/app/scripts/export_feeds_companies.py`) that exports a user's `user_feeds` +
+`user_target_companies` from local → a portable idempotent `.sql` (user_id resolved by email subquery, fresh
+uuids, `domain_cv_id`=NULL, `INSERT..WHERE NOT EXISTS` dedup) for applying on prod; the **generated `.sql` is
+gitignored** (personal target companies). 148 tests still green. Prior: July 3, 2026 —
+**Invite-or-pay + public landing page + docs rebrand; production LIVE.**
 Shipped the **invite-or-pay access gate** (single-use `JH-XXXX-XXXX` keys · 30-day entitlement · expiry-aware
 402 gate on every Claude route · extension requests · admin panel; migration `v3_invite_or_pay`; 148 tests),
 the **public landing page** at **aijobshunt.com** (React/Vite, scoped `.aijh` CSS, SEO + OG/JSON-LD + PWA
