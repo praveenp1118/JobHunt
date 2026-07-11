@@ -53,8 +53,12 @@ export const scoreJobS1 = (id) =>
 export const getJdHighlights = (jobId, domainCvId) =>
   client.post('/tailor/jd-highlights', { job_id: jobId, domain_cv_id: domainCvId })
 
-export const generateTailor = (jobId, domainCvId) =>
-  client.post('/tailor/generate', { job_id: jobId, domain_cv_id: domainCvId })
+export const generateTailor = (jobId, domainCvId, force = false) =>
+  client.post('/tailor/generate', { job_id: jobId, domain_cv_id: domainCvId, force })
+
+// Saved tailored draft for a job (restore on return — no Claude call).
+export const getTailorDraft = (jobId) =>
+  client.get(`/tailor/job/${jobId}/draft`)
 
 export const getTailorChangelog = (tailoredCvId) =>
   client.get(`/tailor/${tailoredCvId}/changelog`)

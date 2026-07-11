@@ -38,7 +38,7 @@ from app.agents.cv_agents import compute_s3_score
 from app.schemas.tailor import (
     TailorRequest, TailorPackageRead, TailorChangeRead,
     TailorApplyResult, RegenerateCLRequest, FollowUpRequest,
-    ApplyMethodRequest,
+    ApplyMethodRequest, TailorDraftRead,
 )
 from app.schemas.cv import ChangeLogItemRead, ChangeLogEdit, ChangeLogBulkAction
 
@@ -155,10 +155,6 @@ async def generate_tailor(
     Creates a TailoredCV record in 'pending' state.
     User then reviews the change log before hitting Apply.
     """
-    from app.utils.rate_limiter import enforce_rate_limit
-    _rl = await enforce_rate_limit(user.id, "tailor_generate", session)
-    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
-
     # Load job
     job_result = await session.execute(
         select(Job).where(Job.id == body.job_id, Job.user_id == user.id)
@@ -181,6 +177,45 @@ async def generate_tailor(
             status_code=400,
             detail="Domain CV is blocked (S3 below threshold). Regenerate it first."
         )
+
+    # ── Draft persistence ──
+    # Non-forced generate: if a draft already exists for this (job, domain CV), return it
+    # WITHOUT calling Claude. The Tailor page normally restores via GET /job/{id}/draft, so
+    # this is a safety net that guarantees a stray generate never re-spends tokens.
+    if not body.force:
+        existing = (await session.execute(
+            select(TailoredCV).where(
+                TailoredCV.job_id == job.id,
+                TailoredCV.domain_cv_id == domain_cv.id,
+                TailoredCV.user_id == user.id,
+            ).order_by(TailoredCV.created_at.desc()))).scalars().first()
+        if existing:
+            ex_changes = (await session.execute(
+                select(ChangeLog).where(ChangeLog.tailored_cv_id == existing.id)
+                .order_by(ChangeLog.created_at))).scalars().all()
+            return TailorPackageRead(
+                tailored_cv_id=existing.id,
+                s2_score=existing.s2 or 0,
+                s2_key_matches=[],
+                changelog=[{
+                    "change_type": str(c.change_type), "section": c.section,
+                    "original_text": c.original_text, "proposed_text": c.proposed_text,
+                    "final_text": c.final_text, "reason": c.reason, "status": str(c.status),
+                } for c in ex_changes],
+                cover_letter_md=existing.cover_letter_md or "",
+                email_draft=existing.email_draft or "",
+                cl_template_used=existing.cl_template_used or "",
+                tokens_used=None, cost_inr=None,
+            )
+    else:
+        # Re-tailor (force): delete the job's current draft (cascade its change logs) + start fresh.
+        if job.tailored_cv_id:
+            old = (await session.execute(select(TailoredCV).where(
+                TailoredCV.id == job.tailored_cv_id, TailoredCV.user_id == user.id))).scalar_one_or_none()
+            if old:
+                await session.delete(old)
+                await session.flush()
+            job.tailored_cv_id = None
 
     # Load master CV
     master_result = await session.execute(
@@ -224,6 +259,11 @@ async def generate_tailor(
         DomainCVTemplateOverride.user_id == user.id))).scalar_one_or_none()
     content_rules = build_content_rules_prompt(get_effective_template(gtpl, dovr))
 
+    # Rate-limit only ACTUAL Claude generations (return-existing above is free).
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "tailor_generate", session)
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
+
     # One batched Claude call
     jd_text = job.jd_md or job.jd_raw or ""
     package = await generate_tailor_package(
@@ -249,7 +289,8 @@ async def generate_tailor(
     if prefs:
         prefs.cl_last_template_used = cl_used
 
-    # Create TailoredCV record (content_md empty until Apply)
+    # Create TailoredCV record (content_md empty until Apply). status defaults to
+    # 'generated'; stamp staleness snapshots (domain CV version + JD hash at tailor time).
     tailored = TailoredCV(
         user_id=user.id,
         job_id=job.id,
@@ -259,6 +300,9 @@ async def generate_tailor(
         email_draft=package["email_draft"],
         s2=package["s2_score"],
         cl_template_used=cl_used,
+        status="generated",
+        base_domain_cv_version=domain_cv.version,
+        jd_hash=job.jd_hash,
     )
     session.add(tailored)
     await session.flush()
@@ -293,6 +337,71 @@ async def generate_tailor(
         cl_template_used=cl_used,
         tokens_used=get_session_usage()["tokens"] or None,
         cost_inr=round(get_session_usage()["cost_inr"], 2) or None,
+    )
+
+
+# ══════════════════════════════════════════════════════════════
+# DRAFT RESTORE — load a saved tailored draft on return (ZERO Claude calls)
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/job/{job_id}/draft", response_model=TailorDraftRead)
+async def get_tailor_draft(
+    job_id: uuid.UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Return the saved tailored draft for this job so the Tailor page restores it on
+    return WITHOUT re-running Claude. `stale` (base CV / JD changed) is advisory only —
+    the user refreshes via an explicit Re-tailor. Ungated GET read (no Claude cost)."""
+    job = (await session.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == user.id))).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.tailored_cv_id:
+        return TailorDraftRead(exists=False)
+
+    tailored = (await session.execute(
+        select(TailoredCV).where(
+            TailoredCV.id == job.tailored_cv_id,
+            TailoredCV.user_id == user.id))).scalar_one_or_none()
+    if not tailored:
+        return TailorDraftRead(exists=False)   # dangling pointer
+
+    changes = (await session.execute(
+        select(ChangeLog).where(
+            ChangeLog.tailored_cv_id == tailored.id,
+            ChangeLog.user_id == user.id).order_by(ChangeLog.created_at))).scalars().all()
+
+    # Staleness — snapshots vs current (FLAG only; never auto-re-runs).
+    domain_cv = (await session.execute(
+        select(DomainCV).where(DomainCV.id == tailored.domain_cv_id))).scalar_one_or_none()
+    base_cv_changed = bool(
+        tailored.base_domain_cv_version is not None and domain_cv is not None
+        and domain_cv.version != tailored.base_domain_cv_version)
+    jd_changed = bool(
+        tailored.jd_hash is not None and job.jd_hash is not None
+        and tailored.jd_hash != job.jd_hash)
+
+    s3_status = None
+    if tailored.status == "applied" and tailored.s3_master is not None:
+        s3_status = _get_s3_status(
+            tailored.s3_master, settings.s3_block_threshold, settings.s3_review_threshold)
+
+    return TailorDraftRead(
+        exists=True,
+        tailored_cv_id=tailored.id,
+        domain_cv_id=tailored.domain_cv_id,
+        status=tailored.status,
+        cv_md=tailored.cv_md or None,
+        cover_letter_md=tailored.cover_letter_md,
+        email_draft=tailored.email_draft,
+        s2=tailored.s2,
+        s3_domain=tailored.s3_domain,
+        s3_master=tailored.s3_master,
+        s3_status=s3_status,
+        cl_template_used=tailored.cl_template_used,
+        changelog=[TailorChangeRead.model_validate(c) for c in changes],
+        stale={"base_cv_changed": base_cv_changed, "jd_changed": jd_changed},
     )
 
 
@@ -507,11 +616,13 @@ async def apply_tailor(
         settings.s3_review_threshold,
     )
 
-    # Save to tailored CV record
+    # Save to tailored CV record — mark applied so a return restores the full package.
     tailored.cv_md = final_cv_md
     tailored.s2 = tailored.s2  # already set from generate step
     tailored.s3_domain = s3_domain
     tailored.s3_master = s3_master
+    tailored.status = "applied"
+    tailored.applied_at = datetime.now(timezone.utc)
 
     # Update job scores
     job_result = await session.execute(

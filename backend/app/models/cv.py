@@ -216,6 +216,18 @@ class TailoredCV(Base, TimestampMixin):
     cv_pdf_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     cl_pdf_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # ── Draft persistence (v4) — restore the tailored draft on return so Claude only
+    #    re-runs on an explicit "Re-tailor". ──
+    # 'generated' = change log ready, cv_md still empty (not applied yet);
+    # 'applied'   = cv_md + S3 filled (a full restore is possible).
+    status: Mapped[str] = mapped_column(
+        String(20), default="generated", server_default="generated", nullable=False
+    )
+    applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Staleness snapshots (FLAG only, never auto-re-run): domain CV version + JD hash at tailor time.
+    base_domain_cv_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    jd_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
     # Relationships
     domain_cv: Mapped["DomainCV"] = relationship(back_populates="tailored_cvs")
     change_logs: Mapped[list["ChangeLog"]] = relationship(

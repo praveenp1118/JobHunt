@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
-  getJob, getJdHighlights, generateTailor, getTailorChangelog,
+  getJob, getJdHighlights, generateTailor, getTailorDraft, getTailorChangelog,
   approveChange, rejectChange, editChange, applyTailor, regenerateCL, trimTailor,
   sendApplication, updateJobStatus,
 } from '../../api/jobs'
@@ -80,6 +80,9 @@ export default function TailorPage() {
   const [emailSubject, setEmailSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
   const [error, setError] = useState('')
+  // Draft persistence: 'checking' until we've asked the server for a saved draft.
+  const [draftStatus, setDraftStatus] = useState('checking') // checking | loaded | none
+  const [stale, setStale] = useState({}) // {base_cv_changed, jd_changed} — flag only
 
   const { data: jobData } = useQuery({ queryKey: ['job', jobId], queryFn: () => getJob(jobId), enabled: !!jobId })
   const { data: domainCVsData } = useQuery({ queryKey: ['domain-cvs'], queryFn: getDomainCVs })
@@ -106,37 +109,101 @@ export default function TailorPage() {
   const cvFilename = makeFilename(user?.name, 'CV')
   const clFilename = makeFilename(user?.name, 'CoverLetter')
 
-  // Pre-select best-fit domain CV.
+  // Pre-select best-fit domain CV — only when there's no saved draft to restore.
   useEffect(() => {
+    if (draftStatus !== 'none') return
     if (!selectedDomainCvId) {
       const pre = job?.best_domain_cv_id || job?.detected_domain_cv_id
       if (pre) setSelectedDomainCvId(pre)
       else if (domainCVs.length) setSelectedDomainCvId(domainCVs[0].id)
     }
-  }, [job, domainCVs]) // eslint-disable-line
+  }, [job, domainCVs, draftStatus]) // eslint-disable-line
 
-  // Per chosen domain CV: always load JD highlights; AUTO-generate the change log only
-  // when auto_mode is ON. In manual mode the middle panel shows a "Suggest changes" button.
   const genRef = useRef(null)
+
+  // Draft restore: on load, fetch any saved draft (ZERO Claude). If one exists, hydrate the
+  // view and mark it 'loaded' so the auto-generate effect below stays OFF (never re-spends).
   useEffect(() => {
+    if (!job || autoMode === undefined || draftStatus !== 'checking') return
+    let cancelled = false
+    getTailorDraft(jobId).then((r) => {
+      if (cancelled) return
+      const d = r.data
+      if (d?.exists) {
+        setSelectedDomainCvId(d.domain_cv_id)
+        setTailoredCvId(d.tailored_cv_id)
+        setStale(d.stale || {})
+        genRef.current = d.domain_cv_id // block the auto-generate effect for this CV
+        if (d.status === 'applied') {
+          setApplyResult({
+            tailored_cv_md: d.cv_md || '',
+            cover_letter_md: d.cover_letter_md || '',
+            email_draft: d.email_draft || '',
+            s2_score: d.s2 ?? 0,
+            s3_domain: d.s3_domain ?? 0,
+            s3_master: d.s3_master ?? 0,
+            s3_status: d.s3_status,
+            s3_flags: [],
+            cl_template_used: d.cl_template_used || '',
+          })
+          setEmailSubject(`Application: ${job?.role} — ${job?.company}`)
+          setEmailBody(d.email_draft || '')
+        }
+        getJdHighlights(jobId, d.domain_cv_id).then((h) => setHighlights(h.data)).catch(() => {})
+        setDraftStatus('loaded')
+      } else {
+        setDraftStatus('none')
+      }
+    }).catch(() => setDraftStatus('none'))
+    return () => { cancelled = true }
+  }, [job, autoMode]) // eslint-disable-line
+
+  // Per chosen domain CV: load JD highlights + AUTO-generate (auto_mode ON) — ONLY when no
+  // saved draft was loaded (first tailor). In manual mode the middle panel shows a button.
+  useEffect(() => {
+    if (draftStatus !== 'none') return
     if (!job || !selectedDomainCvId || autoMode === undefined) return
     if (genRef.current === selectedDomainCvId) return
     genRef.current = selectedDomainCvId
     setTailoredCvId(null); setApplyResult(null); setHighlights(null)
     getJdHighlights(jobId, selectedDomainCvId).then((r) => setHighlights(r.data)).catch(() => {})
     if (autoMode) runGenerate()
-  }, [job, selectedDomainCvId, autoMode]) // eslint-disable-line
+  }, [job, selectedDomainCvId, autoMode, draftStatus]) // eslint-disable-line
 
-  const runGenerate = async () => {
-    setError(''); setGenerating(true); setApplyResult(null); setTailoredCvId(null); setGenUsage(null)
+  const runGenerate = async (force = false, domainCvId = selectedDomainCvId) => {
+    setError(''); setGenerating(true); setApplyResult(null); setTailoredCvId(null); setGenUsage(null); setStale({})
     try {
-      const res = await generateTailor(jobId, selectedDomainCvId)
+      const res = await generateTailor(jobId, domainCvId, force)
       setTailoredCvId(res.data.tailored_cv_id)
       if (res.data.tokens_used) setGenUsage({ tokens: res.data.tokens_used, cost_inr: res.data.cost_inr })
     } catch (e) {
       setError(e.response?.data?.detail || 'Generation failed — check your Anthropic API key in Settings.')
     } finally {
       setGenerating(false)
+    }
+  }
+
+  // Explicit re-tailor — the ONLY path that re-runs Claude on an existing draft. Confirmed.
+  const handleRetailor = async () => {
+    if (!window.confirm('Re-tailor from scratch? This runs the AI again and spends Claude tokens, replacing the current draft.')) return
+    genRef.current = selectedDomainCvId
+    await runGenerate(true, selectedDomainCvId)
+  }
+
+  // Switching the domain CV re-tailors against the new base (confirm + force) when a draft
+  // already exists; with no draft yet it just switches (auto_mode / manual button handles it).
+  const handleSwitchDomainCV = async (cvId) => {
+    setShowCvPicker(false)
+    if (cvId === selectedDomainCvId) return
+    if (tailoredCvId) {
+      if (!window.confirm('Switch domain CV and re-tailor? This runs the AI again (spends tokens) and replaces the current draft.')) return
+      genRef.current = cvId
+      setSelectedDomainCvId(cvId)
+      setApplyResult(null); setStale({})
+      getJdHighlights(jobId, cvId).then((r) => setHighlights(r.data)).catch(() => {})
+      await runGenerate(true, cvId)
+    } else {
+      setSelectedDomainCvId(cvId)
     }
   }
 
@@ -240,6 +307,17 @@ export default function TailorPage() {
         <div className="bg-red-50 border-b border-red-200 px-5 py-2 text-sm text-red-600 shrink-0">{error}</div>
       )}
 
+      {/* Staleness — flag only; the saved draft still renders below. */}
+      {(stale?.base_cv_changed || stale?.jd_changed) && (
+        <div className="bg-amber-50 border-b border-amber-200 px-5 py-2 text-xs text-amber-700 flex items-center justify-between gap-3 shrink-0">
+          <span>
+            ⚠ {stale.base_cv_changed && stale.jd_changed ? 'Base CV and JD changed'
+              : stale.base_cv_changed ? 'Base domain CV changed' : 'JD changed'} since this draft was saved — showing the saved version.
+          </span>
+          <button onClick={handleRetailor} className="font-medium text-amber-800 hover:underline whitespace-nowrap">Re-tailor to refresh</button>
+        </div>
+      )}
+
       {/* 3-column body */}
       <div className="flex-1 flex overflow-hidden">
         {/* ── LEFT (280px) ── */}
@@ -284,7 +362,7 @@ export default function TailorPage() {
                 {[...domainCVs].sort((a, b) => (jobScores[b.id] ?? -1) - (jobScores[a.id] ?? -1)).map((cv) => (
                   <button
                     key={cv.id}
-                    onClick={() => { setSelectedDomainCvId(cv.id); setShowCvPicker(false) }}
+                    onClick={() => handleSwitchDomainCV(cv.id)}
                     className={clsx('w-full text-left px-2 py-1.5 rounded-lg text-xs border flex items-center justify-between',
                       cv.id === selectedDomainCvId ? 'border-emerald-300 bg-emerald-50' : 'border-gray-100 hover:bg-gray-50')}
                   >
@@ -354,12 +432,17 @@ export default function TailorPage() {
                 {genUsage && <div className="mt-1"><TokenBadge tokens={genUsage.tokens} cost_inr={genUsage.cost_inr} /></div>}
                 <p className="text-xs text-gray-400 mt-0.5">Golden rule: reorder / rephrase / inject keywords only — never invent.</p>
               </div>
-              {changelog.length > 0 && (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="secondary" onClick={approveAll} disabled={!pending.length}>Approve all</Button>
-                  <Button size="sm" variant="ghost" onClick={rejectAll} disabled={!pending.length}>Reject all</Button>
-                </div>
-              )}
+              <div className="flex gap-2">
+                {changelog.length > 0 && (
+                  <>
+                    <Button size="sm" variant="secondary" onClick={approveAll} disabled={!pending.length}>Approve all</Button>
+                    <Button size="sm" variant="ghost" onClick={rejectAll} disabled={!pending.length}>Reject all</Button>
+                  </>
+                )}
+                {tailoredCvId && !generating && (
+                  <Button size="sm" variant="ghost" onClick={handleRetailor}>↻ Re-tailor</Button>
+                )}
+              </div>
             </div>
           </div>
 

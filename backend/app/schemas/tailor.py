@@ -9,6 +9,9 @@ class TailorRequest(BaseModel):
     """Start the tailor flow for a job."""
     job_id: uuid.UUID
     domain_cv_id: uuid.UUID
+    # Re-tailor: force a fresh Claude run (deletes the prior draft). Default false —
+    # a non-forced generate returns an existing draft instead of spending tokens.
+    force: bool = False
 
 
 class TailorPackageRead(BaseModel):
@@ -56,6 +59,26 @@ class TailorApplyResult(BaseModel):
     session_cost_inr: Optional[float] = None
     overflow: Optional[dict] = None  # page-budget check vs the user's CV template
     hallucination_check: Optional[dict] = None  # {valid, violations} — invented-metric guard
+
+
+class TailorDraftRead(BaseModel):
+    """The saved tailored draft for a (user, job), restored on return — ZERO Claude calls.
+    `exists=False` when the job has no draft yet."""
+    exists: bool
+    tailored_cv_id: Optional[uuid.UUID] = None
+    domain_cv_id: Optional[uuid.UUID] = None
+    status: Optional[str] = None                 # 'generated' | 'applied'
+    cv_md: Optional[str] = None                  # populated once applied
+    cover_letter_md: Optional[str] = None
+    email_draft: Optional[str] = None
+    s2: Optional[float] = None
+    s3_domain: Optional[float] = None
+    s3_master: Optional[float] = None
+    s3_status: Optional[str] = None              # green | amber | blocked (when applied)
+    cl_template_used: Optional[str] = None
+    changelog: List[TailorChangeRead] = []
+    # FLAG only — never auto-re-runs. {base_cv_changed, jd_changed}
+    stale: dict = {}
 
 
 class RegenerateCLRequest(BaseModel):
