@@ -667,7 +667,7 @@ export default function LandingPage() {
             <div className="foot-links">
               <div className="foot-col"><b>Product</b><a href="#how">How it works</a><a href="#why">Why it's different</a><a href="#gmail">Inbox polling</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a></div>
               <div className="foot-col"><b>Account</b><a href="/login" onClick={goto('/login', 'footer_login_click')}>Log in</a><a href="/register" onClick={goto('/register', 'footer_signup_click')}>Get access</a></div>
-              <div className="foot-col"><b>Legal</b><a href="https://praveenp1118.github.io/JobHunt/privacy.html">Privacy Policy</a><a href="https://praveenp1118.github.io/JobHunt/terms.html">Terms of Service</a><a href="https://praveenp1118.github.io/JobHunt/cookies.html">Cookie Policy</a></div>
+              <div className="foot-col"><b>Legal</b><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a><a href="/cookies">Cookie Policy</a></div>
               <div className="foot-col"><b>Contact</b><a href="mailto:support@aijobshunt.com">support@aijobshunt.com</a></div>
             </div>
           </div>

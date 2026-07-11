@@ -74,9 +74,9 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
 
     # ── Legal pages (GitHub Pages, served from /docs) ─────────────────────────
-    privacy_policy_url: str = "https://praveenp1118.github.io/JobHunt/privacy.html"
-    terms_url: str = "https://praveenp1118.github.io/JobHunt/terms.html"
-    cookies_url: str = "https://praveenp1118.github.io/JobHunt/cookies.html"
+    privacy_policy_url: str = "https://aijobshunt.com/privacy"
+    terms_url: str = "https://aijobshunt.com/terms"
+    cookies_url: str = "https://aijobshunt.com/cookies"
 
     # ── Scoring thresholds ────────────────────────────────────────────────────
     s1_min_threshold: int = 65
