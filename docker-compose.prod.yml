@@ -57,7 +57,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Run `alembic upgrade head` (backend ONLY) before uvicorn starts. On failure the
+    # entrypoint exits non-zero and the app never starts (never serves a bad schema).
+    entrypoint: ["sh", "/app/entrypoint.sh"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # Healthy only once uvicorn serves — i.e. AFTER migrations. worker/beat gate on this.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   # ── Celery Worker ───────────────────────────────────────────────────────────
   worker:
@@ -77,6 +87,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      backend:
+        condition: service_healthy   # wait for migrations (backend runs them); NEVER migrate here
     command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=2
 
   # ── Celery Beat (Scheduler) ─────────────────────────────────────────────────
@@ -95,6 +107,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      backend:
+        condition: service_healthy   # wait for migrations (backend runs them); NEVER migrate here
     command: celery -A app.worker.celery_app beat --loglevel=info --scheduler celery.beat:PersistentScheduler
 
   # ── Frontend (static Vite build served by nginx) ────────────────────────────

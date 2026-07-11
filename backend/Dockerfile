@@ -43,6 +43,10 @@ RUN playwright install chromium
 # Copy app
 COPY . .
 
+# Migration entrypoint — executable (also invoked via `sh` in compose, so this is
+# belt-and-suspenders and lets it run directly too).
+RUN chmod +x /app/entrypoint.sh
+
 # Create storage directory
 RUN mkdir -p /app/storage/cvs /app/storage/pdfs
 
