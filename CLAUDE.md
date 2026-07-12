@@ -26,10 +26,13 @@ dev and in production via `docker-compose.prod.yml` + `Caddyfile`.
 `architecture.html` / `features.html` / `api.html` — thin pages that render the matching `*.md` source
 via marked.js with shared `doc.css` + `doc.js` (consistent Tailwind styling). `.nojekyll` keeps it
 pure-static — no Jekyll.)*  
-**Last major build:** Cost-optimization sweep + docs refresh (June 27, 2026) — hybrid-RAG scoring (3-stage,
-~82% cheaper) + tiered models across ALL Claude calls (email classification rules-first→Haiku, JD highlights
-Haiku+cached, feed keywords Haiku, career insights essence), Email-to-JobHunt, auto-detected applications,
-night-batch scoring. **All 114 smoke tests passing.** Platform is feature-complete for launch.
+**Last major build:** All-domain de-bias (Phase 1 + Phase 2) + hardening sweep (July 12–13, 2026) — the
+pipeline now serves ALL professional domains (finance/ops/sales/consulting/legal), not just product: prompts
+generalized, the pre-filter flipped from a product blocklist to user-intent-driven (`UNIVERSAL_SKIP` junk-only),
+non-product functional disciplines seeded. Plus a security + reliability sweep: gitleaks pre-commit hook,
+Apify quota classification + token-in-header (log-leak fix), scanner S1 truncation/id-mapping fix (0-saved bug),
+Celery beat crontab anchors, domain-score backfill (Best Fit), frontend error-rendering fix, and a Career
+Insights Markdown export. **All 168 smoke tests passing (165 pass + 3 skip).** Platform is feature-complete for launch.
 (prior majors: CV Templates, Governance/GDPR, Career Insights, Community, Stripe, Support Chat,
 Multi-domain-CV scoring, Activity Dashboard, Gmail Job Alert Parser)
 
@@ -283,7 +286,7 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
   **deletes the user on teardown** (DB-level ON DELETE CASCADE cleans up the
   user's preferences / credentials / wallet / wallet_transactions) — so each run
   leaves the DB clean.
-- Current coverage (148 tests: 145 passing + 3 skipped live/owner-absent):
+- Current coverage (168 tests: 165 passing + 3 skipped live/owner-absent):
   - `test_invite_or_pay.py` (10): redeem a valid key → user active + `entitlement_source=invite`;
     redeem used/revoked/expired key → 400; unknown key → 404; **two users racing one key → exactly
     one wins** (row-locked); non-entitled user hits `score-now` → **402**; **invited-lapsed** (active
@@ -469,7 +472,7 @@ D:\JobHunt\
 │   │   └── test_scanner.py  # V3: scanner feeds_summary breakdown
 │   ├── pytest.ini           # asyncio_mode = auto
 │   ├── alembic/
-│   │   └── versions/        # chain tip: … → v3_ats_pursuit → v3_dual_scan_gate → v3_invite_or_pay
+│   │   └── versions/        # chain tip: … → v3_dual_scan_gate → v3_invite_or_pay → v4_tailor_draft_persistence
 │   │       ├── initial_migration.py
 │   │       ├── v2_feed_system.py              # V2: domain_cv_id on feeds, detected_domain_cv_id on jobs
 │   │       ├── a1b2c3d4e5f6_user_profile_fields.py  # users: linkedin_url, phone, current_location, salary_expectation
@@ -1364,7 +1367,76 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: July 11, 2026 — **App-wide brand rename + sidebar fit + feed/company migration tool.**
+*Last updated: July 13, 2026 — **All-domain de-bias (Phase 1 + 2) + security/reliability hardening sweep.**
+Migration head is now **`v4_tailor_draft_persistence`**; test count **168 (165 pass + 3 skip)**. Since the
+July 11 rename, the following shipped (newest first):
+- **Career Insights "Export .md"** (frontend-only): a header button downloads all 7 tabs' findings as one
+  self-contained Markdown file, framed for critique by a separate CV-aware LLM ("how legit are these
+  insights?"). Pure client-side formatting of already-loaded analysis/readiness/stats — no backend, no
+  Claude, no cost; `target_roles` from the cached `['preferences']` query.
+- **Dashboard "Score overview": removed the inert ScoreToggle** (the 3 tiles are shown together + hardcoded;
+  the toggle's state was never read). Tiles unchanged; toggle still used on the Jobs table + Feed Performance.
+- **Phase 2 — all-domain de-bias (3 commits).** (1) Pipeline: `SKIP_WORDS` → `UNIVERSAL_SKIP` (hard-reject
+  only domain-neutral junk — engineers/nurse/driver/etc.; senior cross-domain roles fall through to S1 vs the
+  user's own CV, reason `not_relevant`); `PRODUCT_FALLBACK_KEYWORDS` now conditional (only when no
+  target_roles/feeds); Gmail gated-card path is positive-intent (keep only titles matching the user's
+  `build_user_keywords`); the weekly scan logs an aggregate **pre-filter funnel** (`run_log.details.prefilter`:
+  raw→passed→scored→saved) to measure the pruned blocklist's cost delta. (2) Career Insights: the 5 sharpening
+  questions neutralized (`manages_team`/`public_work`/`industry_focus`/…); `role_category` derived from the
+  user's own `target_roles` via a domain-neutral categorizer instead of defaulting "Senior Product". (3)
+  Defaults: `UserPreferences.target_roles` default `None` (product default removed — new users only, no
+  migration); **5 non-product `FUNCTIONAL_DISCIPLINES`** seeded (Finance & FP&A, Operations & Supply Chain,
+  Sales & Commercial, Strategy & Consulting, Marketing & Growth — additive, no migration; **prod needs a
+  re-seed:** `python -m app.seeds`).
+- **Extend dual-score backfill to Best Fit (domain).** `backfill_dual_scores` now runs a DOMAIN pass after the
+  master pass (only when an active domain CV exists): S1-scores each job vs every active domain CV, picks the
+  best (`best_domain_cv_id`/`s1d`/`domain_cv_scores`), then computes `ats_domain`/`pursuit_domain`. Idempotent
+  (`ats_domain IS NULL`); `POST /jobs/backfill-scores` counts master OR domain work + returns a breakdown; the
+  Settings→Preferences "Compute scores for existing jobs" button covers both. (Domain dual was previously only
+  written by the scanner at scan time; jobs saved before a domain CV existed could never get Best Fit — a
+  rescan can't reach them due to dedup.)
+- **Fix Generate-domain-CV UUID 400** (frontend): the Industry/Function dropdowns fell back to code-valued
+  `FALLBACK_INDUSTRIES/FUNCTIONS` (`"SC"` not a UUID) when the API returned nothing → `industry_id:"SC"` →
+  backend `uuid.UUID` 400. Removed the fallback; gate the form on the API data (dropdowns + button disabled
+  until loaded; "Loading options…" / "Couldn't load — Retry"); `retry:false`→`retry:2`. **Root cause was
+  actually that prod had 0 rows in `industry_verticals`/`functional_disciplines`** — seeds.py is manual
+  (`python -m app.seeds`), never run on prod; fix + re-seed both needed.
+- **Convert Celery beat schedules to crontab wall-clock anchors** (`worker.py`): weekly-scan/poll-gmail/
+  ghosted-check/purge were plain intervals that reset their countdown on every beat restart (starving the
+  weekly scan). Now `crontab(...)` UTC anchors (Sun 17:30 / hourly / 01:00 / 02:00). Recreate the beat
+  container on deploy so PersistentScheduler rebuilds from the new schedule.
+- **Fix scanner S1 scoring (0/500-saved bug) + Apify token log leak.** Batch S1 scoring asked for a verbose
+  schema (64-hex id + key_matches + gaps) at batch=12 → always hit `max_tokens=1024` → truncated JSON →
+  except zeroed the whole batch → every job `essence_0<50`, nothing saved. Fixed: trim the scanner scoring
+  schema to `{id, s1_score}`, short stable ids (`"1".."n"` mapped back to jd_hash), tolerant parse (salvage
+  complete objects), per-job retry (a single truncation can't zero a batch), `max_tokens`→2048, batch
+  presets 10/12/15→5/6/8. Apify: token moved from `?token=` URL to `Authorization: Bearer` header (httpx
+  errors were logging the token) + `_redact()` defense-in-depth.
+- **Fix "[object Object]" error rendering + React Query context leak** (frontend): FastAPI `detail` is often a
+  dict (`{code,message}`) or 422 list; the axios response interceptor now flattens it to a string (raw kept
+  under `detailRaw`, `err.userMessage` set) so every catch site renders properly — fixed centrally, not per
+  site (`lib/errors.js` `errMsg`). Also wrapped bare `queryFn: getCareerAnalysis`/`getJobStats` refs that
+  leaked `?client=[object Object]&queryKey[]=…` into the URL.
+- **Harden Apify quota/credit exhaustion in the scanner:** `run_actor` raises a typed `ApifyQuotaExhausted`
+  on a clear signal (402, or 403/429/FAILED whose body matches a usage-limit); the scanner classifies it
+  per-feed (`error_kind="quota_exhausted"`), the run is recorded **partial** (feed-level failures previously
+  never reached the run status), and the user sees a BYOK-aware toast + amber note. Skip-and-continue + RSS
+  isolation unchanged.
+- **Generalize AI prompts from product-role assumption to all-domain (Phase 1):** 8 prompt strings de-biased
+  — tailor JD-highlights (role-aware from CV essence + `job.role`), feed keywords (`{function_label}
+  professional`), domain-changelog + essence + career system prompts (neutral). Locked ATS/Pursuit scorers
+  were already role-neutral (untouched); verified a product CV still extracts product-shaped essence.
+- **gitleaks pre-commit hook** (`.githooks/pre-commit` + `.gitleaks.toml`): blocks any commit that stages a
+  secret (Anthropic/Apify/Stripe/FERNET/SECRET_KEY/passwords/private keys). No extra install — uses a local
+  `gitleaks` binary else Docker (`ghcr.io/gitleaks/gitleaks`). Activate once per clone:
+  `git config core.hooksPath .githooks`. Audited full git history — clean, no secret ever committed.
+- **Serve policy pages same-origin** at `aijobshunt.com/{privacy,terms,cookies}` (nginx exact-match →
+  `*.html` in `frontend/public/`), off GitHub Pages. **Tailored-draft persistence** (migration
+  `v4_tailor_draft_persistence`): the tailored CV/CL/email + change log persist per (user, job) and restore
+  on return; Claude re-runs only on an explicit "Re-tailor". **Auto-run alembic on deploy** (backend-only
+  entrypoint, race-safe). **`backups/` gitignored.***
+
+*Prior: July 11, 2026 — **App-wide brand rename + sidebar fit + feed/company migration tool.**
 Renamed **user-visible** brand text **JobHunt → AIJobsHunt** across the app (login/sidebar wordmarks +
 taglines → "AI job co-pilot" / "for every field", onboarding/plan copy → "AIJobsHunt Pro", chat widget,
 footer, Email-to-AIJobsHunt labels; backend transactional emails, support-chat FAQ, FastAPI title/description/

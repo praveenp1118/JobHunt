@@ -248,10 +248,10 @@ docker-compose exec backend pytest tests/ -v
 ```
 
 The suite runs **in-container against the live uvicorn server** over real HTTP against the real
-Postgres DB — **148 smoke tests** (145 passing + 3 skipped live/owner-absent) covering the API, scanner,
+Postgres DB — **168 smoke tests** (165 passing + 3 skipped live/owner-absent) covering the API, scanner,
 Gmail alert parser, multi-domain scoring, the hybrid-RAG pipeline, tiered-model optimization, ATS + Pursuit
 dual scoring, career readiness, billing, the **invite-or-pay access gate** (key redemption, races, expiry,
-extension requests), governance, templates, and more.
+extension requests), governance, templates, the **all-domain pre-filter de-bias**, Apify quota handling, and more.
 
 ## Documentation
 
@@ -269,7 +269,8 @@ visibility, support chat, community insights, CV templates, an **ATS + Pursuit d
 real-data career-readiness radar, a security-first governance layer (rate limiting, prompt-injection
 hardening, audit logs, GDPR export/erasure) with static legal pages + registration consent, an
 **invite-or-pay access gate** (single-use keys · 30-day entitlement · Stripe · extension requests), and a
-**public marketing landing page**. **148 smoke tests (145 passing + 3 skipped).**
+**public marketing landing page**, and an **all-domain de-bias** so the pipeline serves finance/ops/sales/
+consulting roles, not just product. **168 smoke tests (165 passing + 3 skipped).**
 
 ## License
 

@@ -280,7 +280,8 @@ base → 7bad (initial) → f6a2 → a1b2 (user profile fields)
 → v3_career_insights → v3_cv_template → v3_gdpr_consent → v3_governance
 → v3_career_filters → v3_rag_scoring → v3_night_batch → v3_auto_detect_apps
 → v3_email_to_jobhunt → v3_optimization → v3_email_source
-→ v3_ats_pursuit → v3_dual_scan_gate → v3_invite_or_pay  (head)
+→ v3_ats_pursuit → v3_dual_scan_gate → v3_invite_or_pay
+→ v4_tailor_draft_persistence  (head)
 ```
 
 ## Scoring Pipeline — Hybrid RAG
