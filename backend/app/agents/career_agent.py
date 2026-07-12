@@ -21,7 +21,7 @@ SECURITY_INSTRUCTION = (
 )
 
 SYSTEM_PROMPT = (
-    "You are a career coach specialising in senior product management roles. "
+    "You are an expert career coach who advises professionals across all domains. "
     "Analyse the CV against the collection of job descriptions and identify gaps and "
     "opportunities. Return ONLY valid JSON — no markdown, no preamble." + SECURITY_INSTRUCTION
 )

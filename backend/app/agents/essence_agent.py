@@ -16,8 +16,8 @@ from app.utils.usage_logger import log_call
 # Reference schema (shape the model should return). Keys only — values illustrate intent.
 CV_ESSENCE_SCHEMA = {
     "keywords": "list[str] — top 20-30 searchable skills/terms that appear in JDs",
-    "core_identity": "str — one-line summary, e.g. 'Senior Product Leader, 15+ yrs, AI/ML + eCommerce, P&L owner'",
-    "seniority_level": "str — e.g. 'VP/Head/CPO level'",
+    "core_identity": "str — one-line summary, e.g. 'Senior Finance Leader, 15+ yrs, FP&A + M&A, P&L owner' or 'Head of Product, 12+ yrs, AI/ML + eCommerce'",
+    "seniority_level": "str — e.g. 'Director / VP / Head / C-level'",
     "top_experiences": "list[str] — max 5 most impressive achievements",
     "domain_strengths": "dict[str,int] — score 1-10 per domain, e.g. {'AI/ML':9,'eCommerce':9}",
     "markets": "list[str] — e.g. ['NL/EU','India','Global']",

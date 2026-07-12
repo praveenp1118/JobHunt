@@ -40,6 +40,7 @@ async def extract_jd_highlights(
     model: Optional[str] = None,
     user_anthropic_key: Optional[str] = None,
     cv_essence: Optional[dict] = None,
+    target_role: Optional[str] = None,
 ) -> dict:
     """Cheap JD analysis for the Tailor page's left panel — Haiku + CV essence as
     context (not the full CV). Returns {"matches": [...], "gaps": [...]}: key
@@ -51,18 +52,22 @@ async def extract_jd_highlights(
     # Compact candidate context from the CV essence keywords/strengths (≈60% fewer
     # input tokens than the full CV) so "matches" reflect THIS candidate's profile.
     cand = ""
+    identity = ""
     if cv_essence:
         kws = ", ".join(map(str, (cv_essence.get("keywords") or [])[:25]))
         strengths = ", ".join((cv_essence.get("domain_strengths") or {}).keys())
-        cand = f"\nCANDIDATE PROFILE (essence): {cv_essence.get('core_identity', '')}\n" \
+        identity = (cv_essence.get("core_identity") or "").strip()
+        cand = f"\nCANDIDATE PROFILE (essence): {identity}\n" \
                f"Skills: {kws}\nDomain strengths: {strengths}\n"
+    # Frame around THIS candidate + THIS role, not a hardcoded discipline.
+    who = identity or "this candidate"
+    role_phrase = f'the role of "{target_role}"' if target_role else "this role"
     model = model or JD_HIGHLIGHTS_MODEL
-    prompt = f"""Analyse this job description for a SENIOR PRODUCT LEADER candidate
-(Head of Product / VP Product / CPO / AI Product Lead).
+    prompt = f"""Analyse this job description for {who}, applying for {role_phrase}.
 {cand}
 Extract:
-1. "matches" — 4-6 key requirements the JD emphasises that a strong senior product
-   leader would meet. Short phrases, e.g. "8+ years product leadership",
+1. "matches" — 4-6 key requirements the JD emphasises that a strong candidate for
+   this role would meet. Short phrases, e.g. "8+ years leadership",
    "API platform experience", "Multi-geography delivery".
 2. "gaps" — 1-3 requirements that are nice-to-have or a possible gap, e.g.
    "Dutch language (not required)".

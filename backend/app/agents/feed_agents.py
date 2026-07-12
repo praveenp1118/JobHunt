@@ -137,7 +137,7 @@ async def generate_feed_keywords(
     else:
         cv_context = f"Domain CV excerpt (first 2000 chars):\n{domain_cv_content[:2000]}"
 
-    prompt = f"""You are a job search assistant. Based on this domain CV for a {industry_label} × {function_label} product leader targeting {country_code}, generate optimal job search keywords.
+    prompt = f"""You are a job search assistant. Based on this domain CV for a {function_label} professional in {industry_label}, targeting {country_code}, generate optimal job search keywords.
 
 {cv_context}
 
@@ -147,12 +147,12 @@ Generate:
 
 Rules:
 - Keywords should be specific to this domain + function combination
-- Include the seniority level (head of product, VP, director)
+- Include the seniority level (e.g. head, VP, director, lead)
 - Include domain-specific terms (e.g. "ecommerce marketplace" for EC, "AI machine learning" for AI)
 - Keep it natural for job board search
 
 Respond ONLY with valid JSON, no markdown:
-{{"search_keywords": "head of product ecommerce marketplace", "feed_name": "eCommerce Product Leadership — NL"}}"""
+{{"search_keywords": "director financial planning fintech", "feed_name": "Fintech Finance Leadership — NL"}}"""
 
     response = client.messages.create(
         model=model,

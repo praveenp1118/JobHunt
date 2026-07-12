@@ -126,7 +126,8 @@ async def jd_highlights(
     )).scalars().first()
     result = await extract_jd_highlights(
         jd_text, user_anthropic_key=anthropic_key,
-        cv_essence=(master.essence_json if master else None))
+        cv_essence=(master.essence_json if master else None),
+        target_role=job.role)
     job.jd_highlights_json = {"matches": result["matches"], "gaps": result["gaps"], "_jd_sig": jd_sig}
     await session.commit()
     return {"matches": result["matches"], "gaps": result["gaps"],

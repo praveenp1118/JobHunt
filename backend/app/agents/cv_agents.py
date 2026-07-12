@@ -114,7 +114,7 @@ Country: {country_rules.get('country_name', country_code)}
 - GDPR lines: {country_rules.get('lines_to_add', '[]')}
 """.strip()
 
-    prompt = f"""You are a senior CV consultant specialising in product management roles.
+    prompt = f"""You are a senior CV consultant who tailors CVs across professional domains.
 Your task is to propose a BOUNDED change log to tailor this CV for a specific domain.
 
 ━━━ GOLDEN RULES (NEVER BREAK THESE) ━━━
@@ -127,7 +127,7 @@ Your task is to propose a BOUNDED change log to tailor this CV for a specific do
 ━━━ TARGET DOMAIN ━━━
 Industry: {industry_label}
 Domain keywords: {industry_keywords}
-Emphasis: {industry_emphasis or 'General product leadership'}
+Emphasis: {industry_emphasis or f'General excellence in {industry_label}'}
 
 Function: {function_label}
 Function keywords: {function_keywords}
