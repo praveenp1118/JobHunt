@@ -223,3 +223,125 @@ async def test_score_view_loaded_from_preferences(client, user_creds):
     prefs = (await client.get("/api/auth/me/preferences", headers=user_creds["headers"])).json()
     assert prefs.get("default_score_view") in ("pursuit", "ats", "combined")
     assert prefs.get("score_pill_style") in ("dual_ring", "single", "number_only")
+
+
+# ── Backfill DOMAIN pass (Best Fit) ──
+async def test_backfill_domain_pass_fills_best_fit(monkeypatch):
+    """ats_domain NULL + active domain CV → backfill sets ats_domain/pursuit_domain +
+    best_domain_cv_id. Master pass untouched (ats_master already set)."""
+    import app.agents.dual_scorer as dual_mod
+    import app.agents.scanner_agents as sa_mod
+    from app.tasks.scoring_tasks import _backfill_async
+    from app.models.user import User, UserCredentials
+    from app.models.cv import MasterCV, DomainCV, CVStatus
+    from app.models.job import Job, JobSource, JobStatus
+    from app.models.domain import IndustryVertical, FunctionalDiscipline
+    from app.utils.encryption import encrypt
+
+    async def fake_batch(cv_md, jobs, batch_size=5, api_key=None, model=None):
+        return [{"id": j["id"], "s1_score": 80, "key_matches": [], "gaps": []} for j in jobs]
+
+    async def fake_dual(cv_essence, cv_md, jd_text, cv_entity, job=None,
+                        anthropic_key=None, session=None, **kw):
+        if job is not None:
+            setattr(job, f"ats_{cv_entity}", 70.0)
+            setattr(job, f"pursuit_{cv_entity}", 66.0)
+            comps = dict(job.score_components or {})
+            comps[cv_entity] = {"ats": {"total": 70.0}, "pursuit": {"total": 66.0}}
+            job.score_components = comps
+            if session is not None:
+                await session.commit()
+        return {"ats": {"total": 70.0}, "pursuit": {"total": 66.0}, "cv_entity": cv_entity}
+
+    monkeypatch.setattr(sa_mod, "batch_score_s1", fake_batch)
+    monkeypatch.setattr(dual_mod, "compute_dual_scores", fake_dual)
+
+    eng, S = _sm()
+    uid, jid, dcv_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    try:
+        async with S() as s:
+            ind = (await s.execute(select(IndustryVertical.id).limit(1))).scalar()
+            fn = (await s.execute(select(FunctionalDiscipline.id).limit(1))).scalar()
+            if not ind or not fn:
+                return  # seed data absent (fresh DB) — skip cleanly
+            s.add(User(id=uid, email=f"bf-{uid}@t.co", hashed_password="x",
+                       is_active=True, is_superuser=False, is_verified=True, name="BF"))
+            await s.flush()
+            s.add(UserCredentials(user_id=uid, anthropic_api_key_enc=encrypt("sk-fake")))
+            mcv = MasterCV(id=uuid.uuid4(), user_id=uid, content_md="MASTER", word_count=100,
+                           essence_json={"keywords": ["product"]}, is_active=True, version=1)
+            s.add(mcv)
+            await s.flush()
+            s.add(DomainCV(id=dcv_id, user_id=uid, master_cv_id=mcv.id, industry_id=ind,
+                           function_id=fn, country_code="NL", content_md="DOMAIN CV",
+                           essence_json={"keywords": ["ai"]}, status=CVStatus.active, version=1))
+            s.add(Job(id=jid, user_id=uid, company="Acme", role="Head of Product", market="NL",
+                      source=JobSource.rss, status=JobStatus.new, jd_raw="JD text " * 30,
+                      jd_md="JD text " * 30, ats_master=72.0, pursuit_master=68.0))
+            await s.commit()
+
+        # _backfill_async uses the module engine; dispose its pool so it binds to THIS
+        # test's event loop (the Celery wrapper normally does this; a direct call must).
+        from app.database import engine as _mod_engine
+        await _mod_engine.dispose()
+        await _backfill_async(str(uid))
+
+        async with S() as s:
+            j = (await s.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.ats_domain == 70.0 and j.pursuit_domain == 66.0
+            assert str(j.best_domain_cv_id) == str(dcv_id)
+            assert j.ats_master == 72.0  # master pass untouched
+    finally:
+        from app.database import engine as _mod_engine
+        await _mod_engine.dispose()
+        async with S() as s:
+            await s.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})  # CASCADE
+            await s.commit()
+        await eng.dispose()
+
+
+async def test_backfill_domain_pass_noop_without_domain_cv(monkeypatch):
+    """No active domain CV → domain pass is a clean no-op (ats_domain stays NULL, no error)."""
+    import app.agents.dual_scorer as dual_mod
+    import app.agents.scanner_agents as sa_mod
+    from app.tasks.scoring_tasks import _backfill_async
+    from app.models.user import User, UserCredentials
+    from app.models.cv import MasterCV
+    from app.models.job import Job, JobSource, JobStatus
+    from app.utils.encryption import encrypt
+
+    async def fake_batch(*a, **k):
+        return []
+    async def fake_dual(*a, **k):
+        return {"ats": {}, "pursuit": {}, "cv_entity": None}
+    monkeypatch.setattr(sa_mod, "batch_score_s1", fake_batch)
+    monkeypatch.setattr(dual_mod, "compute_dual_scores", fake_dual)
+
+    eng, S = _sm()
+    uid, jid = uuid.uuid4(), uuid.uuid4()
+    try:
+        async with S() as s:
+            s.add(User(id=uid, email=f"bf2-{uid}@t.co", hashed_password="x",
+                       is_active=True, is_superuser=False, is_verified=True, name="BF2"))
+            await s.flush()
+            s.add(UserCredentials(user_id=uid, anthropic_api_key_enc=encrypt("sk-fake")))
+            s.add(MasterCV(id=uuid.uuid4(), user_id=uid, content_md="M", word_count=10,
+                           essence_json={"keywords": ["x"]}, is_active=True, version=1))
+            s.add(Job(id=jid, user_id=uid, company="Acme", role="PM", market="NL",
+                      source=JobSource.rss, status=JobStatus.new, jd_raw="JD " * 40, ats_master=50.0))
+            await s.commit()
+
+        from app.database import engine as _mod_engine
+        await _mod_engine.dispose()
+        await _backfill_async(str(uid))  # must not raise
+
+        async with S() as s:
+            j = (await s.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.ats_domain is None    # domain pass no-op'd cleanly
+    finally:
+        from app.database import engine as _mod_engine
+        await _mod_engine.dispose()
+        async with S() as s:
+            await s.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
+            await s.commit()
+        await eng.dispose()

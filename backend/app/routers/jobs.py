@@ -901,17 +901,29 @@ async def get_job_scores(job_id: uuid.UUID, user: User = Depends(current_active_
              dependencies=[Depends(require_active_subscription)])
 async def backfill_scores(user: User = Depends(current_active_user),
                           session: AsyncSession = Depends(get_db)):
-    """Opt-in: compute ATS + Pursuit (master) for the user's existing jobs that have a
-    JD but no ATS score yet. Queues a background task; returns the cost estimate."""
+    """Opt-in: compute ATS + Pursuit for the user's existing jobs — master (Match) for
+    jobs with no ats_master, and domain (Best Fit) for jobs with no ats_domain when the
+    user has an active domain CV. Queues a background task; returns the cost estimate."""
     from sqlalchemy import func
-    n = (await session.execute(select(func.count(Job.id)).where(
+    from app.models.cv import DomainCV, CVStatus
+    n_master = (await session.execute(select(func.count(Job.id)).where(
         Job.user_id == user.id, Job.jd_raw.isnot(None), Job.ats_master.is_(None)))).scalar() or 0
-    if n == 0:
+    # Best Fit (domain) scores only apply when the user has an active domain CV.
+    has_domain_cv = (await session.execute(select(func.count(DomainCV.id)).where(
+        DomainCV.user_id == user.id, DomainCV.status == CVStatus.active,
+        DomainCV.content_md.isnot(None)))).scalar() or 0
+    n_domain = 0
+    if has_domain_cv:
+        n_domain = (await session.execute(select(func.count(Job.id)).where(
+            Job.user_id == user.id, Job.jd_raw.isnot(None), Job.ats_domain.is_(None)))).scalar() or 0
+    if n_master == 0 and n_domain == 0:
         return {"queued": False, "jobs": 0, "estimated_cost_inr": 0.0,
                 "message": "All jobs with a JD already have ATS + Pursuit scores."}
     from app.tasks.scoring_tasks import backfill_dual_scores
     backfill_dual_scores.delay(str(user.id))
-    return {"queued": True, "jobs": n, "estimated_cost_inr": round(n * DUAL_COST_PER_JOB_INR, 2)}
+    total = n_master + n_domain   # a job needing both passes is 2 units of work/cost
+    return {"queued": True, "jobs": total, "master_jobs": n_master, "domain_jobs": n_domain,
+            "estimated_cost_inr": round(total * DUAL_COST_PER_JOB_INR, 2)}
 
 
 @router.post("/{job_id}/score-s1",

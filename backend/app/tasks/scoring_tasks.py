@@ -104,6 +104,7 @@ async def _backfill_async(user_id: str):
         session.add(run_log)
         await session.flush()
         set_usage_user(uid)
+        cost0 = get_session_usage().get("cost_inr", 0.0)
 
         creds = (await session.execute(
             select(UserCredentials).where(UserCredentials.user_id == uid))).scalar_one_or_none()
@@ -112,11 +113,11 @@ async def _backfill_async(user_id: str):
         master = (await session.execute(
             select(MasterCV).where(MasterCV.user_id == uid, MasterCV.is_active == True))).scalars().first()
 
+        # ── MASTER pass (Match column) — jobs with no ats_master yet ──
         scored = 0
         if key and master and master.essence_json:
             jobs = (await session.execute(select(Job).where(
                 Job.user_id == uid, Job.jd_raw.isnot(None), Job.ats_master.is_(None)))).scalars().all()
-            cost0 = get_session_usage().get("cost_inr", 0.0)
             for job in jobs:
                 try:
                     await compute_dual_scores(
@@ -126,17 +127,65 @@ async def _backfill_async(user_id: str):
                     await asyncio.sleep(0.2)  # ~5 jobs/sec rate limit
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"backfill score failed for job {job.id}: {e}")
-            cost = round(get_session_usage().get("cost_inr", 0.0) - cost0, 2)
-        else:
-            cost = 0.0
 
+        # ── DOMAIN pass (Best Fit column) — ONLY if the user has an active domain CV ──
+        # Mirrors the scanner: S1-score each job's JD vs every active domain CV, pick the
+        # best (best_domain_cv_id + s1d + domain_cv_scores), then compute domain ATS/Pursuit.
+        # Idempotent (ats_domain IS NULL). No domain CV → clean no-op.
+        domain_scored = 0
+        if key:
+            from app.models.cv import DomainCV, CVStatus
+            from app.agents.scanner_agents import batch_score_s1
+            from app.agents.rag_scorer import _essence_text
+            dcv_rows = (await session.execute(
+                select(DomainCV.id, DomainCV.content_md, DomainCV.essence_json)
+                .where(DomainCV.user_id == uid, DomainCV.status == CVStatus.active,
+                       DomainCV.content_md.isnot(None)))).all()
+            domain_cvs = [{"id": str(did), "content_md": c, "essence": e} for did, c, e in dcv_rows]
+            if domain_cvs:
+                djobs = (await session.execute(select(Job).where(
+                    Job.user_id == uid, Job.jd_raw.isnot(None), Job.ats_domain.is_(None)))).scalars().all()
+                inputs = [{"id": str(j.id), "role": j.role or "", "company": j.company or "",
+                           "location": j.location or "", "description": (j.jd_md or j.jd_raw or "")[:500]}
+                          for j in djobs]
+                # S1 vs each domain CV (batched), collect per-job scores → pick best.
+                per_job = {str(j.id): {} for j in djobs}
+                for dcv in domain_cvs:
+                    dtext = _essence_text(dcv.get("essence")) or dcv.get("content_md", "")
+                    if not dtext or not inputs:
+                        continue
+                    for s in await batch_score_s1(dtext, inputs, api_key=key):
+                        if s.get("s1_score") is not None:
+                            per_job[str(s["id"])][dcv["id"]] = s["s1_score"]
+                dcv_by_id = {d["id"]: d for d in domain_cvs}
+                for job in djobs:
+                    try:
+                        valid = {k: v for k, v in per_job.get(str(job.id), {}).items() if v is not None}
+                        best = max(valid, key=valid.get) if valid else None
+                        if best is None:
+                            continue
+                        job.domain_cv_scores = valid or None
+                        job.best_domain_cv_id = _uuid.UUID(best)
+                        job.s1d = valid.get(best)
+                        d = dcv_by_id.get(best)
+                        await compute_dual_scores(
+                            d.get("essence") or (master.essence_json if master else {}),
+                            d.get("content_md") or "", job.jd_md or job.jd_raw or "",
+                            "domain", job=job, anthropic_key=key, session=session)
+                        domain_scored += 1
+                        await asyncio.sleep(0.2)  # ~5 jobs/sec rate limit
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning(f"domain backfill score failed for job {job.id}: {e}")
+
+        cost = round(get_session_usage().get("cost_inr", 0.0) - cost0, 2)
         run_log.status = RunStatus.success
-        run_log.jobs_added = scored
-        run_log.details = {"backfill": True, "jobs_scored": scored, "cost_inr": cost}
+        run_log.jobs_added = scored + domain_scored
+        run_log.details = {"backfill": True, "jobs_scored": scored,
+                           "domain_jobs_scored": domain_scored, "cost_inr": cost}
         run_log.completed_at = datetime.now(timezone.utc)
         run_log.duration_seconds = (run_log.completed_at - run_log.started_at).total_seconds()
         await session.commit()
-    logger.warning(f"dual-score backfill: scored {scored} jobs · ₹{cost}")
+    logger.warning(f"dual-score backfill: master {scored} · domain {domain_scored} jobs · ₹{cost}")
     return {"scored": scored, "cost_inr": cost}
 
 

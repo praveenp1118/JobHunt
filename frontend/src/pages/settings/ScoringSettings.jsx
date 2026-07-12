@@ -51,11 +51,13 @@ export default function ScoringSettings() {
     catch { toast.error('Save failed') }
   }
   const runBackfill = async () => {
-    if (!window.confirm('Compute ATS + Pursuit scores for your existing jobs? This uses Claude tokens (~₹0.15/job).')) return
+    if (!window.confirm('Compute ATS + Pursuit scores (Match + Best Fit) for your existing jobs? This uses Claude tokens (~₹0.15/job, real Claude calls).')) return
     setBackfilling(true)
     try {
       const r = await backfillScores()
-      toast.success(r.data.queued ? `Queued ${r.data.jobs} jobs · ~₹${r.data.estimated_cost_inr}` : r.data.message)
+      toast.success(r.data.queued
+        ? `Queued ${r.data.jobs} jobs (Match ${r.data.master_jobs ?? 0} · Best Fit ${r.data.domain_jobs ?? 0}) · ~₹${r.data.estimated_cost_inr}`
+        : r.data.message)
     } catch (e) { toast.error(e.response?.data?.detail || 'Backfill failed') }
     finally { setBackfilling(false) }
   }
