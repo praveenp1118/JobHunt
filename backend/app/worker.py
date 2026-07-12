@@ -27,26 +27,29 @@ celery_app.conf.update(
 )
 
 # ── Beat schedule ─────────────────────────────────────────────────────────────
+# All wall-clock crontab() anchors (beat runs UTC, enable_utc=True) so they fire at
+# FIXED times regardless of when beat/deploys restart. (Plain-interval schedules
+# reset their countdown on every beat restart, which can starve the weekly scan.)
 celery_app.conf.beat_schedule = {
     # Weekly job scan — Sunday 17:30 UTC = 11:00 PM IST
     "weekly-job-scan": {
         "task": "tasks.weekly_job_scan",
-        "schedule": 604800.0,  # every 7 days
+        "schedule": crontab(day_of_week="sun", hour=17, minute=30),
     },
-    # Hourly Gmail poll
+    # Hourly Gmail poll — top of every hour (UTC)
     "poll-gmail-hourly": {
         "task": "tasks.poll_gmail_all_users",
-        "schedule": 3600.0,
+        "schedule": crontab(minute=0),
     },
-    # Daily ghosting check
+    # Daily ghosting check — 01:00 UTC = 06:30 AM IST
     "check-ghosted-daily": {
         "task": "tasks.check_ghosted_jobs",
-        "schedule": 86400.0,
+        "schedule": crontab(hour=1, minute=0),
     },
-    # Daily purge of accounts past their 30-day deletion grace window
+    # Daily purge of accounts past their 30-day deletion grace window — 02:00 UTC = 07:30 AM IST
     "purge-deleted-accounts-daily": {
         "task": "tasks.purge_deleted_accounts",
-        "schedule": 86400.0,
+        "schedule": crontab(hour=2, minute=0),
     },
     # Nightly batch scoring of 'pending' jobs — 21:30 UTC = 02:00 AM IST
     "night-batch-scoring": {
