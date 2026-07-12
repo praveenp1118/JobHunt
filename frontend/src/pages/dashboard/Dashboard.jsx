@@ -12,7 +12,6 @@ import Spinner from '../../components/ui/Spinner'
 import { toast } from '../../store/toast'
 import CareerWidget from '../../components/dashboard/CareerWidget'
 import FeedPerformance from '../../components/dashboard/FeedPerformance'
-import ScoreToggle from '../../components/ui/ScoreToggle'
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -45,7 +44,6 @@ export default function Dashboard() {
   const [tab, setTab] = useState('overview')
   const [polling, setPolling] = useState(false)
   const [scoringAll, setScoringAll] = useState(false)
-  const [dashScoreView, setDashScoreView] = useState('pursuit')
 
   // Filter: ?filter=source:rss | feed:{uuid} | domain:{uuid} | market:NL
   const filter = sp.get('filter') || ''
@@ -260,7 +258,7 @@ export default function Dashboard() {
               </div>
 
               {/* Score overview — ATS + Pursuit */}
-              <ScoreOverviewCard stats={stats} view={dashScoreView} setView={setDashScoreView} />
+              <ScoreOverviewCard stats={stats} />
 
               {/* Career readiness widget */}
               <CareerWidget />
@@ -463,7 +461,7 @@ export default function Dashboard() {
 }
 
 // ATS + Pursuit overview — avg scores + recommendation buckets + an insight line.
-function ScoreOverviewCard({ stats, view, setView }) {
+function ScoreOverviewCard({ stats }) {
   const ats = stats.avg_ats_master
   const pursuit = stats.avg_pursuit_master
   if (ats == null && pursuit == null) return null
@@ -476,12 +474,9 @@ function ScoreOverviewCard({ stats, view, setView }) {
   const filterLabel = stats.filter_label
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 mb-4">
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">Score overview</h3>
-          {filterLabel && <p className="text-[11px] text-gray-400">{filterLabel} · {stats.total ?? 0} jobs</p>}
-        </div>
-        <ScoreToggle value={view} onChange={setView} size="sm" />
+      <div className="mb-3">
+        <h3 className="text-sm font-semibold text-gray-900">Score overview</h3>
+        {filterLabel && <p className="text-[11px] text-gray-400">{filterLabel} · {stats.total ?? 0} jobs</p>}
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-center">
