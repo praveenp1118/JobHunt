@@ -177,7 +177,11 @@ export default function TailorPage() {
       setTailoredCvId(res.data.tailored_cv_id)
       if (res.data.tokens_used) setGenUsage({ tokens: res.data.tokens_used, cost_inr: res.data.cost_inr })
     } catch (e) {
-      setError(e.response?.data?.detail || 'Generation failed — check your Anthropic API key in Settings.')
+      // Only blame the key when the BACKEND actually said so. A client-side error
+      // (no e.response) means the request never fired — don't misattribute it.
+      setError(e.response?.data?.detail
+        || (e.response ? 'Generation failed — please try again.'
+                       : 'Could not start generation — please retry.'))
     } finally {
       setGenerating(false)
     }
@@ -456,7 +460,7 @@ export default function TailorPage() {
                   <p className="text-xs text-gray-400 mb-5 max-w-sm">
                     Auto mode is off — click to generate AI-powered change recommendations for this job.
                   </p>
-                  <Button onClick={runGenerate}>⚡ Suggest changes</Button>
+                  <Button onClick={() => runGenerate()}>⚡ Suggest changes</Button>
                 </div>
               ) : (
                 <div className="flex justify-center py-12"><Spinner /></div>
