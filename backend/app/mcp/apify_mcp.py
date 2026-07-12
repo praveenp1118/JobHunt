@@ -5,11 +5,26 @@ Structured JSON from Apify skips Claude parse step (saves tokens).
 Pre-filter + S1 scoring still run.
 """
 import asyncio
+import re
 from typing import Optional
 from urllib.parse import quote_plus
 import httpx
 
 APIFY_BASE = "https://api.apify.com/v2"
+
+
+def _redact(text: str) -> str:
+    """Strip Apify token material from any string before it is logged or raised."""
+    text = re.sub(r"apify_api_[A-Za-z0-9]+", "apify_api_***", text or "")
+    return re.sub(r"(token=)[^&\s'\"]+", r"\1***", text)
+
+
+def _raise_for_status(resp):
+    """resp.raise_for_status(), but with token material scrubbed from the error."""
+    try:
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise httpx.HTTPStatusError(_redact(str(e)), request=e.request, response=e.response) from None
 
 
 class ApifyQuotaExhausted(Exception):
@@ -127,14 +142,16 @@ async def run_actor(
     # a literal "/" 404s. The original actor_id is kept for logging/normalising.
     actor_path = actor_id.replace("/", "~")
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    # Token goes in the Authorization header, NOT the URL query — httpx error strings
+    # include the URL (and get logged), so ?token=... leaked the token into logs.
+    headers = {"Authorization": f"Bearer {apify_token}"}
+    async with httpx.AsyncClient(timeout=30, headers=headers) as client:
         # Start the run. Apify's POST /acts/{id}/runs takes the actor input as the
         # RAW JSON body (NOT wrapped in {"input": ...}) — wrapping it nests the real
         # fields one level down, so required fields like `urls`/`query` go missing
         # and every actor 400s regardless of correct field names.
         start_resp = await client.post(
             f"{APIFY_BASE}/acts/{actor_path}/runs",
-            params={"token": apify_token},
             json=input_data,
         )
         if start_resp.status_code >= 400:
@@ -146,11 +163,11 @@ async def run_actor(
                 start_resp.status_code in (403, 429) and _is_quota_signal(body)
             ):
                 raise ApifyQuotaExhausted(_quota_reason(body), actor_id=actor_id)
-            start_resp.raise_for_status()
+            _raise_for_status(start_resp)
         run_data = start_resp.json().get("data", {})
         run_id = run_data.get("id")
         if not run_id:
-            raise ValueError(f"Apify actor start failed: {start_resp.text}")
+            raise ValueError(_redact(f"Apify actor start failed: {start_resp.text}"))
 
         print(f"🔄 Apify run started: {actor_id} / {run_id}")
 
@@ -162,9 +179,8 @@ async def run_actor(
 
             status_resp = await client.get(
                 f"{APIFY_BASE}/acts/{actor_path}/runs/{run_id}",
-                params={"token": apify_token},
             )
-            status_resp.raise_for_status()
+            _raise_for_status(status_resp)
             status_data = status_resp.json().get("data", {})
             status = status_data.get("status", "")
 
@@ -188,9 +204,9 @@ async def run_actor(
 
         items_resp = await client.get(
             f"{APIFY_BASE}/datasets/{dataset_id}/items",
-            params={"token": apify_token, "format": "json", "limit": 100},
+            params={"format": "json", "limit": 100},
         )
-        items_resp.raise_for_status()
+        _raise_for_status(items_resp)
         items = items_resp.json()
         print(f"✅ Apify {actor_id}: {len(items)} items returned")
         return items

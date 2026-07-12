@@ -21,21 +21,21 @@ SCORING_PRESETS = {
         "s1_essence_model": "claude-sonnet-4-6", "s1_essence_reject_below": 40,
         "s1_full_model": "claude-sonnet-4-6", "s1_borderline_low": 40, "s1_borderline_high": 100,
         "domain_score_model": "claude-sonnet-4-6", "domain_score_min_s1": 40,
-        "scoring_batch_size": 10,
+        "scoring_batch_size": 5,
     },
     "balanced": {
         "keyword_match_threshold": 3,
         "s1_essence_model": "claude-haiku-4-5", "s1_essence_reject_below": 50,
         "s1_full_model": "claude-sonnet-4-6", "s1_borderline_low": 50, "s1_borderline_high": 74,
         "domain_score_model": "claude-haiku-4-5", "domain_score_min_s1": 55,
-        "scoring_batch_size": 12,
+        "scoring_batch_size": 6,
     },
     "maximum_savings": {
         "keyword_match_threshold": 5,
         "s1_essence_model": "claude-haiku-4-5", "s1_essence_reject_below": 60,
         "s1_full_model": "claude-haiku-4-5", "s1_borderline_low": 60, "s1_borderline_high": 80,
         "domain_score_model": "claude-haiku-4-5", "domain_score_min_s1": 65,
-        "scoring_batch_size": 15,
+        "scoring_batch_size": 8,
     },
 }
 

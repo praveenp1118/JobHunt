@@ -155,3 +155,86 @@ async def test_scan_feed_quota_skips_and_isolates_rss():
         assert found == 1 and added == 0
     finally:
         await engine.dispose()
+
+
+# ── S1 scoring robustness (truncation + id-mapping fix) ──────────────────────
+
+def test_parse_scores_tolerates_truncation():
+    """A truncated score array salvages every COMPLETE object and drops the cut one;
+    code fences are stripped."""
+    from app.agents.scanner_agents import _parse_scores
+
+    # Clean fenced JSON.
+    clean = _parse_scores('```json\n[{"id":"1","s1_score":88},{"id":"2","s1_score":72}]\n```')
+    assert [e["s1_score"] for e in clean] == [88, 72]
+
+    # Truncated tail (max_tokens cut mid-entry) — the 2 complete objects survive.
+    truncated = _parse_scores('[{"id":"1","s1_score":88}, {"id":"2","s1_score":72}, {"id":"3","s1_sc')
+    assert [str(e["id"]) for e in truncated] == ["1", "2"]
+    assert [e["s1_score"] for e in truncated] == [88, 72]
+
+
+async def test_batch_score_s1_retries_missing_no_blanket_zero(monkeypatch):
+    """Simulate truncation: _score_once returns only the first half when >1 job.
+    batch_score_s1 must re-score the rest (halving to singles) so ALL jobs get a
+    real non-zero score keyed by their original 64-hex id — never a blanket zero."""
+    import hashlib
+    import app.agents.scanner_agents as sa
+
+    async def fake_once(cv_md, jobs, api_key, model):
+        # "Truncate": score only the first half of a multi-job batch; always score a single.
+        take = jobs if len(jobs) == 1 else jobs[: (len(jobs) + 1) // 2]
+        return {j["id"]: {"id": j["id"], "s1_score": 60 + (idx % 5) * 7,
+                          "key_matches": [], "gaps": []}
+                for idx, j in enumerate(take)}
+
+    monkeypatch.setattr(sa, "_score_once", fake_once)
+
+    ids = [hashlib.sha256(f"job-{i}".encode()).hexdigest() for i in range(6)]
+    jobs = [{"id": ids[i], "role": f"PM {i}", "company": "Co", "description": "x" * 200}
+            for i in range(6)]
+    out = await sa.batch_score_s1("CV", jobs, batch_size=6, api_key="k", model="claude-haiku-4-5")
+
+    assert len(out) == 6
+    assert {r["id"] for r in out} == set(ids)          # keyed by the original 64-hex ids
+    assert all(r["s1_score"] > 0 for r in out)          # nothing blanket-zeroed
+
+
+async def test_score_once_maps_short_ids_back_to_hash(monkeypatch):
+    """The model echoes short ids ("1".."n"); _score_once maps them back to the real
+    64-hex job ids. Proves the model never needs to echo the opaque hash."""
+    import hashlib
+    from types import SimpleNamespace
+    import app.agents.scanner_agents as sa
+
+    h1 = hashlib.sha256(b"a").hexdigest()
+    h2 = hashlib.sha256(b"b").hexdigest()
+    fake_resp = SimpleNamespace(
+        content=[SimpleNamespace(text='[{"id":"1","s1_score":88},{"id":"2","s1_score":72}]')],
+        usage=SimpleNamespace(input_tokens=5, output_tokens=5), stop_reason="end_turn")
+    fake_client = SimpleNamespace(messages=SimpleNamespace(create=lambda **k: fake_resp))
+    monkeypatch.setattr(sa, "_get_client", lambda api_key=None: fake_client)
+
+    async def _noop(*a, **k):
+        return None
+    monkeypatch.setattr(sa, "log_call", _noop)
+
+    jobs = [{"id": h1, "role": "PM", "company": "A", "description": "d"},
+            {"id": h2, "role": "PM", "company": "B", "description": "d"}]
+    got = await sa._score_once("CV", jobs, "key", "claude-haiku-4-5")
+    assert got[h1]["s1_score"] == 88.0
+    assert got[h2]["s1_score"] == 72.0
+
+
+def test_apify_redact_token():
+    """Token material is scrubbed from any string before it can be logged."""
+    from app.mcp.apify_mcp import _redact
+    # Built by concatenation so no literal Apify token sits in source (this repo is
+    # public + gitleaks-hooked). Low-entropy fake value, not a real credential.
+    fake = "apify_api_" + "FAKEfake" * 4
+    leaky = (f"Client error '403 Forbidden' for url "
+             f"'https://api.apify.com/v2/acts/x~y/runs?token={fake}'")
+    red = _redact(leaky)
+    assert fake not in red
+    assert "FAKEfakeFAKEfake" not in red
+    assert "token=***" in red or "apify_api_***" in red

@@ -26,34 +26,52 @@ async def batch_score_s1(
     model: Optional[str] = None,
 ) -> list[dict]:
     """
-    Score multiple JDs against master CV.
-    Batches 5 per Claude call for efficiency.
-
-    Each job dict must have: id, role, company, description
-    Returns: list of {id, s1_score, key_matches, gaps}
+    Score multiple JDs against a CV. Returns list of {id, s1_score, key_matches, gaps}
+    — one per input job, in order. key_matches/gaps are kept for shape compatibility
+    but are NO LONGER requested from the model: only s1_score is used downstream, and
+    asking for them ~tripled the output tokens and truncated the JSON, zeroing whole
+    batches.
     """
-    results = []
+    scored: dict = {}
     for i in range(0, len(jobs), batch_size):
         batch = jobs[i:i + batch_size]
-        batch_results = await _score_batch(master_cv_md, batch, api_key, model)
-        results.extend(batch_results)
-    return results
+        scored.update(await _score_with_retry(master_cv_md, batch, api_key, model))
+    # Any job still unscored genuinely failed (even scored alone) → explicit 0.
+    return [
+        scored.get(job["id"],
+                   {"id": job["id"], "s1_score": 0, "key_matches": [], "gaps": ["Score failed"]})
+        for job in jobs
+    ]
 
 
-async def _score_batch(
-    master_cv_md: str,
-    jobs: list[dict],
-    api_key: Optional[str] = None,
-    model: Optional[str] = None,
-) -> list[dict]:
-    """Score one batch of up to 5 jobs."""
+async def _score_with_retry(cv_md, jobs, api_key, model, depth: int = 0) -> dict:
+    """Score a batch, then re-score any jobs the model didn't return (truncation/id
+    miss) by halving the missing set down to singles. A single bad/truncated response
+    can no longer zero a whole batch — only a job that fails even ALONE defaults to 0.
+    Bounded by depth and by halving, so worst case is ~2N calls."""
+    scored = await _score_once(cv_md, jobs, api_key, model)
+    missing = [j for j in jobs if j["id"] not in scored]
+    if not missing or depth >= 4 or len(jobs) == 1:
+        return scored
+    mid = max(1, len(missing) // 2)
+    scored.update(await _score_with_retry(cv_md, missing[:mid], api_key, model, depth + 1))
+    scored.update(await _score_with_retry(cv_md, missing[mid:], api_key, model, depth + 1))
+    return scored
+
+
+async def _score_once(cv_md, jobs, api_key, model) -> dict:
+    """One model call. Returns {job_id: {id, s1_score, key_matches, gaps}} for the
+    jobs it successfully scored (a subset if the response was malformed)."""
     client = _get_client(api_key)
+    # SHORT, stable ids ("1".."n") — the model never echoes the 64-char jd_hash
+    # (which it mangled ~20% of the time → smap miss → spurious 0). Map back after.
+    idmap = {str(i + 1): job["id"] for i, job in enumerate(jobs)}
 
     jobs_text = ""
     for i, job in enumerate(jobs):
         desc = (job.get("description") or "")[:800]
         jobs_text += f"""
-Job {i + 1} (ID: {job['id']}):
+Job {i + 1}:
 Role: {job.get('role', '')} at {job.get('company', '')}
 Location: {job.get('location', '')}
 Description: {desc}
@@ -69,39 +87,60 @@ Score 0-100:
 0-39: Poor fit
 
 CANDIDATE CV:
-{master_cv_md[:2500]}
+{cv_md[:2500]}
 
 JOBS TO SCORE:
 {jobs_text}
 
-Return ONLY JSON array, one entry per job:
-[
-  {{
-    "id": "job id from above",
-    "s1_score": <number>,
-    "key_matches": ["top 2 matching points"],
-    "gaps": ["top 2 gaps"]
-  }}
-]"""
+Return ONLY a JSON array — one entry per job, using the Job number as "id":
+[{{"id": "1", "s1_score": <0-100>}}]"""
 
     try:
         response = client.messages.create(
             model=model or settings.anthropic_model,
-            max_tokens=1024,
+            max_tokens=2048,
             messages=[{"role": "user", "content": prompt}],
         )
         await log_call("batch_score_s1", "scanner", response, model or settings.anthropic_model,
                        entity_label=f"Scanner run · {len(jobs)} jobs")
-        text = response.content[0].text
-        text = re.sub(r"```json\s*", "", text)
-        text = re.sub(r"```\s*", "", text)
-        return json.loads(text.strip())
+        parsed = _parse_scores(response.content[0].text)
     except Exception as e:
         print(f"⚠️ Batch S1 scoring error: {e}")
-        return [
-            {"id": job["id"], "s1_score": 0, "key_matches": [], "gaps": ["Score failed"]}
-            for job in jobs
-        ]
+        return {}
+
+    scored = {}
+    for entry in (parsed or []):
+        real = idmap.get(str(entry.get("id")))
+        raw = entry.get("s1_score")
+        if real is None or raw is None:
+            continue
+        try:
+            scored[real] = {"id": real, "s1_score": float(raw), "key_matches": [], "gaps": []}
+        except (TypeError, ValueError):
+            continue
+    return scored
+
+
+def _parse_scores(text: str) -> list:
+    """Parse the score array, tolerating code fences AND a truncated tail. The trimmed
+    schema has NO nested braces, so we can salvage every complete {...} and drop a
+    truncated final one — truncation costs at most the last job (which _score_with_retry
+    re-scores), never the whole batch."""
+    t = re.sub(r"```json\s*", "", text or "")
+    t = re.sub(r"```\s*", "", t).strip()
+    try:
+        data = json.loads(t)
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    out = []
+    for obj in re.findall(r"\{[^{}]*\}", t):
+        try:
+            out.append(json.loads(obj))
+        except Exception:
+            continue
+    return out
 
 
 async def detect_market_from_job(role: str, company: str, location: str) -> str:
