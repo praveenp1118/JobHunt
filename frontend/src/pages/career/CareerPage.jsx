@@ -8,6 +8,7 @@ import {
   updateRoadmapItem, getCommunityCareer, shareInsights, getReadinessScores,
 } from '../../api/career'
 import { getJobStats } from '../../api/jobs'
+import { getPreferences } from '../../api/auth'
 import ScoreToggle from '../../components/ui/ScoreToggle'
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip } from 'recharts'
 import TokenBadge from '../../components/ui/TokenBadge'
@@ -31,6 +32,164 @@ function barColor(v) {
   if (v >= 80) return '#10b981'
   if (v >= 65) return '#f59e0b'
   return '#ef4444'
+}
+
+// ── Markdown export ──────────────────────────────────────────────────────────
+// Formats the already-loaded analysis + readiness + stats into ONE self-contained
+// .md, framed for critique by a separate LLM that knows the user's full CV.
+function _fmtMarkets(byMarket) {
+  const entries = Object.entries(byMarket || {}).filter(([, n]) => n)
+  if (!entries.length) return '—'
+  return entries.sort((x, y) => y[1] - x[1]).map(([m, n]) => `${m} (${n})`).join(', ')
+}
+
+function buildCareerMarkdown({ d, a, readiness, stats, targetRoles }) {
+  const L = []
+  const push = (s = '') => L.push(s)
+  const imp = (v) => (v != null ? ` (+${v}%)` : '')
+  const freq = (v) => (v ? ` — ${v}% of JDs` : '')
+  const soK = (x, k) => (typeof x === 'string' ? x : (x?.[k] ?? ''))
+  const tf = (x) => (x ? String(x).replace(/_/g, ' ') : '')
+
+  const jdN = d?.jd_count ?? readiness?.jobs_scored ?? 0
+  const scope = d?.filter_label || readiness?.filter_label || 'All jobs'
+  const today = format(new Date(), 'yyyy-MM-dd')
+  const roles = (targetRoles || '').trim() || '—'
+
+  // Header + reviewer framing
+  push('# Career Insights — legitimacy review request')
+  push('')
+  push('**Source:** AIJobsHunt · automated career-gap analysis')
+  push(`**Generated:** ${today}`)
+  push(`**Based on:** ${jdN} tracked job descriptions`)
+  push(`**Target roles:** ${roles}`)
+  push(`**Markets:** ${_fmtMarkets(stats?.by_market)}`)
+  push(`**Analysis scope:** ${scope}`)
+  push('')
+  push('> **Reviewer instructions:** This is an automated career-gap analysis produced by')
+  push('> AIJobsHunt purely by matching the job descriptions above against the candidate\'s')
+  push('> CV — it does NOT know the candidate\'s full history the way you do. You have the')
+  push('> candidate\'s complete CV and background. Assess how accurate and legitimate these')
+  push('> findings are: flag anything generic, overstated, hallucinated, or misaligned with')
+  push('> their real experience, and note where the tool is right.')
+  push('')
+  push('---')
+  push('')
+
+  // 1. Readiness (real ATS/Pursuit if available, else the Claude estimate)
+  push('## 1. Readiness')
+  push('')
+  const realReady = readiness && !readiness.no_data && (readiness.jobs_scored || 0) > 0
+  if (realReady) {
+    push(`**Overall: ${readiness.overall}%** (ATS × 0.4 + Pursuit × 0.6) — from ${readiness.jobs_scored} real scored jobs.`)
+    push('')
+    const compBlock = (title, block) => {
+      push(`- **${title}: ${block?.overall ?? '—'}%**`)
+      Object.entries(block?.components || {}).forEach(([k, v]) => {
+        push(`  - ${v.label} — ${v.score ?? '—'}%${block.top_gap === k ? '  ← weakest' : ''}`)
+      })
+    }
+    compBlock('ATS readiness (passes automated screening)', readiness.ats)
+    compBlock('Pursuit readiness (worth pursuing / human fit)', readiness.pursuit)
+  } else {
+    push(`**Claude-estimate readiness: ${a?.readiness_score ?? '—'}%** _(real ATS/Pursuit scores not yet available)_`)
+    const scores = a?.scores || {}
+    ;[['keywords', 'Keywords'], ['skills', 'Skills'], ['experience', 'Experience'],
+      ['certifications', 'Certifications'], ['projects', 'Projects']]
+      .forEach(([k, label]) => push(`- ${label} — ${scores[k] ?? '—'}%`))
+  }
+  push('')
+  if (a?.top_action?.title) {
+    push(`**Top action:** ${a.top_action.title}${imp(a.top_action.impact_pct)}${a.top_action.reason ? ` — _${a.top_action.reason}_` : ''}`)
+    push('')
+  }
+  const qw = (a?.quick_wins || []).slice(0, 3)
+  if (qw.length) { push(`**Quick wins:** ${qw.map((w) => `${w.title}${imp(w.impact_pct)}`).join(' · ')}`); push('') }
+  push('---'); push('')
+
+  // 2. Keywords
+  push('## 2. Keywords'); push('')
+  const km = a?.keywords?.missing || []
+  push(`**Missing (${km.length})** — appear in JDs but not the CV:`)
+  if (km.length) km.forEach((k) => push(`- **${k.keyword}**${freq(k.frequency_pct)}${imp(k.impact_pct)}${k.suggestion ? ` — _${k.suggestion}_` : ''}`))
+  else push('- none — good coverage')
+  push('')
+  const kp = a?.keywords?.present || []
+  push(`**Present:** ${kp.length ? kp.map((k) => `${k.keyword}${k.frequency_pct ? ` (${k.frequency_pct}%)` : ''}`).join(' · ') : '—'}`)
+  push(''); push('---'); push('')
+
+  // 3. Skills
+  push('## 3. Skills'); push('')
+  const sg = a?.skills?.gaps || []
+  push('**Gaps:**')
+  if (sg.length) sg.forEach((g) => push(`- **${g.skill}**${freq(g.frequency_pct)}${imp(g.impact_pct)}${g.suggestion ? ` — _${g.suggestion}_` : ''}${g.timeframe ? ` · ${tf(g.timeframe)}` : ''}`))
+  else push('- none major')
+  push('')
+  const ss = a?.skills?.strengths || []
+  push(`**Strengths:** ${ss.length ? ss.map((s) => soK(s, 'skill')).join(' · ') : '—'}`)
+  push(''); push('---'); push('')
+
+  // 4. Experience
+  push('## 4. Experience'); push('')
+  const er = a?.experience?.reframes || []
+  if (er.length) {
+    push('**Reframe suggestions:**')
+    er.forEach((r) => push(`- ${r.gap}${freq(r.frequency_pct)}${r.suggestion ? ` → _${r.suggestion}_` : ''}`))
+    push('')
+  }
+  const eg = a?.experience?.gaps || []
+  push('**Gaps:**')
+  if (eg.length) eg.forEach((g) => push(`- ${soK(g, 'gap')}`)); else push('- —')
+  push('')
+  const ex = a?.experience?.strengths || []
+  push(`**Strengths:** ${ex.length ? ex.map((s) => soK(s, 'strength')).join(' · ') : '—'}`)
+  push(''); push('---'); push('')
+
+  // 5. Certifications
+  push('## 5. Certifications'); push('')
+  const cr = a?.certifications?.recommended || []
+  push('**Recommended:**')
+  if (cr.length) cr.forEach((c) => {
+    const meta = [c.frequency_pct ? `${c.frequency_pct}% of JDs` : '', c.cost, c.duration, tf(c.timeframe)].filter(Boolean).join(' · ')
+    push(`- **${c.name}**${imp(c.impact_pct)}${meta ? ` — ${meta}` : ''}`)
+  }); else push('- none additional')
+  push('')
+  const cp = a?.certifications?.present || []
+  push(`**Present:** ${cp.length ? cp.map((c) => soK(c, 'name')).join(' · ') : '—'}`)
+  push(''); push('---'); push('')
+
+  // 6. Build (projects)
+  push('## 6. Build (projects)'); push('')
+  const pe = a?.projects?.existing || []
+  push('**Your projects:**')
+  if (pe.length) pe.forEach((p) => push(`- **${p.name}** — ${p.is_public ? 'public' : 'private'}${p.is_on_cv ? ' · on CV' : ' · not on CV'}${p.suggestion ? ` — _${p.suggestion}_` : ''}`))
+  else push('- none detected')
+  push('')
+  const psug = a?.projects?.suggested || []
+  push('**Suggested:**')
+  if (psug.length) psug.forEach((p) => push(`- **${p.name}**${imp(p.impact_pct)}${p.rationale ? ` — _${p.rationale}_` : ''}${p.duration ? ` · ${p.duration}` : ''}`))
+  else push('- —')
+  push(''); push('---'); push('')
+
+  // 7. Roadmap
+  push('## 7. Roadmap'); push('')
+  const items = d?.roadmap_items || []
+  let any = false
+  ;[['this_week', 'This week'], ['this_month', 'This month'], ['3_months', 'Next 3 months']].forEach(([tfk, label]) => {
+    const its = items.filter((i) => i.timeframe === tfk)
+    if (!its.length) return
+    any = true
+    push(`**${label}:**`)
+    its.forEach((i) => push(`- [${i.is_completed ? 'x' : ' '}] ${i.title}${imp(i.impact_pct)}${i.category ? ` _(${i.category})_` : ''}`))
+    push('')
+  })
+  if (!any) { push('- none'); push('') }
+
+  push('---'); push('')
+  push('_Generated by AIJobsHunt from data already on the candidate\'s dashboard. All figures')
+  push('are the tool\'s estimates from the JD set above, not independently verified._')
+  push('')
+  return L.join('\n')
 }
 
 export default function CareerPage() {
@@ -57,9 +216,27 @@ export default function CareerPage() {
   const { data: readinessData } = useQuery({ queryKey: ['career-readiness', filter], queryFn: () => getReadinessScores(params) })
   const readiness = readinessData?.data
   const hasReal = readiness && !readiness.no_data && readiness.jobs_scored > 0
+  // Served from the Sidebar's cache (same ['preferences'] key) — no extra network call.
+  const { data: prefsData } = useQuery({ queryKey: ['preferences'], queryFn: getPreferences })
+  const prefs = prefsData?.data
   const d = data?.data
   const available = d?.available
   const a = d?.analysis || {}
+
+  // Export all 7 tabs' findings as one self-contained .md — pure client-side
+  // formatting of already-loaded data (no backend, no Claude, no cost).
+  const exportMarkdown = () => {
+    const md = buildCareerMarkdown({ d, a, readiness, stats, targetRoles: prefs?.target_roles })
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `career-insights-${format(new Date(), 'yyyy-MM-dd')}.md`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
 
   // First visit (the "all" view) with no analysis → offer the questions intro.
   useEffect(() => {
@@ -94,6 +271,7 @@ export default function CareerPage() {
         <div className="flex items-center gap-3">
           {lastUsage && <TokenBadge tokens={lastUsage.tokens} cost_inr={lastUsage.cost_inr} />}
           <JobFilterSelect value={filter} onChange={setFilter} />
+          {available && <Button size="sm" variant="secondary" onClick={exportMarkdown}>Export .md</Button>}
           <Button size="sm" loading={analysing} onClick={runAnalysis}>{available ? 'Re-analyse' : 'Analyse now'}</Button>
         </div>
       </div>
