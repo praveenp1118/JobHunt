@@ -75,7 +75,7 @@ export default function Onboarding() {
       setInviteOk(true)
       await refetchSub()  // is_active flips true → Step 1 shows the entitled state
     } catch (e) {
-      setError(e.response?.data?.detail?.message || 'That invitation key is not valid.')
+      setError(e.response?.data?.detail || 'That invitation key is not valid.')
     } finally {
       setInviteBusy(false)
     }
@@ -87,7 +87,7 @@ export default function Onboarding() {
       const res = await createCheckoutSession('pro')
       window.location.href = res.data.checkout_url
     } catch (e) {
-      setError(e.response?.data?.detail?.message || e.response?.data?.detail || 'Could not start checkout')
+      setError(e.response?.data?.detail || 'Could not start checkout')
       setSubBusy(false)
     }
   }

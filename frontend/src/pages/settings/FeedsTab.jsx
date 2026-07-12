@@ -101,7 +101,9 @@ export default function FeedsTab() {
       setScanMsg('Scan queued — check status below for progress')
       setTimeout(() => refetchScans(), 3000)
     } catch (e) {
-      setScanMsg('Failed to trigger scan: ' + (e.response?.data?.detail || e.message))
+      setScanMsg(e?.response?.status === 429
+        ? 'Rate limit reached — please wait before running another scan.'
+        : 'Failed to trigger scan: ' + (e.response?.data?.detail || e.message))
     } finally {
       setScanning(false)
     }

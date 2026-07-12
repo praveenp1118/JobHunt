@@ -143,7 +143,7 @@ export default function JobsPage() {
   // Facet counts for the header + filter pills.
   const { data: statsData } = useQuery({
     queryKey: ['job-stats'],
-    queryFn: getJobStats,
+    queryFn: () => getJobStats(),
     refetchInterval: 30000,
   })
   const stats = statsData?.data || {}

@@ -32,7 +32,7 @@ export default function PlanKeysTab() {
       const res = await createCheckoutSession('pro')
       window.location.href = res.data.checkout_url
     } catch (e) {
-      toast.error(e.response?.data?.detail?.message || e.response?.data?.detail || 'Could not start checkout')
+      toast.error(e.response?.data?.detail || 'Could not start checkout')
       setSubBusy(false)
     }
   }

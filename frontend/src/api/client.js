@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { errMsg } from '../lib/errors'
 
 const client = axios.create({
   baseURL: '/api',
@@ -28,6 +29,19 @@ client.interceptors.response.use(
       localStorage.removeItem('jobhunt-auth')
       window.location.href = '/login'
     }
+    // Normalize FastAPI's error body so every catch site renders a STRING, never
+    // "[object Object]". `detail` can be a dict {code, message} (our 4xx gates) or
+    // a 422 validation array; flatten it to a string (raw kept under detailRaw).
+    // No code branches on detail's object shape, so this is safe. `userMessage` is
+    // always a clean string for convenience.
+    const msg = errMsg(err)
+    const data = err.response?.data
+    if (data && typeof data === 'object' && data.detail !== undefined &&
+        typeof data.detail !== 'string') {
+      data.detailRaw = data.detail
+      data.detail = msg
+    }
+    err.userMessage = msg
     return Promise.reject(err)
   }
 )

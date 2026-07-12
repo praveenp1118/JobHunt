@@ -94,7 +94,7 @@ export default function Sidebar({ hitlCount = 0 }) {
   const showCommunity = !!prefsData?.data?.community_sharing_enabled || (contribData?.data?.length > 0)
 
   // Career readiness % badge — prefer real Pursuit readiness, fall back to the Claude estimate.
-  const { data: careerData } = useQuery({ queryKey: ['career'], queryFn: getCareerAnalysis, retry: false })
+  const { data: careerData } = useQuery({ queryKey: ['career'], queryFn: () => getCareerAnalysis(), retry: false })
   const { data: readinessData } = useQuery({ queryKey: ['career-readiness', ''], queryFn: () => getReadinessScores(), retry: false })
   const real = readinessData?.data
   const hasReal = real && !real.no_data && real.jobs_scored > 0
