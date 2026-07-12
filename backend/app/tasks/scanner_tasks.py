@@ -64,6 +64,9 @@ async def _weekly_scan_async():
         session.add(run_log)
         await session.flush()
         run_log_id = run_log.id
+        # Job commits now run on per-user sessions, not this outer one, so nothing else
+        # will persist the run_log before the finalize — commit the "running" row now.
+        await session.commit()
 
         try:
             # Get all active users with credentials
@@ -82,38 +85,43 @@ async def _weekly_scan_async():
                     # must not spend tokens on the platform's schedule.
                     if not is_entitled(user):
                         continue
-                    # Get user's active feeds
-                    feeds_result = await session.execute(
-                        select(UserFeed).where(
-                            UserFeed.user_id == user.id,
-                            UserFeed.is_active == True,
+
+                    # Per-user session: a DB error for THIS user rolls back on exit of the
+                    # `async with` and cannot poison the next user's scan or the outer
+                    # run_log session. _scan_feeds_for_user commits internally exactly as
+                    # before — just its OWN session now.
+                    async with AsyncSessionLocal() as user_session:
+                        feeds = (await user_session.execute(
+                            select(UserFeed).where(
+                                UserFeed.user_id == user.id,
+                                UserFeed.is_active == True,
+                            )
+                        )).scalars().all()
+                        if not feeds:
+                            continue
+
+                        # Get API keys
+                        apify_token = None
+                        if creds.apify_token_enc:
+                            apify_token = decrypt_if_present(creds.apify_token_enc)
+                        if not apify_token:
+                            apify_token = settings.platform_apify_token
+
+                        anthropic_key = None
+                        if creds.anthropic_api_key_enc:
+                            anthropic_key = decrypt_if_present(creds.anthropic_api_key_enc)
+                        if not anthropic_key:
+                            anthropic_key = settings.platform_anthropic_api_key or settings.anthropic_api_key
+
+                        found, added, feed_stats, rag_stats = await _scan_feeds_for_user(
+                            user=user,
+                            feeds=feeds,
+                            apify_token=apify_token,
+                            anthropic_key=anthropic_key,
+                            session=user_session,
                         )
-                    )
-                    feeds = feeds_result.scalars().all()
 
-                    if not feeds:
-                        continue
-
-                    # Get API keys
-                    apify_token = None
-                    if creds.apify_token_enc:
-                        apify_token = decrypt_if_present(creds.apify_token_enc)
-                    if not apify_token:
-                        apify_token = settings.platform_apify_token
-
-                    anthropic_key = None
-                    if creds.anthropic_api_key_enc:
-                        anthropic_key = decrypt_if_present(creds.anthropic_api_key_enc)
-                    if not anthropic_key:
-                        anthropic_key = settings.platform_anthropic_api_key or settings.anthropic_api_key
-
-                    found, added, feed_stats, rag_stats = await _scan_feeds_for_user(
-                        user=user,
-                        feeds=feeds,
-                        apify_token=apify_token,
-                        anthropic_key=anthropic_key,
-                        session=session,
-                    )
+                    # Aggregate in-memory results (plain values — safe after the session closes).
                     total_found += found
                     total_added += added
                     all_feed_stats.extend(feed_stats)

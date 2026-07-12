@@ -251,3 +251,68 @@ def test_seed_has_non_product_functional_disciplines():
     assert "AI & ML Product Management" in labels
     codes = [d["code"] for d in FUNCTIONAL_DISCIPLINES]
     assert len(codes) == len(set(codes)) and len(codes) >= 20
+
+
+# ── Per-user session isolation (cross-user rollback fix) ─────────────────────
+async def test_weekly_scan_per_user_session_isolation(monkeypatch):
+    """Per-user session isolation: two users each get their OWN session; a mid-user DB
+    failure for user A rolls back only user A and does not stop user B; the run_log
+    finalizes (not stranded in 'running'); the task does not raise."""
+    from datetime import datetime, timezone
+    from sqlalchemy import select, text
+    import app.tasks.scanner_tasks as st
+    from app.models.user import User, UserCredentials
+    from app.models.domain import UserFeed
+    from app.models.admin import RunLog, RunType, RunStatus
+    from app.utils.encryption import encrypt
+    from app.database import engine as _mod_engine
+
+    engine = create_async_engine(settings.database_url)
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    ua, ub = uuid.uuid4(), uuid.uuid4()
+    ea, eb = f"iso-a-{ua}@t.co", f"iso-b-{ub}@t.co"
+    seen = {}
+    try:
+        async with Session() as s:
+            for uid, em in [(ua, ea), (ub, eb)]:
+                s.add(User(id=uid, email=em, hashed_password="x", is_active=True,
+                           is_superuser=False, is_verified=True, name="Iso"))
+                await s.flush()
+                s.add(UserCredentials(user_id=uid, anthropic_api_key_enc=encrypt("sk-fake")))
+                s.add(UserFeed(id=uuid.uuid4(), user_id=uid, name="F", feed_type="rss",
+                               url_or_actor="https://example.com/rss", is_active=True))
+            await s.commit()
+
+        # Everyone entitled; every scan is a cheap no-op EXCEPT user A, which raises
+        # after dirtying its OWN session (simulating a mid-user DB failure).
+        monkeypatch.setattr("app.utils.subscription.is_entitled", lambda u: True)
+
+        async def fake_scan(user, feeds, apify_token, anthropic_key, session):
+            seen[user.email] = session
+            if user.id == ua:
+                session.add(RunLog(run_type=RunType.weekly_scan, status=RunStatus.running,
+                                   started_at=datetime.now(timezone.utc)))
+                raise RuntimeError("simulated mid-user DB error")
+            return 0, 0, [], {}
+        monkeypatch.setattr(st, "_scan_feeds_for_user", fake_scan)
+
+        await _mod_engine.dispose()             # bind the module pool to THIS loop
+        result = await st._weekly_scan_async()  # must NOT raise
+
+        # Both users reached, each with a DISTINCT session object → per-user isolation.
+        assert ea in seen and eb in seen
+        assert seen[ea] is not seen[eb]
+        # User A's failure is recorded; user B was scanned regardless.
+        assert any(ea in e for e in result["errors"])
+        # run_log finalized, not stranded in "running".
+        async with Session() as s:
+            rl = (await s.execute(
+                select(RunLog).where(RunLog.run_type == RunType.weekly_scan)
+                .order_by(RunLog.started_at.desc()).limit(1))).scalars().first()
+            assert rl is not None and rl.status != RunStatus.running and rl.completed_at is not None
+    finally:
+        await _mod_engine.dispose()
+        async with Session() as s:
+            await s.execute(text("DELETE FROM users WHERE id IN (:a, :b)"), {"a": str(ua), "b": str(ub)})
+            await s.commit()
+        await engine.dispose()
