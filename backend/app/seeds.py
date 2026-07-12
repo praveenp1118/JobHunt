@@ -3,7 +3,7 @@ Seed script — run once after migrations.
 Creates:
   - Admin user (Praveen)
   - Industry verticals (36)
-  - Functional disciplines (15)
+  - Functional disciplines (20)
   - Country rules (NL, EU, SG, Dubai, India)
   - Action pricing (Wallet plan)
   - Platform feeds + target companies
@@ -81,6 +81,12 @@ FUNCTIONAL_DISCIPLINES = [
     {"code": "MG", "label": "M&A & Integration",             "detection_keywords": "M&A,acquisition,integration,due diligence,PMI,merger"},
     {"code": "PB", "label": "P&L Ownership & Biz Building",  "detection_keywords": "P&L,profit and loss,revenue,business owner,general manager,commercial"},
     {"code": "MN", "label": "Marketplace & Network Effects", "detection_keywords": "marketplace,network effects,two-sided,liquidity,supply,demand"},
+    # Non-product disciplines (Phase 2 — all-domain support). Additive rows; re-seed prod.
+    {"code": "FN", "label": "Finance & FP&A",            "detection_keywords": "finance,FP&A,financial planning,controller,treasury,accounting,budgeting,forecasting,audit"},
+    {"code": "OP", "label": "Operations & Supply Chain", "detection_keywords": "operations,supply chain,logistics,procurement,fulfillment,warehouse,process improvement,S&OP"},
+    {"code": "SA", "label": "Sales & Commercial",        "detection_keywords": "sales,commercial,revenue,account management,business development,GTM,partnerships,quota"},
+    {"code": "ST", "label": "Strategy & Consulting",     "detection_keywords": "strategy,consulting,transformation,advisory,corporate development,M&A,business strategy"},
+    {"code": "MK", "label": "Marketing & Growth",        "detection_keywords": "marketing,growth,brand,demand generation,performance marketing,content,CRM,lifecycle"},
 ]
 
 # ── Country rules ─────────────────────────────────────────────────────────────

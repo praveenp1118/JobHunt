@@ -238,3 +238,16 @@ def test_apify_redact_token():
     assert fake not in red
     assert "FAKEfakeFAKEfake" not in red
     assert "token=***" in red or "apify_api_***" in red
+
+
+# ── Phase 2: non-product functional disciplines seeded ──────────────────────
+def test_seed_has_non_product_functional_disciplines():
+    from app.seeds import FUNCTIONAL_DISCIPLINES
+    labels = {d["label"] for d in FUNCTIONAL_DISCIPLINES}
+    for expected in ("Finance & FP&A", "Operations & Supply Chain", "Sales & Commercial",
+                     "Strategy & Consulting", "Marketing & Growth"):
+        assert expected in labels
+    # product disciplines are still present, and every code is unique
+    assert "AI & ML Product Management" in labels
+    codes = [d["code"] for d in FUNCTIONAL_DISCIPLINES]
+    assert len(codes) == len(set(codes)) and len(codes) >= 20

@@ -149,7 +149,8 @@ class UserPreferences(Base, TimestampMixin):
     # Target roles
     target_roles: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True,
-        default="Head of Product,VP Product,CPO,AI Product Lead"
+        default=None,   # Phase 2: no product default — pre-filter is positive-permissive
+                        # until the user sets roles (onboarding). Existing rows unchanged.
     )
 
     # Scoring
