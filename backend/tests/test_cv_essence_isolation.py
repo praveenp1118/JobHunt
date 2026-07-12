@@ -71,3 +71,61 @@ async def test_master_save_succeeds_when_essence_raises(monkeypatch):
     version, essence = await _run(monkeypatch, _boom)
     assert version == 1
     assert essence is None
+
+
+# ── Regression: domain-CV regenerate arg-order (Bug A) ──────────────────────
+async def test_regenerate_domain_cv_passes_real_user_not_session(monkeypatch):
+    """POST /cvs/domains/{id}/regenerate called generate_domain_cv_changelog with
+    swapped positional args → the AsyncSession landed in `user` → user.id AttributeError
+    (500). The `user` arg must be a real User, `session` a real session — not swapped."""
+    from fastapi import Response
+    import app.routers.cvs as cvs
+    from app.models.user import User
+    from app.models.cv import MasterCV, DomainCV, CVStatus
+    from app.models.domain import IndustryVertical, FunctionalDiscipline
+
+    captured = {}
+    async def fake_generate(body, response, user, session):
+        captured["user"] = user
+        captured["session"] = session
+    async def fake_bulk(domain_cv_id, body, user, session):
+        return None
+    async def fake_apply(domain_cv_id, user, session):
+        return {"regenerated": True}
+    monkeypatch.setattr(cvs, "generate_domain_cv_changelog", fake_generate)
+    monkeypatch.setattr(cvs, "bulk_change_action", fake_bulk)
+    monkeypatch.setattr(cvs, "apply_domain_cv_changes", fake_apply)
+
+    eng, S = _sm()
+    dcv_id = uuid.uuid4()
+    uid = None
+    try:
+        async with S() as s:
+            ind = (await s.execute(select(IndustryVertical.id).limit(1))).scalar()
+            fn = (await s.execute(select(FunctionalDiscipline.id).limit(1))).scalar()
+            if not ind or not fn:
+                return  # seed data absent (fresh DB) — skip cleanly
+            uid = await _mk_user(s)
+            mcv = MasterCV(id=uuid.uuid4(), user_id=uid, content_md="M", word_count=10,
+                           is_active=True, version=1)
+            s.add(mcv); await s.flush()
+            s.add(DomainCV(id=dcv_id, user_id=uid, master_cv_id=mcv.id, industry_id=ind,
+                           function_id=fn, country_code="NL", content_md="D",
+                           status=CVStatus.stale, version=1))
+            await s.commit()
+
+        async with S() as s:
+            user = (await s.execute(select(User).where(User.id == uid))).scalar_one()
+            result = await cvs.regenerate_domain_cv(
+                domain_cv_id=dcv_id, response=Response(), user=user, session=s)
+
+        assert result == {"regenerated": True}            # no 500
+        assert isinstance(captured["user"], User)          # user arg is a real User…
+        assert captured["user"].id == uid                  # …the right one
+        assert not isinstance(captured["session"], User)   # …session wasn't swapped in
+    finally:
+        if uid is not None:
+            async with S() as s:
+                await s.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
+                await s.commit()
+        await eng.dispose()

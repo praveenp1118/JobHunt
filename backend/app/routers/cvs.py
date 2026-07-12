@@ -787,6 +787,7 @@ async def recompute_domain_essence(domain_cv_id: uuid.UUID, user: User = Depends
 @router.post("/domains/{domain_cv_id}/regenerate")
 async def regenerate_domain_cv(
     domain_cv_id: uuid.UUID,
+    response: Response,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
@@ -807,8 +808,10 @@ async def regenerate_domain_cv(
         function_id=domain_cv.function_id,
         country_code=domain_cv.country_code,
     )
-    # Trigger generate + auto-approve + apply
-    await generate_domain_cv_changelog(body, user, session)
+    # Trigger generate + auto-approve + apply. KEYWORD args matching the signature
+    # (body, response, user, session) — a positional call swapped session into `user`
+    # → user.id AttributeError (500). Keywords prevent that recurring.
+    await generate_domain_cv_changelog(body=body, response=response, user=user, session=session)
 
     # Bulk approve all
     await bulk_change_action(domain_cv_id, ChangeLogBulkAction(action="approve_all"), user, session)
