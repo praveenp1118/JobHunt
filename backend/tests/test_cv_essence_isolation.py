@@ -129,3 +129,79 @@ async def test_regenerate_domain_cv_passes_real_user_not_session(monkeypatch):
                 await s.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
                 await s.commit()
         await eng.dispose()
+
+
+# ── Regenerate updates in place, keeps job references (FK fix) ──────────────
+async def test_regenerate_domain_cv_updates_in_place_keeping_job_refs(monkeypatch):
+    """Regenerating a domain CV that a job references must UPDATE in place (same id,
+    version bumped) — no FK violation, and jobs' best_domain_cv_id/domain_cv_scores
+    stay valid. Against the old delete+insert this raised IntegrityError."""
+    import app.routers.cvs as cvs
+    from fastapi import Response
+    from app.schemas.cv import DomainCVCreate
+    from app.models.user import User
+    from app.models.cv import MasterCV, DomainCV, DomainCVVersion, CVStatus
+    from app.models.job import Job, JobSource, JobStatus
+    from app.models.domain import IndustryVertical, FunctionalDiscipline, CountryMaster
+
+    # No Claude: empty changelog + fake key + fake model.
+    async def _no_changes(**kw):
+        return []
+    async def _fake_key(user, session):
+        return "fake-key"
+    async def _fake_model(uid, session):
+        return "claude-haiku-4-5"
+    monkeypatch.setattr(cvs, "generate_domain_changelog", _no_changes)
+    monkeypatch.setattr(cvs, "_get_anthropic_key", _fake_key)
+    monkeypatch.setattr(cvs, "get_user_model", _fake_model)
+
+    eng, S = _sm()
+    dcv_id, job_id = uuid.uuid4(), uuid.uuid4()
+    uid = None
+    try:
+        async with S() as s:
+            ind = (await s.execute(select(IndustryVertical.id).limit(1))).scalar()
+            fn = (await s.execute(select(FunctionalDiscipline.id).limit(1))).scalar()
+            cc = (await s.execute(select(CountryMaster.country_code).limit(1))).scalar()
+            if not ind or not fn or not cc:
+                return  # seed data absent — skip cleanly
+            uid = await _mk_user(s)
+            mcv = MasterCV(id=uuid.uuid4(), user_id=uid, content_md="MASTER v2", word_count=10,
+                           is_active=True, version=2)
+            s.add(mcv); await s.flush()
+            s.add(DomainCV(id=dcv_id, user_id=uid, master_cv_id=mcv.id, industry_id=ind,
+                           function_id=fn, country_code=cc, content_md="OLD CONTENT",
+                           status=CVStatus.active, version=1, s3_domain=90.0, s3_master=80.0))
+            # A job referencing this domain CV (as today's backfill set).
+            s.add(Job(id=job_id, user_id=uid, company="Acme", role="Head of Product", market="NL",
+                      source=JobSource.rss, status=JobStatus.new, jd_raw="x",
+                      best_domain_cv_id=dcv_id, domain_cv_scores={str(dcv_id): 88}))
+            await s.commit()
+
+        async with S() as s:
+            user = (await s.execute(select(User).where(User.id == uid))).scalar_one()
+            body = DomainCVCreate(industry_id=ind, function_id=fn, country_code=cc)
+            res = await cvs.generate_domain_cv_changelog(
+                body=body, response=Response(), user=user, session=s)   # must NOT raise
+
+        assert res["domain_cv_id"] == str(dcv_id)   # same id (no delete+insert)
+        assert res["version"] == 2                   # bumped
+        async with S() as s:
+            dcv = (await s.execute(select(DomainCV).where(DomainCV.id == dcv_id))).scalar_one()
+            assert dcv.version == 2 and dcv.status == CVStatus.regenerating
+            assert dcv.master_cv_id == mcv.id
+            # Referencing job still points at the SAME (refreshed) CV — nothing wiped.
+            job = (await s.execute(select(Job).where(Job.id == job_id))).scalar_one()
+            assert job.best_domain_cv_id == dcv_id
+            assert job.domain_cv_scores == {str(dcv_id): 88}
+            # Old content archived to version history.
+            vers = (await s.execute(select(DomainCVVersion).where(
+                DomainCVVersion.domain_cv_id == dcv_id))).scalars().all()
+            assert any(v.content_md == "OLD CONTENT" and v.version == 1 for v in vers)
+    finally:
+        if uid is not None:
+            async with S() as s:
+                await s.execute(text("DELETE FROM jobs WHERE user_id=:u"), {"u": str(uid)})
+                await s.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
+                await s.commit()
+        await eng.dispose()

@@ -439,32 +439,40 @@ async def generate_domain_cv_changelog(
     existing_domain_cv = existing_result.scalar_one_or_none()
     next_version = (existing_domain_cv.version + 1) if existing_domain_cv else 1
 
-    # Create new domain CV record in 'regenerating' state
-    domain_cv = DomainCV(
-        user_id=user.id,
-        master_cv_id=master.id,
-        industry_id=body.industry_id,
-        function_id=body.function_id,
-        country_code=body.country_code,
-        content_md="",  # filled after user approves changes
-        version=next_version,
-        status=CVStatus.regenerating,
-    )
-    session.add(domain_cv)
-    await session.flush()
-
-    # Archive old if exists
     if existing_domain_cv:
-        old_ver = DomainCVVersion(
+        # Regenerate IN PLACE — keep the same domain_cvs.id so every reference stays
+        # valid: jobs.best_domain_cv_id / detected_domain_cv_id (+ domain_cv_scores),
+        # user_feeds.domain_cv_id, tailored_cvs.domain_cv_id, and DomainCVVersion history.
+        # Delete+insert tripped fk_jobs_best_domain_cv_id (ON DELETE NO ACTION) once jobs
+        # referenced the CV, and left the downstream bulk-approve/apply targeting a dead id.
+        # Archive the current content as a version snapshot BEFORE overwriting it.
+        session.add(DomainCVVersion(
             domain_cv_id=existing_domain_cv.id,
             content_md=existing_domain_cv.content_md,
             version=existing_domain_cv.version,
             s3_domain=existing_domain_cv.s3_domain,
             s3_master=existing_domain_cv.s3_master,
             change_summary="Superseded by new version",
+        ))
+        domain_cv = existing_domain_cv
+        domain_cv.master_cv_id = master.id
+        domain_cv.content_md = ""          # refilled after the user approves changes
+        domain_cv.version = next_version
+        domain_cv.status = CVStatus.regenerating
+        await session.flush()
+    else:
+        # First-time generate for this combination — insert a new row.
+        domain_cv = DomainCV(
+            user_id=user.id,
+            master_cv_id=master.id,
+            industry_id=body.industry_id,
+            function_id=body.function_id,
+            country_code=body.country_code,
+            content_md="",  # filled after user approves changes
+            version=next_version,
+            status=CVStatus.regenerating,
         )
-        session.add(old_ver)
-        await session.delete(existing_domain_cv)
+        session.add(domain_cv)
         await session.flush()
 
     # Get Anthropic key
