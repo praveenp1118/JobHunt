@@ -291,7 +291,8 @@ def _best_domain(dscores: dict):
 
 
 async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
-                            domain_cv_list, label_map, anthropic_key, min_s1, model=None) -> dict:
+                            domain_cv_list, label_map, anthropic_key, min_s1,
+                            model=None, user_keywords=None) -> dict:
     """Save login-gated job cards (LinkedIn etc) extracted from the alert email body.
 
     Partial-JD cards carry only a ~50-char snippet, so S1 scoring on them is unreliable
@@ -302,7 +303,7 @@ async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
     anthropic_key / min_s1 / model are accepted for signature stability but unused now.)
 
     Returns {"saved_ids": [...], "results": [{url, reason, ...}]}."""
-    from app.agents.jd_agents import compute_jd_hash, detect_market_from_text, SKIP_WORDS
+    from app.agents.jd_agents import compute_jd_hash, detect_market_from_text, UNIVERSAL_SKIP
     from app.models.job import Job, JobSource, JobStatus
 
     saved_ids, results = [], []
@@ -316,11 +317,16 @@ async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
         if not url:
             results.append({"url": None, "reason": "no_url", "role": title, "company": company})
             continue
-        # Drop clearly non-product roles by title (gated cards have no JD to S1-score,
-        # so this is the only filter — e.g. "Head of Surveillance", "Sales Director").
+        # Gated cards can't be S1-scored (only a ~50-char snippet), so this title check is
+        # the ONLY filter. Drop universal junk; else require a POSITIVE match to the user's
+        # OWN target roles/keywords — keep only what THIS user targets (product AND non-
+        # product; no product blocklist).
         tl = title.lower()
-        if any(sw in tl for sw in SKIP_WORDS):
-            results.append({"url": url, "reason": "skipped_non_product", "role": title, "company": company})
+        if any(sw in tl for sw in UNIVERSAL_SKIP):
+            results.append({"url": url, "reason": "skipped_junk", "role": title, "company": company})
+            continue
+        if user_keywords and not any(kw and kw in tl for kw in user_keywords):
+            results.append({"url": url, "reason": "no_intent_match", "role": title, "company": company})
             continue
         jd_hash = compute_jd_hash(f"{title} {company} {url}")
         existing = (await session.execute(
@@ -469,9 +475,12 @@ async def process_job_alert_email(
     # ── Gated path: lightweight S1 score from the email card (no fetch) ──────
     if cards:
         try:
+            from app.agents.jd_agents import build_user_keywords
+            _gated_kw = build_user_keywords(getattr(prefs, "target_roles", None))
             gated = await _save_gated_cards(
                 cards, user, session, email_thread.id,
-                master_cv_md, domain_cv_list, label_map, anthropic_key, min_s1, model)
+                master_cv_md, domain_cv_list, label_map, anthropic_key, min_s1, model,
+                user_keywords=_gated_kw)
             saved_ids += gated["saved_ids"]
             results += gated["results"]
         except Exception as e:

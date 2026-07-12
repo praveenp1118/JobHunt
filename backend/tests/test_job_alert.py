@@ -96,3 +96,37 @@ def test_subject_exclusion_blocks_security_alert():
 async def test_is_job_alert_excludes_security_alert():
     # even from an alerts-y sender with job-looking links, excluded subjects are not alerts
     assert await is_job_alert_email("Security alert", "no-reply@accounts.google.com", LINKEDIN_ALERT_HTML) is False
+
+
+# ── Phase 2: user-intent pre-filter (de-bias) ────────────────────────────────
+from app.agents.jd_agents import pre_filter_jd, build_user_keywords
+
+_JD = "A real senior leadership role description. " * 5  # > 100 chars
+
+
+def test_prefilter_passes_non_product_senior_role():
+    # "finance director" is NO LONGER a hard skip → falls through to the permissive PASS
+    # (S1 vs the user's own CV is the arbiter, not a product blocklist).
+    r = pre_filter_jd("Finance Director — EMEA. " + _JD, user_keywords=[])
+    assert r["passed"] is True
+
+
+def test_prefilter_still_rejects_universal_junk():
+    r = pre_filter_jd("Senior Software Engineer, Backend. " + _JD, user_keywords=[])
+    assert r["passed"] is False and r["reason_code"] == "not_relevant"
+
+
+def test_prefilter_positive_rescue_beats_universal_skip():
+    # positive user-keyword match runs BEFORE the junk list → an explicit target wins
+    r = pre_filter_jd("Warehouse Operations Lead. " + _JD, user_keywords=["warehouse operations"])
+    assert r["passed"] is True
+
+
+def test_build_user_keywords_fallback_is_conditional():
+    # no roles + no feeds → product fallback still anchors (sane default)
+    empty = build_user_keywords(None, None)
+    assert "product manager" in empty
+    # a non-product user's own roles → NO product pollution
+    finance = build_user_keywords("Finance Director, FP&A Lead", None)
+    assert "finance director" in finance
+    assert "product manager" not in finance and "head of product" not in finance

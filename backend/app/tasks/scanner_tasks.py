@@ -152,8 +152,20 @@ async def _weekly_scan_async():
             if all_rag_stats.get("estimated_unoptimized_cost"):
                 all_rag_stats["savings_pct"] = round(
                     (1 - all_rag_stats.get("cost_inr", 0) / all_rag_stats["estimated_unoptimized_cost"]) * 100, 1)
+            # Aggregate pre-filter funnel — compare across scans to measure the pruned
+            # blocklist's impact (passed/scored up, saved ~flat, cost_inr the S1 delta).
+            prefilter = {
+                "raw":                sum(s.get("raw_results", 0) for s in all_feed_stats),
+                "passed_prefilter":   sum(s.get("pre_filter_passed", 0) for s in all_feed_stats),
+                "rejected_prefilter": sum(s.get("pre_filter_failed", 0) for s in all_feed_stats),
+                "scored":             sum(s.get("s1_scored", 0) for s in all_feed_stats),
+                "saved":              sum(s.get("saved", 0) for s in all_feed_stats),
+            }
+            print(f"📊 pre-filter funnel: {prefilter['raw']} raw → {prefilter['passed_prefilter']} passed "
+                  f"→ {prefilter['scored']} scored → {prefilter['saved']} saved · RAG ₹{all_rag_stats.get('cost_inr')}")
             run_log.details = {"feeds_run": len(all_feed_stats), "feeds_summary": all_feed_stats,
                                "usage_summary": usage_summary, "rag_stats": all_rag_stats or None,
+                               "prefilter": prefilter,
                                "apify_quota_exhausted": bool(quota_feeds),
                                "feed_failures": len(feed_failed)}
             run_log.completed_at = datetime.now(timezone.utc)

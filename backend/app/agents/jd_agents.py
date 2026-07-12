@@ -29,27 +29,23 @@ TARGET_TITLE_KEYWORDS = [
     "product director", "product vice president",
 ]
 
-# Clearly non-product roles — the only thing the pre-filter hard-rejects.
-# Everything else passes through to S1 scoring (when in doubt, let Claude decide).
-SKIP_WORDS = [
-    "software engineer", "frontend engineer", "backend engineer",
-    "data engineer", "devops", "designer", "ux designer",
-    "graphic designer", "nurse", "doctor", "driver", "lawyer",
-    "accountant", "sales representative", "recruiter",
-    "customer service", "warehouse", "chef", "teacher",
-    # Non-product senior roles that were slipping through alert-email cards.
-    "surveillance", "security officer", "commercial operations",
-    "sales director", "finance director", "legal counsel",
-    "operations director", "supply chain director",
-    "procurement", "logistics", "customer success", "account manager",
-    # CTO / strategy / advisory / program (NOT product) — note: bare "cto" is unsafe
-    # (it is a substring of "dire-cto-r"), so use full phrases.
-    "chief technology officer", "technology officer", "technology strategy",
-    "technology advisor", "strategy consultant", "strategy & advisory", "advisory",
-    "program manager", "project manager", "program management",
+# UNIVERSAL_SKIP — roles no professional-leadership user of this tool targets, in ANY
+# domain (junior / hands-on / frontline). Hard-rejected pre-scoring as a free cost-saver.
+# Everything NOT here falls through to the permissive PASS → S1 scoring decides (vs the
+# user's OWN CV). We deliberately DON'T block senior cross-domain roles (finance/ops/
+# sales/strategy/legal/tech directors) — those are legitimate non-product targets; S1 vs
+# their CV is the arbiter, not a product blocklist.
+UNIVERSAL_SKIP = [
+    "software engineer", "frontend engineer", "backend engineer", "data engineer",
+    "devops", "designer", "ux designer", "graphic designer",
+    "nurse", "doctor", "driver", "chef", "teacher", "warehouse",
+    "customer service", "sales representative", "recruiter",
+    "security officer", "surveillance",
 ]
+SKIP_WORDS = UNIVERSAL_SKIP  # backwards-compat alias for any lingering imports
 
-# Used only when a user has no target_roles / feed keywords configured.
+# Product baseline — appended ONLY when the user gave us nothing else to match on
+# (no target_roles AND no feed keywords), so it can't pollute a non-product user's list.
 PRODUCT_FALLBACK_KEYWORDS = [
     "product manager", "product lead", "head of product", "vp product",
     "director of product", "chief product", "product owner", "product director",
@@ -82,7 +78,11 @@ def build_user_keywords(target_roles: Optional[str] = None,
             kws.append(f"{a} {b}")
         if "product" in words:
             kws.append("product")
-    kws += PRODUCT_FALLBACK_KEYWORDS
+    # Product fallback ONLY when the user gave us nothing else to match on (no
+    # target_roles AND no feed keywords) — otherwise it pollutes a non-product user's
+    # list with product terms and re-anchors the bias.
+    if not kws:
+        kws += PRODUCT_FALLBACK_KEYWORDS
 
     seen, out = set(), []
     for k in kws:
@@ -99,7 +99,7 @@ def pre_filter_jd(jd_text: str, user_keywords: Optional[list] = None) -> dict:
 
     1. Too short  → fail (too_short)
     2. Positive: job title (first 200 chars) contains ANY user keyword → PASS
-    3. Hard SKIP: title contains a clearly-non-product word → fail (not_a_product_role)
+    3. Hard SKIP: title contains a universal-junk term → fail (not_relevant)
     4. Otherwise  → PASS (let S1 scoring decide — when in doubt, pass it through)
     """
     if not jd_text or len(jd_text.strip()) < 100:
@@ -112,9 +112,9 @@ def pre_filter_jd(jd_text: str, user_keywords: Optional[list] = None) -> dict:
             if kw and kw.lower() in title:
                 return {"passed": True, "reason_code": None}
 
-    for sw in SKIP_WORDS:
+    for sw in UNIVERSAL_SKIP:
         if sw in title:
-            return {"passed": False, "reason_code": "not_a_product_role"}
+            return {"passed": False, "reason_code": "not_relevant"}
 
     return {"passed": True, "reason_code": None}
 
