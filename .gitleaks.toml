@@ -1,0 +1,86 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# gitleaks config for AIJobsHunt (public repo).
+# Used by the pre-commit hook (.githooks/pre-commit) to BLOCK any commit that
+# stages a real secret. Extends gitleaks' built-in ruleset and adds rules for the
+# exact token types this project uses, plus an allowlist so the *.example template
+# files (CHANGE_ME_ placeholders) never cause a false positive.
+# ─────────────────────────────────────────────────────────────────────────────
+
+title = "AIJobsHunt secret-scan config"
+
+[extend]
+# Keep gitleaks' curated default rules (AWS, GCP, GitHub, private keys,
+# generic-api-key w/ entropy, etc.) and layer the custom rules below on top.
+useDefault = true
+
+# ── Custom rules for this project's specific credential shapes ────────────────
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''sk-ant-[a-zA-Z0-9_\-]{20,}'''
+keywords = ["sk-ant-"]
+
+[[rules]]
+id = "apify-api-token"
+description = "Apify API token"
+regex = '''apify_api_[a-zA-Z0-9]{20,}'''
+keywords = ["apify_api_"]
+
+[[rules]]
+id = "stripe-secret-key"
+description = "Stripe secret/restricted/publishable key"
+regex = '''(?:sk|rk|pk)_(?:live|test)_[a-zA-Z0-9]{20,}'''
+keywords = ["sk_live_", "sk_test_", "rk_live_", "rk_test_", "pk_live_", "pk_test_"]
+
+[[rules]]
+id = "stripe-webhook-secret"
+description = "Stripe webhook signing secret"
+regex = '''whsec_[a-zA-Z0-9]{20,}'''
+keywords = ["whsec_"]
+
+[[rules]]
+id = "google-oauth-client-secret"
+description = "Google OAuth client secret"
+regex = '''GOCSPX-[a-zA-Z0-9_\-]{20,}'''
+keywords = ["GOCSPX-"]
+
+[[rules]]
+id = "fernet-or-secret-key-assignment"
+description = "FERNET_KEY / SECRET_KEY / ENCRYPTION_KEY assigned a real value"
+regex = '''(?i)(fernet_key|secret_key|encryption_key)\s*[:=]\s*['"]?[A-Za-z0-9_\-+/]{16,}=?'''
+keywords = ["fernet_key", "secret_key", "encryption_key"]
+
+[[rules]]
+id = "sensitive-env-password-assignment"
+description = "A known sensitive env var assigned a non-placeholder value"
+regex = '''(?i)(postgres_password|admin_initial_password|gmail_app_password|razorpay_key_secret|google_client_secret|jwt_secret)\s*[:=]\s*['"]?[A-Za-z0-9_\-+/@.!#]{8,}'''
+keywords = ["password", "secret"]
+
+# ── Allowlist: template files + placeholder tokens ────────────────────────────
+
+[allowlist]
+description = "Ignore template/example files and obvious placeholders."
+
+# Whole-file allowlist for the committed env TEMPLATES (they hold CHANGE_ME_ values).
+paths = [
+    '''\.env\.example$''',
+    '''\.env\.production\.example$''',
+    '''frontend/\.env\.example$''',
+    '''\.example$''',
+    '''\.gitleaks\.toml$''',
+]
+
+# Value-level allowlist — anything matching these is a placeholder, never a secret.
+# `regexTarget = "match"` tests the whole matched string (var + value), so
+# "SECRET_KEY=CHANGE_ME_..." is exempted even though the value looks long/random.
+regexTarget = "match"
+regexes = [
+    '''CHANGE_ME[A-Za-z0-9_]*''',
+    '''(?i)your[_-]?(api[_-]?key|token|secret|password)''',
+    '''sk-ant-(xxx|test|placeholder|example|fake|dummy)''',
+    '''G-XXXXXXXXXX''',
+    '''(price|whsec|sk_test|sk_live|pk_test|pk_live)_XXXX+''',
+    '''example\.com''',
+    '''postgresql\+asyncpg://jobhunt:jobhunt@''',
+]

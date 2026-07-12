@@ -54,6 +54,19 @@ relevant files.
 - `/project:scan` — trigger manual scan
 - `/project:logs` — show service logs
 
+### Secret-scanning pre-commit hook (public repo)
+A tracked hook **`.githooks/pre-commit`** runs **gitleaks** on staged changes and **blocks the commit**
+(non-zero exit) if it finds a secret — Anthropic (`sk-ant-`), Apify (`apify_api_`), Stripe
+(`sk_/pk_/rk_/whsec_`), Google OAuth (`GOCSPX-`), `FERNET_KEY`/`SECRET_KEY`/`ENCRYPTION_KEY` +
+`*_PASSWORD` assignments, private keys, plus gitleaks' default ruleset. Config in **`.gitleaks.toml`**
+(`useDefault=true` + custom rules; allowlists the `*.example` templates so `CHANGE_ME_` placeholders
+don't false-positive, and the dev `jobhunt:jobhunt` DB creds). **No extra install** — uses a local
+`gitleaks` binary if present, else runs `ghcr.io/gitleaks/gitleaks:v8.30.1` via **Docker** (already a
+project dep; verified working through Git-Bash on Windows with `MSYS_NO_PATHCONV=1`). **One-time setup
+per clone** (hooks aren't cloned): **`git config core.hooksPath .githooks`**. Emergency bypass
+(discouraged): `git commit --no-verify`. *(Audited June 2026: git history is clean — no secret was ever
+committed; only `*.example` templates + an untracked `.env` hold config.)*
+
 ---
 
 ## Infrastructure

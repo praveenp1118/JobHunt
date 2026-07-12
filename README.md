@@ -225,6 +225,22 @@ New accounts are inert until entitled — generate **invite keys** from the Admi
 onboard others. A production deploy uses `docker-compose.prod.yml` + `Caddyfile` (see `CLAUDE.md` →
 Deployment).
 
+### Secret-scanning pre-commit hook (one-time, after clone)
+
+This repo is **public**, so a committed secret is exposed forever. A tracked pre-commit hook
+(`.githooks/pre-commit`) runs **gitleaks** on your staged changes and **blocks the commit** if it
+finds a key (Anthropic, Apify, Stripe, `FERNET_KEY`/`SECRET_KEY`, passwords, private keys, …).
+Git doesn't share hooks automatically, so **activate it once** per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+No extra install needed — the hook uses a local `gitleaks` binary if present, otherwise runs
+gitleaks via **Docker** (already required for the stack). The `*.example` templates are allowlisted
+in `.gitleaks.toml`, so their `CHANGE_ME_` placeholders don't false-positive. Emergency bypass
+(discouraged): `git commit --no-verify`.
+
 ## Testing
 
 ```bash

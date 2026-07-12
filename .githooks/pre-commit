@@ -1,0 +1,51 @@
+#!/bin/sh
+# ─────────────────────────────────────────────────────────────────────────────
+# AIJobsHunt secret-scan pre-commit hook.
+# BLOCKS the commit (non-zero exit) if gitleaks finds a secret in STAGED changes.
+# This repo is PUBLIC — a leaked key is exposed forever, so we fail closed.
+#
+# Tracked in-repo under .githooks/ so every clone shares it. Activate once with:
+#     git config core.hooksPath .githooks
+#
+# Scanner resolution (no extra install needed on this project — Docker is a dep):
+#   1. a local `gitleaks` binary if one is on PATH (fastest), else
+#   2. gitleaks via Docker (ghcr.io/gitleaks/gitleaks).
+# If neither is available it fails closed with instructions.
+#
+# Emergency bypass (discouraged on a public repo):  git commit --no-verify
+# ─────────────────────────────────────────────────────────────────────────────
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+CONFIG="$REPO_ROOT/.gitleaks.toml"
+GITLEAKS_IMAGE="ghcr.io/gitleaks/gitleaks:v8.30.1"
+
+echo "🔍 gitleaks: scanning staged changes for secrets..."
+
+if command -v gitleaks >/dev/null 2>&1; then
+    gitleaks git --pre-commit --staged --redact --no-banner --config "$CONFIG" --verbose
+    RC=$?
+elif command -v docker >/dev/null 2>&1; then
+    # MSYS_NO_PATHCONV stops Git-Bash on Windows from mangling the -v/-w paths.
+    MSYS_NO_PATHCONV=1 docker run --rm \
+        -v "$REPO_ROOT":/repo -w /repo \
+        "$GITLEAKS_IMAGE" \
+        git --pre-commit --staged --redact --no-banner --config /repo/.gitleaks.toml --verbose
+    RC=$?
+else
+    echo "❌ Neither 'gitleaks' nor 'docker' is available — cannot scan for secrets."
+    echo "   Install gitleaks (https://github.com/gitleaks/gitleaks) or start Docker, then retry."
+    echo "   (Emergency bypass, discouraged: git commit --no-verify)"
+    exit 1
+fi
+
+if [ "$RC" -ne 0 ]; then
+    echo ""
+    echo "🚫 COMMIT BLOCKED — gitleaks flagged a potential secret in your staged changes (redacted above)."
+    echo "   • Remove the secret and put it in your untracked .env instead, then re-stage and commit."
+    echo "   • False positive? Add a narrow allowlist entry to .gitleaks.toml."
+    echo "   • Emergency bypass (discouraged on this PUBLIC repo): git commit --no-verify"
+    exit 1
+fi
+
+echo "✅ gitleaks: no secrets detected."
+exit 0
