@@ -1,3 +1,7 @@
 # Shell scripts must be LF — a CRLF entrypoint fails inside Linux containers
 # ("bad interpreter" / stray \r). Force LF regardless of the committer's OS.
 *.sh text eol=lf
+
+# Git hooks are shell scripts too (no .sh extension) — keep them LF so the
+# shebang works on every platform / inside the gitleaks Docker container.
+.githooks/* text eol=lf
