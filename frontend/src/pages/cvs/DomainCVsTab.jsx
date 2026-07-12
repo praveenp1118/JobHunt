@@ -207,24 +207,27 @@ function GenerateWizard({ onClose, onSuccess }) {
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
 
-  const { data: industriesData } = useQuery({
+  const industriesQuery = useQuery({
     queryKey: ['industries'],
     queryFn: () => client.get('/auth/admin/industries'),
-    retry: false,
+    retry: 2,
   })
-
-  const { data: functionsData } = useQuery({
+  const functionsQuery = useQuery({
     queryKey: ['functions'],
     queryFn: () => client.get('/auth/admin/functions'),
-    retry: false,
+    retry: 2,
   })
 
-  const industries = industriesData?.data || []
-  const functions = functionsData?.data || []
+  const industryOptions = industriesQuery.data?.data || []
+  const functionOptions = functionsQuery.data?.data || []
 
-  // Fallback: use seeded data if admin endpoints not available
-  const industryOptions = industries.length > 0 ? industries : FALLBACK_INDUSTRIES
-  const functionOptions = functions.length > 0 ? functions : FALLBACK_FUNCTIONS
+  // The real IDs are DB-generated UUIDs, so the dropdowns MUST come from the API —
+  // there is no valid hardcoded fallback (a seed code like "SC" is not a UUID, and the
+  // backend rejects it with a 400 on submit). Gate the form on the options loading.
+  const optionsLoading = industriesQuery.isLoading || functionsQuery.isLoading
+  const optionsError = industriesQuery.isError || functionsQuery.isError
+  const optionsReady = industryOptions.length > 0 && functionOptions.length > 0
+  const retryOptions = () => { industriesQuery.refetch(); functionsQuery.refetch() }
 
   const handleGenerate = async () => {
     if (!industryId || !functionId || !countryCode) {
@@ -264,12 +267,22 @@ function GenerateWizard({ onClose, onSuccess }) {
         <div className="px-6 py-5 space-y-4">
           <p className="text-sm text-gray-600">Claude will tailor your master CV for this specific combination.</p>
 
+          {optionsError ? (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600 flex items-center justify-between">
+              <span>Couldn't load industry / function options.</span>
+              <button onClick={retryOptions} className="font-medium underline hover:no-underline">Retry</button>
+            </div>
+          ) : optionsLoading ? (
+            <div className="text-sm text-gray-500">Loading options…</div>
+          ) : null}
+
           <div>
             <label className="text-sm font-medium text-gray-700 block mb-1.5">Industry vertical</label>
             <select
               value={industryId}
               onChange={(e) => setIndustryId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-emerald-400"
+              disabled={!optionsReady}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-emerald-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
             >
               <option value="">Select industry...</option>
               {industryOptions.map((ind) => (
@@ -283,7 +296,8 @@ function GenerateWizard({ onClose, onSuccess }) {
             <select
               value={functionId}
               onChange={(e) => setFunctionId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-emerald-400"
+              disabled={!optionsReady}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-emerald-400 disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed"
             >
               <option value="">Select function...</option>
               {functionOptions.map((fn) => (
@@ -314,7 +328,7 @@ function GenerateWizard({ onClose, onSuccess }) {
 
         <div className="px-6 py-4 border-t border-gray-100 flex justify-between">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleGenerate} loading={generating}>
+          <Button onClick={handleGenerate} loading={generating} disabled={!optionsReady}>
             Generate change log →
           </Button>
         </div>
@@ -428,20 +442,3 @@ function ChangelogPanel({ domainCvId, onClose, onApply, applying }) {
     </div>
   )
 }
-
-// Fallback industry/function options using seeded codes
-const FALLBACK_INDUSTRIES = [
-  { id: 'EC', label: 'eCommerce & Marketplace' },
-  { id: 'AI', label: 'AI & Data Products' },
-  { id: 'FP', label: 'Fintech & Payments' },
-  { id: 'SC', label: 'Supply Chain & Operations' },
-  { id: 'BS', label: 'B2B SaaS & Platform' },
-]
-
-const FALLBACK_FUNCTIONS = [
-  { id: 'PB', label: 'P&L Ownership & Biz Building' },
-  { id: 'ML', label: 'AI & ML Product Management' },
-  { id: 'GR', label: 'Growth & Monetisation' },
-  { id: 'PL', label: 'Platform & API Products' },
-  { id: 'OA', label: 'Operations & Automation' },
-]
