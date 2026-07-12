@@ -89,7 +89,8 @@ async def test_roadmap_item_completion_updates_score(client, user_creds):
 async def test_community_warming_up_when_no_data(client, user_creds):
     eng, S = _sm()
     async with S() as s:
-        await s.execute(text("delete from community_career_insights where role_category = 'Senior Product'"))
+        await s.execute(text("delete from community_career_insights "
+                             "where role_category in ('Senior Product','General','Product')"))
         await s.commit()
     await eng.dispose()
     r = await client.get("/api/career/community", headers=user_creds["headers"])
@@ -100,8 +101,17 @@ async def test_community_warming_up_when_no_data(client, user_creds):
 
 async def test_career_questions_saved(client, user_creds):
     s = await client.post("/api/career/questions",
-                          json={"question_key": "manages_pms", "answer": "Yes, currently"},
+                          json={"question_key": "manages_team", "answer": "Yes, currently"},
                           headers=user_creds["headers"])
     assert s.status_code == 200 and s.json()["saved"] is True
     g = await client.get("/api/career/questions", headers=user_creds["headers"])
-    assert g.json().get("manages_pms") == "Yes, currently"
+    assert g.json().get("manages_team") == "Yes, currently"
+
+
+def test_role_category_is_domain_neutral():
+    from app.routers.career import _categorize_role
+    assert _categorize_role("Head of Product, VP Product") == "Product"
+    assert _categorize_role("Finance Director, FP&A Lead") == "Finance"
+    assert _categorize_role("VP Operations & Supply Chain") == "Operations"
+    assert _categorize_role("") == "General"           # never defaults to product
+    assert _categorize_role(None) == "General"

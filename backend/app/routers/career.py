@@ -13,7 +13,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.user import User, UserCredentials
+from app.models.user import User, UserCredentials, UserPreferences
 from app.models.cv import MasterCV
 from app.models.job import Job
 from app.models.career import CareerAnalysis, CareerRoadmapItem, CareerQuestion, CommunityCareerInsight
@@ -27,7 +27,38 @@ from app.config import settings
 
 router = APIRouter()
 
-QUESTION_KEYS = ["manages_pms", "github_public", "b2c_experience", "relocation", "willing_to_do"]
+QUESTION_KEYS = ["manages_team", "public_work", "industry_focus", "relocation", "willing_to_do"]
+
+
+# Coarse, domain-NEUTRAL role buckets for community insight matching (never assume
+# product). Derived from the user's OWN target_roles.
+_ROLE_CATEGORIES = [
+    ("Product",     ["product"]),
+    ("Finance",     ["finance", "fp&a", "controller", "treasury", "accounting", "audit"]),
+    ("Operations",  ["operations", "supply chain", "logistics", "procurement", " ops"]),
+    ("Sales",       ["sales", "commercial", "revenue", "account executive", "business development"]),
+    ("Strategy",    ["strategy", "consult", "advisory", "transformation", "corporate development"]),
+    ("Marketing",   ["marketing", "growth", "brand", "demand generation"]),
+    ("Data & AI",   ["data", "analytics", "machine learning", "ml ", "ai "]),
+    ("Engineering", ["engineer", "technology officer", "cto", "platform", "devops"]),
+    ("People",      ["people", "human resources", " hr ", "talent", "recruit"]),
+    ("Legal",       ["legal", "counsel", "compliance"]),
+]
+
+
+def _categorize_role(text: str) -> str:
+    t = f" {(text or '').lower()} "
+    for label, kws in _ROLE_CATEGORIES:
+        if any(k in t for k in kws):
+            return label
+    return "General"
+
+
+async def _role_category(user, session) -> str:
+    """Community bucket from the user's OWN config — never assumes product."""
+    prefs = (await session.execute(select(UserPreferences).where(
+        UserPreferences.user_id == user.id))).scalars().first()
+    return _categorize_role(getattr(prefs, "target_roles", None) or "")
 
 
 async def _anthropic_key(user, session):
@@ -342,7 +373,8 @@ async def community(user: User = Depends(current_active_user), session: AsyncSes
     # Role category from the user's "all jobs" analysis (best effort); blank-safe.
     ca = (await session.execute(select(CareerAnalysis).where(
         CareerAnalysis.user_id == user.id, CareerAnalysis.filter_hash == "all"))).scalar_one_or_none()
-    role_category = ((ca.analysis_json or {}).get("role_category") if ca else None) or "Senior Product"
+    role_category = ((ca.analysis_json or {}).get("role_category") if ca else None) \
+        or await _role_category(user, session)
     rows = (await session.execute(
         select(CommunityCareerInsight).where(CommunityCareerInsight.role_category == role_category)
         .order_by(CommunityCareerInsight.frequency_pct.desc().nullslast()))).scalars().all()
@@ -362,7 +394,7 @@ async def share(user: User = Depends(current_active_user), session: AsyncSession
         CareerAnalysis.user_id == user.id, CareerAnalysis.filter_hash == "all"))).scalar_one_or_none()
     if not ca or not ca.analysis_json:
         raise HTTPException(status_code=400, detail="Run an analysis first")
-    role_category = ca.analysis_json.get("role_category") or "Senior Product"
+    role_category = ca.analysis_json.get("role_category") or await _role_category(user, session)
     missing = (ca.analysis_json.get("keywords", {}) or {}).get("missing", []) or []
     shared = 0
     for kw in missing[:20]:

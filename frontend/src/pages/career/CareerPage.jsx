@@ -18,10 +18,10 @@ import { toast } from '../../store/toast'
 const TABS = ['Readiness', 'Keywords', 'Skills', 'Experience', 'Certifications', 'Build', 'Roadmap']
 
 const QUESTIONS = [
-  { key: 'manages_pms', q: 'Do you currently manage other Product Managers?', options: ['Yes, currently', 'I have managed PMs in the past', 'No'] },
-  { key: 'github_public', q: 'Are your AI projects publicly visible on GitHub?', options: ['Yes, all public', 'Some are public', 'All private', 'Not on GitHub'] },
-  { key: 'b2c_experience', q: 'Do you have B2C consumer product experience?', options: ['Yes, significant', 'Some side projects', 'No, mainly B2B'] },
-  { key: 'relocation', q: 'Are you open to relocating to Netherlands?', options: ['Yes, immediately', 'Yes, in 3-6 months', 'Remote only', 'Already in NL/EU'] },
+  { key: 'manages_team', q: 'Do you currently manage a team?', options: ['Yes, currently', 'I have managed teams in the past', 'No'] },
+  { key: 'public_work', q: 'Do you have public work or a portfolio (GitHub, publications, case studies, a deck)?', options: ['Yes, substantial', 'Some', 'No'] },
+  { key: 'industry_focus', q: 'What is your primary industry focus?', options: ['Same as my target roles', 'An adjacent industry', 'Changing industries'] },
+  { key: 'relocation', q: 'Are you open to relocating for the right role?', options: ['Yes, immediately', 'Yes, in 3-6 months', 'Remote only', 'Already in my target market'] },
   { key: 'willing_to_do', q: 'What are you willing to do in the next 3 months?', options: ['Get a certification', 'Build a public project', 'Write publicly (LinkedIn/blog)', 'Update CV only', 'All of the above'] },
 ]
 const SCORE_LABELS = [['keywords', 'Keywords'], ['skills', 'Skills'], ['experience', 'Experience'], ['certifications', 'Certifications'], ['projects', 'Projects']]
