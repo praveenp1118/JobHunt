@@ -468,7 +468,7 @@ async def run_single_feed(
         or settings.platform_anthropic_api_key or settings.anthropic_api_key
 
     started = datetime.now(timezone.utc)
-    found, added, _feed_stats, _rag_stats = await _scan_feeds_for_user(user, [feed], apify_token, anthropic_key, session)
+    found, added, feed_stats, _rag_stats = await _scan_feeds_for_user(user, [feed], apify_token, anthropic_key, session)
     duration = (datetime.now(timezone.utc) - started).total_seconds()
 
     # Usage for this feed run (set_usage_user inside _scan_feeds_for_user reset the session).
@@ -480,9 +480,15 @@ async def run_single_feed(
         APIUsageLog.created_at >= started))).scalars().all()
     apify_runs = sum(r.runs_returned or 0 for r in apify_rows)
     apify_cost = round(sum(r.estimated_cost_usd or 0 for r in apify_rows), 3)
-    return {"jobs_found": found, "jobs_added": added, "duration_seconds": round(duration, 1),
+    fs = feed_stats[0] if feed_stats else {}
+    body = {"jobs_found": found, "jobs_added": added, "duration_seconds": round(duration, 1),
             "tokens_used": _u["tokens"] or None, "cost_inr": round(_u["cost_inr"], 2) or None,
             "apify_runs": apify_runs or None, "apify_cost": apify_cost or None}
+    if fs.get("error"):
+        body["error_kind"] = fs.get("error_kind")               # "quota_exhausted" | "failed"
+        body["quota_exhausted"] = fs.get("error_kind") == "quota_exhausted"
+        body["reason"] = fs.get("note")
+    return body
 
 
 @router.post("/scanner/run", dependencies=[Depends(require_active_subscription)])

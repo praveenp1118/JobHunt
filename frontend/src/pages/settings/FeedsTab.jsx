@@ -75,6 +75,16 @@ export default function FeedsTab() {
   // Run a single feed now (synchronous) and report the result
   const handleRunFeed = async (feed) => {
     const { data } = await runFeed(feed.id)
+    if (data.quota_exhausted) {
+      toast.error(`${feed.name}: Apify credits/usage limit reached on your token — top up your Apify account or wait for the monthly reset.`)
+      qc.invalidateQueries({ queryKey: ['feeds'] })
+      return
+    }
+    if (data.error_kind) {
+      toast.error(`${feed.name}: ${data.reason || 'feed run failed'}`)
+      qc.invalidateQueries({ queryKey: ['feeds'] })
+      return
+    }
     const tk = data.tokens_used
     let msg = `${feed.name}: ${data.jobs_found} found, ${data.jobs_added} added`
     if (tk) msg += ` · ⚡ ${tk < 1000 ? tk : (tk / 1000).toFixed(1) + 'K'} · ₹${(data.cost_inr || 0).toFixed(2)}`

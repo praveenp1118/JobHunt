@@ -5,6 +5,16 @@ Default schedule: Sunday 11 PM IST = 17:30 UTC.
 from app.worker import celery_app
 
 
+def summarize_feed_outcomes(feed_stats):
+    """From the per-feed stats list, return (failed, quota, other) for run-status +
+    messaging. Pure — no I/O. `failed` = feeds with error=True; `quota` = the
+    quota-exhausted subset; `other` = the rest."""
+    failed = [s for s in feed_stats if s.get("error")]
+    quota = [s for s in failed if s.get("error_kind") == "quota_exhausted"]
+    other = [s for s in failed if s.get("error_kind") != "quota_exhausted"]
+    return failed, quota, other
+
+
 @celery_app.task(name="tasks.weekly_job_scan", bind=True, max_retries=1)
 def weekly_job_scan(self):
     """
@@ -122,7 +132,10 @@ async def _weekly_scan_async():
                 select(RunLog).where(RunLog.id == run_log_id)
             )
             run_log = run_log_result.scalar_one()
-            run_log.status = RunStatus.success if not errors else RunStatus.partial
+            feed_failed, quota_feeds, other_failed = summarize_feed_outcomes(all_feed_stats)
+            run_log.status = (RunStatus.success
+                              if not errors and not feed_failed
+                              else RunStatus.partial)
             run_log.jobs_found = total_found
             run_log.jobs_added = total_added
             # Accumulate this run's API usage (rows logged since the scan started).
@@ -140,11 +153,21 @@ async def _weekly_scan_async():
                 all_rag_stats["savings_pct"] = round(
                     (1 - all_rag_stats.get("cost_inr", 0) / all_rag_stats["estimated_unoptimized_cost"]) * 100, 1)
             run_log.details = {"feeds_run": len(all_feed_stats), "feeds_summary": all_feed_stats,
-                               "usage_summary": usage_summary, "rag_stats": all_rag_stats or None}
+                               "usage_summary": usage_summary, "rag_stats": all_rag_stats or None,
+                               "apify_quota_exhausted": bool(quota_feeds),
+                               "feed_failures": len(feed_failed)}
             run_log.completed_at = datetime.now(timezone.utc)
             run_log.duration_seconds = (run_log.completed_at - run_log.started_at).total_seconds()
-            if errors:
-                run_log.error_message = "; ".join(errors[:5])
+            reason_bits = list(errors)
+            if quota_feeds:
+                names = ", ".join(s.get("feed_name", "?") for s in quota_feeds[:3])
+                reason_bits.append(
+                    f"Apify usage/credit limit reached on {names} — top up your Apify "
+                    "account or wait for the monthly reset")
+            if other_failed:
+                reason_bits.append(f"{len(other_failed)} feed(s) failed")
+            if reason_bits:
+                run_log.error_message = "; ".join(str(b) for b in reason_bits[:5])
 
             await session.commit()
 
@@ -169,7 +192,8 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
     """Scan all feeds for a single user."""
     from app.utils.usage_logger import set_usage_user
     set_usage_user(user.id)  # attribute all agent calls in this scan to this user
-    from app.mcp.apify_mcp import run_actor, normalise_job, build_linkedin_input, build_google_jobs_input
+    from app.mcp.apify_mcp import (run_actor, normalise_job, build_linkedin_input,
+                                   build_google_jobs_input, ApifyQuotaExhausted)
     from app.mcp.rss_mcp import fetch_rss_feed
     from app.agents.jd_agents import pre_filter_jd, compute_jd_hash, build_user_keywords
     from app.agents.scanner_agents import batch_score_s1, detect_market_from_job
@@ -211,6 +235,7 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
             "raw_results": 0, "pre_filter_passed": 0, "pre_filter_failed": 0,
             "s1_scored": 0, "above_threshold": 0, "duplicates": 0, "saved": 0,
             "rejected": [], "saved_examples": [], "note": None,
+            "error": False, "error_kind": None,   # None | "quota_exhausted" | "failed"
         }
         for f in feeds
     }
@@ -282,7 +307,17 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                 if count == 0:
                     stats[fid]["note"] = "Apify actor returned no usable results"
 
+        except ApifyQuotaExhausted as e:
+            stats[fid]["error"] = True
+            stats[fid]["error_kind"] = "quota_exhausted"
+            stats[fid]["note"] = (
+                "Apify credits/usage limit reached on your token — top up your Apify "
+                f"account or wait for the monthly reset. ({e.reason})")
+            print(f"⚠️ Feed {feed.name}: Apify quota exhausted — {e.reason}")
+            continue
         except Exception as e:
+            stats[fid]["error"] = True
+            stats[fid]["error_kind"] = "failed"
             stats[fid]["note"] = f"Feed error: {e}"
             print(f"⚠️ Feed {feed.name} failed: {e}")
             continue

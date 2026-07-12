@@ -16,7 +16,11 @@ export default function ScanFeedBreakdown({ f }) {
         {f.feed_name} <span className="text-gray-300 uppercase">({f.feed_type})</span>
       </p>
       {f.note ? (
-        <p className="text-gray-400 mt-0.5">{f.note}</p>
+        <p className={
+          f.error_kind === 'quota_exhausted' ? 'text-amber-600 mt-0.5 font-medium'
+          : f.error ? 'text-red-500 mt-0.5'
+          : 'text-gray-400 mt-0.5'
+        }>{f.error_kind === 'quota_exhausted' ? '⚠️ ' : ''}{f.note}</p>
       ) : (
         <p className="text-gray-500 mt-0.5">
           {f.raw_results} raw → {f.pre_filter_passed} pre-filter pass
