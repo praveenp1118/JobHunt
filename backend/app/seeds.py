@@ -198,11 +198,9 @@ PLATFORM_COMPANIES = [
 ]
 
 # ── Platform feeds ────────────────────────────────────────────────────────────
+# NOTE: Indeed discontinued public RSS — every *.indeed.com/rss feed is permanently
+# 404, so they are intentionally NOT seeded (deactivate any existing rows via SQL).
 PLATFORM_FEEDS = [
-    {"feed_type": "rss",   "name": "Indeed NL",      "url_or_actor": "https://nl.indeed.com/rss?q=head+of+product&l=Netherlands"},
-    {"feed_type": "rss",   "name": "Indeed AE",      "url_or_actor": "https://ae.indeed.com/rss?q=head+of+product&l=Dubai"},
-    {"feed_type": "rss",   "name": "Indeed SG",      "url_or_actor": "https://sg.indeed.com/rss?q=head+of+product+ai&l=Singapore"},
-    {"feed_type": "rss",   "name": "Indeed IN",      "url_or_actor": "https://in.indeed.com/rss?q=head+of+product+AI&l=Bengaluru"},
     {"feed_type": "rss",   "name": "Jobicy NL",      "url_or_actor": "https://jobicy.com/feed/job_feed?search_keywords=head+of+product&search_region=netherlands"},
     {"feed_type": "apify", "name": "LinkedIn Jobs",  "url_or_actor": "apify/linkedin-jobs-scraper"},
     {"feed_type": "apify", "name": "Google Jobs",    "url_or_actor": "bebity/google-jobs-scraper"},
