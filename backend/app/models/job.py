@@ -80,6 +80,9 @@ class Job(Base, TimestampMixin):
 
     # JD content
     jd_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)  # SHA-256
+    # Cross-source canonical dedup key (job-id → canonical URL → company+role+location).
+    # UNIQUE (user_id, dedup_key) via migration v7 collapses the same job found by any source.
+    dedup_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, index=True)
     jd_raw: Mapped[Optional[str]] = mapped_column(Text, nullable=True)    # original scraped text
     jd_md: Mapped[Optional[str]] = mapped_column(Text, nullable=True)     # parsed markdown
     jd_language: Mapped[str] = mapped_column(String(10), default="en")

@@ -82,6 +82,16 @@ async def _check_duplicate(jd_hash: str, user_id: uuid.UUID, session: AsyncSessi
     return result.scalar_one_or_none()
 
 
+async def _check_duplicate_key(dedup_key: str, user_id: uuid.UUID, session: AsyncSession) -> Optional[Job]:
+    """Cross-source dedup: match on the canonical dedup_key (job-id → URL → company+role+loc)."""
+    if not dedup_key:
+        return None
+    result = await session.execute(
+        select(Job).where(Job.dedup_key == dedup_key, Job.user_id == user_id)
+    )
+    return result.scalars().first()
+
+
 async def _enrich_job(job: Job, session: AsyncSession) -> JobRead:
     """Add labels from related tables."""
     item = JobRead.model_validate(job)
@@ -222,19 +232,18 @@ async def confirm_and_save_job(
             detail="Parse session expired or not found. Please re-parse the JD.",
         )
 
-    # Check duplicate again (in case user confirmed after a delay)
+    # Check duplicate again (in case user confirmed after a delay) — on the canonical key.
+    from app.utils.dedup import build_dedup_key, upsert_job
     jd_hash = cached.get("jd_hash")
-    existing = await _check_duplicate(jd_hash, user.id, session) if jd_hash else None
+    parsed = cached.get("parsed", {})
+    dedup_key = build_dedup_key(body.company, body.role,
+                                body.location or parsed.get("location"), body.portal_url)
+    existing = await _check_duplicate_key(dedup_key, user.id, session)
     if existing:
         return await _enrich_job(existing, session)
 
-    # Map parsed industry/function to DB IDs if available
-    industry_id = None
-    function_id = None
-    parsed = cached.get("parsed", {})
-
-    # Create job record
-    job = Job(
+    # Create job record (ON CONFLICT DO NOTHING is the race guard vs parallel sources)
+    job, _created = await upsert_job(session, dict(
         user_id=user.id,
         company=body.company,
         role=body.role,
@@ -243,6 +252,7 @@ async def confirm_and_save_job(
             f"{body.location} {body.company}"
         ),
         jd_hash=jd_hash,
+        dedup_key=dedup_key,
         jd_raw=cached.get("raw_text", "")[:50000],  # cap at 50KB
         jd_md=body.jd_md or cached.get("raw_text", "")[:50000],
         jd_language=parsed.get("jd_language", "en"),
@@ -258,8 +268,7 @@ async def confirm_and_save_job(
         score_components=cached.get("score_components"),
         salary_range_raw=parsed.get("comp_range"),
         notes=body.notes,
-    )
-    session.add(job)
+    ))
     await session.commit()
     await session.refresh(job)
 
@@ -281,20 +290,22 @@ async def save_job_direct(
     """
     Direct save — used by Gmail and Apify importers who already have structured data.
     """
+    from app.utils.dedup import build_dedup_key, upsert_job
     jd_hash = compute_jd_hash(raw_text) if raw_text else None
+    dedup_key = build_dedup_key(body.company, body.role, body.location, body.portal_url)
 
-    if jd_hash:
-        existing = await _check_duplicate(jd_hash, user.id, session)
-        if existing:
-            return await _enrich_job(existing, session)
+    existing = await _check_duplicate_key(dedup_key, user.id, session)
+    if existing:
+        return await _enrich_job(existing, session)
 
-    job = Job(
+    job, _created = await upsert_job(session, dict(
         user_id=user.id,
         company=body.company,
         role=body.role,
         location=body.location,
         market=body.market or detect_market_from_text(f"{body.location or ''} {body.company}"),
         jd_hash=jd_hash,
+        dedup_key=dedup_key,
         jd_raw=raw_text[:50000] if raw_text else None,
         jd_md=raw_text[:50000] if raw_text else None,
         recruiter_email=body.recruiter_email,
@@ -303,8 +314,7 @@ async def save_job_direct(
         status=JobStatus.new,
         s1=s1_score,
         notes=body.notes,
-    )
-    session.add(job)
+    ))
     await session.commit()
     await session.refresh(job)
     return await _enrich_job(job, session)

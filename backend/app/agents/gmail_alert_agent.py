@@ -328,22 +328,23 @@ async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
         if user_keywords and not any(kw and kw in tl for kw in user_keywords):
             results.append({"url": url, "reason": "no_intent_match", "role": title, "company": company})
             continue
-        jd_hash = compute_jd_hash(f"{title} {company} {url}")
+        jd_hash = compute_jd_hash(f"{title} {company} {url}")   # kept (backwards-compat)
+        from app.utils.dedup import build_dedup_key, upsert_job
+        dedup_key = build_dedup_key(company, title, c.get("location"), url)
         existing = (await session.execute(
-            select(Job.id).where(Job.jd_hash == jd_hash, Job.user_id == user.id)
+            select(Job.id).where(Job.dedup_key == dedup_key, Job.user_id == user.id)
         )).scalars().first()
         if existing:
             results.append({"url": url, "reason": "duplicate", "role": title, "company": company})
             continue
-        new_id = uuid_module.uuid4()
-        session.add(Job(
-            id=new_id,
+        _saved, _created = await upsert_job(session, dict(
             user_id=user.id,
             company=company,
             role=title,
             location=c.get("location"),
             market=detect_market_from_text(f"{c.get('location', '')} {snippet}"),
             jd_hash=jd_hash,
+            dedup_key=dedup_key,
             jd_raw=snippet[:50000],
             jd_md=snippet[:50000],
             jd_language="en",
@@ -357,6 +358,10 @@ async def _save_gated_cards(cards, user, session, source_email_id, master_cv_md,
             source_email_id=source_email_id,
             detected_domain_cv_id=None,
         ))
+        if not _created:           # parallel source / repeat digest already saved it
+            results.append({"url": url, "reason": "duplicate", "role": title, "company": company})
+            continue
+        new_id = _saved.id
         saved_ids.append(str(new_id))
         # Auto-queue a background fetch+score ONLY for non-LinkedIn (public ATS) URLs —
         # LinkedIn needs a login, so fetching it just hits a sign-in wall. The countdown
@@ -505,9 +510,11 @@ async def process_job_alert_email(
                     results.append({"url": url, "reason": f"stage1_keyword_{_m}/{_kw_threshold}"})
                     continue
 
-            jd_hash = compute_jd_hash(content)
+            jd_hash = compute_jd_hash(content)   # kept (backwards-compat)
+            from app.utils.dedup import build_dedup_key, upsert_job
+            dedup_key = build_dedup_key(None, None, None, url)   # url-based (tier 1/2)
             existing = (await session.execute(
-                select(Job.id).where(Job.jd_hash == jd_hash, Job.user_id == user.id)
+                select(Job.id).where(Job.dedup_key == dedup_key, Job.user_id == user.id)
             )).scalars().first()
             if existing:
                 results.append({"url": url, "reason": "duplicate"})
@@ -546,15 +553,14 @@ async def process_job_alert_email(
                                 "role": role, "company": company})
                 continue
 
-            new_id = uuid_module.uuid4()
-            session.add(Job(
-                id=new_id,
+            _saved, _created = await upsert_job(session, dict(
                 user_id=user.id,
                 company=company,
                 role=role,
                 location=parsed.get("location"),
                 market=parsed.get("market") or detect_market_from_text(content),
                 jd_hash=jd_hash,
+                dedup_key=dedup_key,
                 jd_raw=content[:50000],
                 jd_md=content[:50000],
                 jd_language=parsed.get("jd_language") or "en",
@@ -568,6 +574,10 @@ async def process_job_alert_email(
                 source_email_id=email_thread.id,
                 detected_domain_cv_id=(uuid_module.UUID(best_id) if best_id else None),
             ))
+            if not _created:
+                results.append({"url": url, "reason": "duplicate"})
+                continue
+            new_id = _saved.id
             saved_ids.append(str(new_id))
             results.append({"url": url, "reason": "saved", "s1": s1, "s1d": best_s1d,
                             "domain_scores": _labelled(dscores), "best_domain_cv": label_map.get(best_id),
@@ -667,15 +677,15 @@ async def process_save_job_email(
         job_input, domain_cv_list, anthropic_key, model)).get("j", {})
     best_id, best_s1d = _best_domain(dscores)
 
-    new_id = uuid_module.uuid4()
-    session.add(Job(
-        id=new_id,
+    from app.utils.dedup import build_dedup_key, upsert_job
+    _saved, _created = await upsert_job(session, dict(
         user_id=user.id,
         company=company,
         role=role,
         location=parsed.get("location"),
         market=parsed.get("market") or detect_market_from_text(content),
         jd_hash=compute_jd_hash(content),
+        dedup_key=build_dedup_key(company, role, parsed.get("location"), url),
         jd_raw=content[:50000],
         jd_md=content[:50000],
         jd_language=parsed.get("jd_language") or "en",
@@ -689,7 +699,9 @@ async def process_save_job_email(
         source_email_id=email_thread.id,
         detected_domain_cv_id=(uuid_module.UUID(best_id) if best_id else None),
     ))
-    return _log([str(new_id)], {"reason": "email_to_jobhunt", "action": "saved", "url": url,
+    new_id = _saved.id
+    return _log([str(new_id)], {"reason": "email_to_jobhunt",
+                                "action": "saved" if _created else "duplicate", "url": url,
                                 "company": company, "role": role, "s1": s1, "s1d": best_s1d,
                                 "job_id": str(new_id)})
 

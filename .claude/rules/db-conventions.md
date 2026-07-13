@@ -5,7 +5,7 @@
 - Migration naming: v3_{feature_name}.py
 - Always run: alembic upgrade head after creating
 - Never edit existing migrations — create new ones
-- Current head: v5_razorpay_columns
+- Current head: v7_dedup_key_unique
 
 ## Model conventions
 - All PKs: UUID (not integer)

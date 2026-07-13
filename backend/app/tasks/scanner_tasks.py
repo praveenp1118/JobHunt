@@ -359,20 +359,25 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                 stats[fid]["pre_filter_failed"] += 1
             _reject(fid, job, f"pre_filter_fail: {result.get('reason_code') or 'rejected'}", s1=0)
 
-    # ── 3. Dedup (vs DB AND within this batch) ──────────────────────────────
+    # ── 3. Dedup (canonical dedup_key vs DB AND within this batch) ───────────
+    # Pre-check on dedup_key avoids paying Claude to score a job we already have; the
+    # ON CONFLICT at insert (upsert_job) is the ultimate parallel-source race guard.
+    from app.utils.dedup import build_dedup_key
     new_jobs = []
-    seen_hashes = set()  # guard against duplicate cards within the same scan
+    seen_keys = set()  # guard against duplicate cards within the same scan
     for job in filtered_jobs:
         fid = job.get("feed_id")
         raw_text = f"{job.get('role', '')} {job.get('company', '')} {job.get('description', '')}"
-        jd_hash = compute_jd_hash(raw_text)
+        job["jd_hash"] = compute_jd_hash(raw_text)   # kept (community + backwards-compat)
+        dk = build_dedup_key(job.get("company", ""), job.get("role", ""),
+                             job.get("location", ""), job.get("url"))
+        job["dedup_key"] = dk
         # .first() (not scalar_one_or_none) — tolerant of any pre-existing dup rows.
         existing = (await session.execute(
-            select(Job.id).where(Job.jd_hash == jd_hash, Job.user_id == user.id)
+            select(Job.id).where(Job.dedup_key == dk, Job.user_id == user.id)
         )).scalars().first()
-        if jd_hash not in seen_hashes and not existing:
-            seen_hashes.add(jd_hash)
-            job["jd_hash"] = jd_hash
+        if dk not in seen_keys and not existing:
+            seen_keys.add(dk)
             new_jobs.append(job)
         else:
             if fid in stats:
@@ -486,13 +491,15 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                 jd_text = BeautifulSoup(jd_text, "html.parser").get_text(separator="\n")
             jd_text = jd_text[:50000]
 
-            _saved = Job(
+            from app.utils.dedup import upsert_job
+            _saved, _created = await upsert_job(session, dict(
                 user_id=user.id,
                 company=job.get("company", "Unknown"),
                 role=job.get("role", "Unknown"),
                 location=job.get("location"),
                 market=market,
                 jd_hash=job_hash,
+                dedup_key=job.get("dedup_key"),
                 jd_raw=jd_text,
                 jd_md=jd_text,
                 portal_url=job.get("url"),
@@ -506,8 +513,11 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                 salary_range_raw=job.get("salary"),
                 source_feed_id=feed.id if feed else None,
                 detected_domain_cv_id=feed.domain_cv_id if feed else None,
-            )
-            session.add(_saved)
+            ))
+            if not _created:      # a parallel source already saved this exact job
+                if fid in stats:
+                    stats[fid]["duplicates"] += 1
+                continue
             if not pending:
                 saved_job_objs.append(_saved)
             added += 1

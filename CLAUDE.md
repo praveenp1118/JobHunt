@@ -1367,7 +1367,36 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: July 13, 2026 (later still) — **Razorpay Stages 3, 4 & 6 (provider flag + ancillary
+*Last updated: July 13, 2026 (later³) — **Cross-source dedup foundation (Phase 1) — prerequisite for
+adding Bright Data as a parallel scan source.** Migration head now **`v7_dedup_key_unique`**; test count
+**182 (179 pass + 3 skip)**. The old dedup was an exact SHA-256 of per-source-different text (scanner hashed
+role+company+description, gmail hashed title+company+url, etc.) with no URL/job-id key and no unique
+constraint — so the SAME posting from two sources never collapsed. Phase 1 adds a **tiered canonical
+`dedup_key`** (`utils/dedup.py::build_dedup_key`): tier-1 canonical job-id (`linkedin:<id>` from
+`/jobs/view/<id>` incl. the `/comm/` email-tracking form; `indeed:<jk>`) → tier-2 canonical URL (strip
+tracking/query, drop `/comm`, lowercase host) → tier-3 normalized company+role+location (reusing
+`normalize_company`/`normalize_role`; NOT description). Keys are length-bounded (hashed if > 480 chars) to fit
+`jobs.dedup_key VARCHAR(512)`. **All insert paths** now set `dedup_key` + insert via `upsert_job` =
+**`INSERT … ON CONFLICT (user_id, dedup_key) DO NOTHING`** (the parallel-source race guard the old
+SELECT-then-INSERT lacked): scanner (Apify+RSS), gmail_alert_agent (all 3 branches: gated cards / public URL /
+email-to-jobhunt), jobs.py (`confirm_and_save_job` + `save_job_direct`). `jd_hash` is **kept** (community +
+backwards-compat); only the dedup DECISION moved to `dedup_key`. Migrations are **staged**: **`v6_dedup_key_column`**
+(add nullable column + non-unique index) → **`scripts/dedup_resolve.py --apply`** (backfill every row's
+`dedup_key` + resolve duplicates: survivor = has-dependents → non-partial → scored → newest; never deletes a
+row with a tailored CV / email thread / community contribution / advanced status; merge-up fills the
+survivor's NULLs) → **`v7_dedup_key_unique`** (UNIQUE `(user_id, dedup_key)`, with a **guard that refuses to
+build the index if any dup group remains**). +7 tests (`test_dedup.py`: builder per tier + cross-source
+LinkedIn collapse + ON-CONFLICT single-save). **Verified end-to-end on the local dev DB** (636 jobs → backfill
+wrote all keys + deleted 56 genuine same-id dupes → 580 rows, 0 NULL keys, 0 dup groups → unique index created
+→ suite green). Phase 1 is **`DO NOTHING`**; **DO-UPDATE-enrich** (fill a partial row from a fuller later
+source — the Bright-Data collect-by-URL payoff) is the flagged **fast-follow**. **⚠️ PROD DEPLOY GOTCHA:** the
+backend `entrypoint.sh` auto-runs `alembic upgrade head` on start (`set -e`), so a naive
+`git pull && up --build` would run v6 AND v7 together and **v7's guard fails the backend startup** until the
+backfill runs. Staged prod deploy: `pg_dump` → build image → one-off `run --rm --entrypoint "" backend alembic
+upgrade v6_dedup_key_column` → `… python -m app.scripts.dedup_resolve` (dry-run, review) → `… --apply` → `…
+alembic upgrade head` (v7) → THEN `up -d backend` (entrypoint's upgrade-head is now a no-op) → resume workers.
+
+Prior: July 13, 2026 (later still) — **Razorpay Stages 3, 4 & 6 (provider flag + ancillary
 provider-aware cancels + policy docs).** All API-independent (no live Razorpay call to build/test);
 `PAYMENT_PROVIDER` defaults to `stripe` so the deploy is user-invisible until flipped. Test count **175
 (172 pass + 3 skip)**.
