@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import {
   getJob, getJdHighlights, generateTailor, getTailorDraft, getTailorChangelog,
@@ -16,6 +16,7 @@ import DualRingPill from '../../components/ui/DualRingPill'
 import ScoreToggle from '../../components/ui/ScoreToggle'
 import TokenBadge from '../../components/ui/TokenBadge'
 import CommunityInsights from '../../components/community/CommunityInsights'
+import PartialJdPanel from '../../components/jobs/PartialJdPanel'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
 import { toast } from '../../store/toast'
@@ -59,6 +60,7 @@ const SEND_STATUSES = ['applied', 'bookmarked', 'screening']
 export default function TailorPage() {
   const { jobId } = useParams()
   const navigate = useNavigate()
+  const qc = useQueryClient()
 
   const [selectedDomainCvId, setSelectedDomainCvId] = useState(null)
   const [showCvPicker, setShowCvPicker] = useState(false)
@@ -163,6 +165,10 @@ export default function TailorPage() {
   useEffect(() => {
     if (draftStatus !== 'none') return
     if (!job || !selectedDomainCvId || autoMode === undefined) return
+    // Partial-JD jobs only carry a ~50-char snippet — never generate JD highlights or
+    // auto-tailor against it (would waste tokens + produce garbage). The render shows the
+    // paste-to-enrich gate instead; this effect re-runs once has_partial_jd flips false.
+    if (job.has_partial_jd) return
     if (genRef.current === selectedDomainCvId) return
     genRef.current = selectedDomainCvId
     setTailoredCvId(null); setApplyResult(null); setHighlights(null)
@@ -322,7 +328,34 @@ export default function TailorPage() {
         </div>
       )}
 
+      {/* Partial-JD gate — the JD is only an alert snippet. Paste the full JD to unlock
+          tailoring (zero Apify spend; LinkedIn is login-gated so no bot fetch works). */}
+      {job.has_partial_jd && (
+        <div className="flex-1 overflow-y-auto bg-gray-50 flex justify-center p-6">
+          <div className="w-full max-w-xl">
+            <div className="bg-white rounded-2xl border border-amber-200 p-6">
+              <div className="flex items-start gap-2 mb-1">
+                <span className="text-amber-500 text-lg leading-none mt-0.5">⚠️</span>
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">This job has a partial JD</h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Alert emails include only a short snippet — not enough to tailor. Paste the full
+                    job description and we'll score it (S1 + best domain fit) and unlock tailoring right here.
+                  </p>
+                </div>
+              </div>
+              <PartialJdPanel
+                job={job}
+                onEnriched={() => qc.invalidateQueries({ queryKey: ['job', jobId] })}
+                className="mt-2"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3-column body */}
+      {!job.has_partial_jd && (
       <div className="flex-1 flex overflow-hidden">
         {/* ── LEFT (280px) ── */}
         <aside className="w-[320px] shrink-0 border-r border-gray-200 bg-white overflow-y-auto p-4 space-y-5">
@@ -672,6 +705,7 @@ export default function TailorPage() {
           </div>
         </aside>
       </div>
+      )}
 
       {/* Overflow warning modal */}
       {overflowInfo && (
