@@ -1449,7 +1449,19 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: July 13, 2026 (later⁶) — **Apify cost quick-wins + dedup DO-UPDATE enrich + cross-scan
+*Last updated: July 13, 2026 (later⁷) — **Partial-JD rescore now refreshes the ATS/Pursuit dual scores.**
+Fixed a bug predating the dual-scoring migration: `rescore_partial_job_from_text` +
+`fetch_and_rescore_partial_job` recomputed only `s1`/`s1d`, so after ANY enrichment (Bright Data / manual
+paste / free web-fetch) the Jobs-list **Match**/**Best Fit** and the Tailor score card — which read
+`ats_master`/`pursuit_master` + `ats_domain`/`pursuit_domain` — stayed NULL/stale while only the Tailor top
+pills (`s1`/`s1d`) moved. New shared helper **`_refresh_dual_scores`** calls `compute_dual_scores` for
+**master + best-domain** (mirroring the scanner exactly; essence→master-essence fallback) right before the
+existing commit — so all four dual fields + `score_components` refresh in the same transaction (no
+double-score; +4 Haiku calls per enrichment, intent-gated). +1 test (enrich → asserts
+ats_master/pursuit_master AND ats_domain/pursuit_domain populated + has_partial_jd=false). Test count **201
+(198 pass + 3 skip)**. No migration. NOT deployed.
+
+Prior: July 13, 2026 (later⁶) — **Apify cost quick-wins + dedup DO-UPDATE enrich + cross-scan
 enrich routing.** No migration; test count **200 (197 pass + 3 skip)**.
 - **Apify quick-wins:** removed the dead **Google Jobs** feed from `seeds.py PLATFORM_FEEDS` (actor returns 0
   but still spins a paid run every scan) — plus a one-off **prod SQL** to deactivate the existing per-user

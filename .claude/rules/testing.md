@@ -5,7 +5,9 @@
 - Test count must NEVER decrease
 - Run full suite before every commit:
   docker-compose exec backend pytest tests/ -v
-- Current count: 200 tests (197 pass + 3 skip) — must stay ≥ 200
+- Current count: 201 tests (198 pass + 3 skip) — must stay ≥ 201
+  (NB: test_usage `test_parse_jd_returns_tokens_in_response` is a LIVE owner test — a real
+  Claude call to parse/text — so it can transiently 500 on API hiccups; re-run to confirm.)
 
 ## Test patterns
 - Use conftest.py fixtures (client, user_creds)

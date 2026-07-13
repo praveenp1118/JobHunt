@@ -717,6 +717,32 @@ async def process_save_job_email(
                                 "job_id": str(new_id)})
 
 
+async def _refresh_dual_scores(session, job, master, best_id, jd_text, anthropic_key):
+    """Recompute the ATS + Pursuit dual scores the UI actually reads (Jobs list Match /
+    Best Fit + Tailor score card) from the now-full JD — master + best-domain. Mirrors the
+    scanner's post-save dual-scoring exactly (compute_dual_scores writes ats_<entity>/
+    pursuit_<entity> + score_components onto the job). No-op when we can't score (no key /
+    no master CV). Never breaks the enrichment on a dual-scoring hiccup."""
+    if not (anthropic_key and master):
+        return
+    from app.agents.dual_scorer import compute_dual_scores
+    from app.models.cv import DomainCV
+    try:
+        await compute_dual_scores(master.essence_json or {}, master.content_md or "",
+                                  jd_text, "master", job=job, anthropic_key=anthropic_key)
+        if best_id:
+            dcv = (await session.execute(
+                select(DomainCV.content_md, DomainCV.essence_json)
+                .where(DomainCV.id == uuid_module.UUID(best_id)))).first()
+            if dcv:
+                # essence preferred; fall back to master essence (same as the scanner)
+                await compute_dual_scores(dcv.essence_json or master.essence_json or {},
+                                          dcv.content_md or "", jd_text, "domain",
+                                          job=job, anthropic_key=anthropic_key)
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️ dual-score refresh failed for job {job.id}: {e}")
+
+
 async def fetch_and_rescore_partial_job(job_id, user, session, anthropic_key, model=None) -> dict:
     """Fetch the full JD for a partial-JD (gmail_alert) job from its portal_url and
     re-score it properly.
@@ -778,6 +804,9 @@ async def fetch_and_rescore_partial_job(job_id, user, session, anthropic_key, mo
         job.detected_domain_cv_id = uuid_module.UUID(best_id)
     if parsed.get("market"):
         job.market = parsed.get("market")
+    # Refresh the ATS/Pursuit dual scores the list (Match/Best Fit) + Tailor card read —
+    # not just s1/s1d. Shares the same commit below (no double-score).
+    await _refresh_dual_scores(session, job, master, best_id, content, anthropic_key)
     job.has_partial_jd = False
     await session.commit()
     return {"status": "scored", "s1": s1, "s1d": best_s1d,
@@ -828,6 +857,9 @@ async def rescore_partial_job_from_text(job_id, user, session, anthropic_key, mo
         job.detected_domain_cv_id = uuid_module.UUID(best_id)
     if parsed.get("market"):
         job.market = parsed.get("market")
+    # Refresh the ATS/Pursuit dual scores the list (Match/Best Fit) + Tailor card read —
+    # not just s1/s1d. Shares the same commit below (no double-score).
+    await _refresh_dual_scores(session, job, master, best_id, content, anthropic_key)
     job.has_partial_jd = False
     await session.commit()
     return {"status": "scored", "s1": s1, "s1d": best_s1d,

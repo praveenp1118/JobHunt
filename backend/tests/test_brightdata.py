@@ -354,3 +354,85 @@ async def test_enrich_brightdata_failure_keeps_partial(monkeypatch):
     finally:
         await _cleanup(S, uid)
         await eng.dispose()
+
+
+# ── Rescore now refreshes the ATS/Pursuit dual scores the UI reads (not just s1/s1d) ──
+async def test_rescore_populates_dual_scores(monkeypatch):
+    """Enriching a partial job recomputes ats_master/pursuit_master AND ats_domain/
+    pursuit_domain (the fields the Jobs list + Tailor card read) — not just s1/s1d —
+    and clears has_partial_jd."""
+    import pytest
+    import app.agents.jd_agents as jd
+    import app.agents.gmail_alert_agent as ga
+    import app.agents.dual_scorer as ds
+    from app.agents.gmail_alert_agent import rescore_partial_job_from_text
+    from app.models.job import Job, JobSource, JobStatus
+    from app.models.cv import MasterCV, DomainCV, CVStatus
+    from app.models.user import User
+
+    # No real Claude: stub s1 (parse), s1d (domain batch), and the ATS/Pursuit scorers.
+    async def fake_parse(content, cv_md, key, model=None):
+        return {"s1_score": 70, "parsed": {"role": "AI Product Manager", "company": "Workwize"}}
+    monkeypatch.setattr(jd, "parse_and_score_jd", fake_parse)
+
+    dcv_id = uuid.uuid4()
+
+    async def fake_domain_scores(job_inputs, domain_cv_list, key, model=None):
+        return {"j": {str(dcv_id): 82}}          # best domain = dcv_id, s1d = 82
+    monkeypatch.setattr(ga, "_score_jobs_vs_domain_cvs", fake_domain_scores)
+
+    async def fake_ats(cv_essence, jd_text, anthropic_key=None, model=None):
+        return {"total": 61, "components": {}}
+    async def fake_pursuit(cv_essence, cv_md, jd_text, job_posted_days_ago=7, anthropic_key=None, model=None):
+        return {"total": 47, "components": {}}
+    monkeypatch.setattr(ds, "compute_ats_score", fake_ats)
+    monkeypatch.setattr(ds, "compute_pursuit_score", fake_pursuit)
+
+    eng, S = _sm()
+    uid, jid, mcv_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    try:
+        # DomainCV needs real industry/function FKs — pull existing seeded ones (skip if unseeded).
+        async with S() as s:
+            ind_id = (await s.execute(text("SELECT id FROM industry_verticals LIMIT 1"))).scalar()
+            fn_id = (await s.execute(text("SELECT id FROM functional_disciplines LIMIT 1"))).scalar()
+        if not ind_id or not fn_id:
+            await eng.dispose()
+            pytest.skip("industry_verticals / functional_disciplines not seeded")
+
+        async with S() as s:
+            s.add(User(id=uid, email=f"rs-{uid}@t.co", hashed_password="x", is_active=True,
+                       is_superuser=False, is_verified=True, name="RS"))
+            await s.commit()
+        async with S() as s:
+            s.add(MasterCV(id=mcv_id, user_id=uid, is_active=True, content_md="master cv",
+                           essence_json={"keywords": ["product"]}))
+            await s.commit()
+        async with S() as s:
+            s.add(DomainCV(id=dcv_id, user_id=uid, master_cv_id=mcv_id, industry_id=ind_id,
+                           function_id=fn_id, country_code="NL", status=CVStatus.active,
+                           content_md="domain cv", essence_json={"keywords": ["ai"]}))
+            s.add(Job(id=jid, user_id=uid, company="Workwize", role="AI Product Manager",
+                      has_partial_jd=True, jd_raw="Full JD. " * 40, jd_md="Full JD. " * 40,
+                      dedup_key="linkedin:4418679450", source=JobSource.gmail_alert,
+                      status=JobStatus.new))
+            await s.commit()
+
+        async with S() as s:
+            user = (await s.execute(select(User).where(User.id == uid))).scalar_one()
+            res = await rescore_partial_job_from_text(jid, user, s, anthropic_key="fake-key")
+        assert res["status"] == "scored"
+
+        async with S() as s:
+            j = (await s.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.has_partial_jd is False
+            assert j.s1 == 70 and j.s1d == 82                      # legacy fields (already worked)
+            assert j.ats_master == 61 and j.pursuit_master == 47   # NEW: drives list "Match"
+            assert j.ats_domain == 61 and j.pursuit_domain == 47   # NEW: drives list "Best Fit"
+    finally:
+        async with S() as s:
+            await s.execute(text("DELETE FROM jobs WHERE user_id=:u"), {"u": str(uid)})
+            await s.execute(text("DELETE FROM domain_cvs WHERE user_id=:u"), {"u": str(uid)})
+            await s.execute(text("DELETE FROM master_cvs WHERE user_id=:u"), {"u": str(uid)})
+            await s.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
+            await s.commit()
+        await eng.dispose()
