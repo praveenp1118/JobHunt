@@ -15,6 +15,9 @@ The central pipeline for every opportunity.
   pills at once; every score column is click-to-sort.
 - **Filtering & sorting:** clickable column sort plus combinable Source / Score / Domain
   filters, all persisted in the URL so a view can be shared or bookmarked.
+- **One-click full JD (Bright Data):** partial-JD LinkedIn/Indeed jobs can be resolved on demand — a
+  collect-by-URL fetch pulls the full description (solving the LinkedIn login wall), then re-scores and
+  unlocks tailoring. Free web-fetch and manual paste remain as the other two tiers.
 - **Partial-JD awareness:** jobs extracted from alert-email snippets are flagged so you open the
   posting for the full description before tailoring.
 - **Auto-ghosting:** applied jobs with no response after a configurable window are flagged.
@@ -49,7 +52,11 @@ The central pipeline for every opportunity.
 
 - **Domain-CV-driven profiles** — each feed is linked to a domain CV; its search keywords are
   generated from that CV, so scanning stays on-strategy.
-- **Two source types** — RSS boards (e.g. Jobicy) and Apify actors (LinkedIn, Google Jobs).
+- **Three source types** — RSS boards (e.g. Jobicy), Apify actors (LinkedIn), and **Bright Data**
+  (LinkedIn / Indeed keyword search), all bring-your-own-key. A recency filter keeps LinkedIn scans fresh.
+- **Cross-source dedup** — the same posting found by any source (or a repeat scan) saves **once**, keyed on
+  a canonical job-id → URL → company+role+location. A later full-JD scan **auto-enriches** an earlier
+  partial job (fills the JD, never overwrites your edits or scores).
 - **Keyword pre-filter** — a rule-based, zero-cost filter built from the user's target roles +
   feed keywords runs before any paid AI scoring, so only plausible roles are scored.
 - **Multi-domain scoring at ingest** — every saved job is scored against the master CV **and all**

@@ -57,7 +57,7 @@ new account is inert until it redeems an invite key or subscribes.
     </div>
   </div>
   <div class="text-center text-slate-400 text-xs my-2">▼ &nbsp;external integrations&nbsp; ▼</div>
-  <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+  <div class="grid grid-cols-2 sm:grid-cols-6 gap-2.5">
     <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center shadow-sm">
       <div class="text-[13px] font-semibold text-slate-700">Gmail</div>
       <div class="text-[10px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">IMAP + SMTP</div>
@@ -68,7 +68,11 @@ new account is inert until it redeems an invite key or subscribes.
     </div>
     <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center shadow-sm">
       <div class="text-[13px] font-semibold text-slate-700">Apify</div>
-      <div class="text-[10px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">LinkedIn · Google</div>
+      <div class="text-[10px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">LinkedIn</div>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center shadow-sm">
+      <div class="text-[13px] font-semibold text-slate-700">Bright Data</div>
+      <div class="text-[10px] text-slate-500" style="font-family:ui-monospace,Menlo,monospace">LinkedIn · Indeed</div>
     </div>
     <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-center shadow-sm">
       <div class="text-[13px] font-semibold text-slate-700">Playwright</div>
@@ -151,15 +155,30 @@ new account is inert until it redeems an invite key or subscribes.
 
 ## Data flow
 
-### Four input pipelines (all converge on the same scoring + save path)
+### Input pipelines (all converge on the same scoring + save path)
 
 1. **Manual** — paste JD text or a URL → JD parser → S1 + multi-domain scoring → save.
-2. **Feed scan** — scheduled (or on-demand) RSS/Apify fetch → keyword pre-filter → dedup →
-   S1 + multi-domain scoring → threshold-gated save, tagged with the source feed + domain CV.
+2. **Feed scan** — scheduled (or on-demand) fetch from **RSS / Apify / Bright Data** feeds → keyword
+   pre-filter → **cross-source dedup** → S1 + multi-domain scoring → threshold-gated save, tagged with
+   the source feed + domain CV.
 3. **Gmail job alerts** — hourly IMAP poll → rule-based alert detection → email-body card
    extraction (gated sources) or fetch + parse (public ATS links) → scoring → save.
 4. **Gmail recruiter mail** — the same poll classifies genuine recruiter replies and flags them
    for human-in-the-loop approval (replies are never auto-sent).
+
+### Cross-source dedup + enrichment
+
+Every save goes through **`upsert_job`** → `INSERT … ON CONFLICT (user_id, dedup_key) DO UPDATE`. The
+**`dedup_key`** is a tiered canonical identity — **canonical job-id** (`linkedin:<id>` / `indeed:<jk>`,
+incl. the LinkedIn `/comm/` email-tracking form) → **canonical URL** → **normalized
+company+role+location** — so the same posting found by Apify **and** Bright Data **and** RSS **and** Gmail
+collapses to **one row** (enforced by a UNIQUE `(user_id, dedup_key)` index). `jd_hash` is kept but
+advisory only. The `DO UPDATE` **enriches gaps only** — a later full-JD scan fills a partial job's
+`jd_raw` and flips `has_partial_jd=false` (never downgrades, never touches status/scores/user edits).
+
+**Partial-JD enrichment (LinkedIn/Indeed alert jobs):** three tiers — free web-fetch (public ATS) →
+**Bright Data collect-by-URL** (`POST /jobs/{id}/enrich-brightdata`, ~1 credit, solves the LinkedIn login
+wall) → manual paste. All reuse the same `rescore_partial_job_from_text` path.
 
 ### Tailor → apply → send flow
 
@@ -281,7 +300,8 @@ base → 7bad (initial) → f6a2 → a1b2 (user profile fields)
 → v3_career_filters → v3_rag_scoring → v3_night_batch → v3_auto_detect_apps
 → v3_email_to_jobhunt → v3_optimization → v3_email_source
 → v3_ats_pursuit → v3_dual_scan_gate → v3_invite_or_pay
-→ v4_tailor_draft_persistence  (head)
+→ v4_tailor_draft_persistence → v5_razorpay_columns
+→ v6_dedup_key_column → v7_dedup_key_unique → v8_brightdata_source  (head)
 ```
 
 ## Scoring Pipeline — Hybrid RAG
@@ -397,7 +417,7 @@ in `run_log.details`, surfaced on the Activity → System scanner cards.
 | AI | Anthropic Claude (each user's own API key) |
 | Task queue | Celery + Redis + Celery Beat |
 | Email | Gmail IMAP (poll) + SMTP (send), BeautifulSoup HTML parsing |
-| Job scanning | RSS feeds + Apify actors |
+| Job scanning | RSS feeds + Apify actors + Bright Data (LinkedIn/Indeed, BYOK) |
 | Browser automation | Playwright (title pre-filter + PDF rendering) |
 | PDF | Playwright HTML template → PDF |
 | Payments | Stripe (AIJobsHunt Pro subscription) |

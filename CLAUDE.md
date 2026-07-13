@@ -26,15 +26,17 @@ dev and in production via `docker-compose.prod.yml` + `Caddyfile`.
 `architecture.html` / `features.html` / `api.html` — thin pages that render the matching `*.md` source
 via marked.js with shared `doc.css` + `doc.js` (consistent Tailwind styling). `.nojekyll` keeps it
 pure-static — no Jekyll.)*  
-**Last major build:** All-domain de-bias (Phase 1 + Phase 2) + hardening sweep (July 12–13, 2026) — the
-pipeline now serves ALL professional domains (finance/ops/sales/consulting/legal), not just product: prompts
-generalized, the pre-filter flipped from a product blocklist to user-intent-driven (`UNIVERSAL_SKIP` junk-only),
-non-product functional disciplines seeded. Plus a security + reliability sweep: gitleaks pre-commit hook,
-Apify quota classification + token-in-header (log-leak fix), scanner S1 truncation/id-mapping fix (0-saved bug),
-Celery beat crontab anchors, domain-score backfill (Best Fit), frontend error-rendering fix, and a Career
-Insights Markdown export. **All 168 smoke tests passing (165 pass + 3 skip).** Platform is feature-complete for launch.
-(prior majors: CV Templates, Governance/GDPR, Career Insights, Community, Stripe, Support Chat,
-Multi-domain-CV scoring, Activity Dashboard, Gmail Job Alert Parser)
+**Last major build:** **Bright Data integration + cross-source dedup** (July 13, 2026) — a new
+cross-source `dedup_key` foundation (canonical job-id → URL → company+role+location, UNIQUE per user,
+`upsert_job` ON CONFLICT), **Bright Data** as a BYOK discovery source (LinkedIn/Indeed) peer to Apify/RSS/Gmail,
+on-demand **collect-by-URL JD enrichment** for partial-JD jobs (the real win — solves the LinkedIn login wall),
+cross-scan auto-enrich (partial→full, never downgrades/touches progress), and Apify cost quick-wins
+(dead Google feed off, LinkedIn recency filter). Migrations head **`v8_brightdata_source`**. **See the
+"Bright Data Integration + Cross-Source Dedup" section below for decisions + current state.** **All 200
+smoke tests passing (197 pass + 3 skip).** Platform is feature-complete for launch.
+(prior majors: All-domain de-bias + hardening sweep, Razorpay parallel billing [dormant], CV Templates,
+Governance/GDPR, Career Insights, Community, Stripe, Support Chat, Multi-domain-CV scoring, Activity Dashboard,
+Gmail Job Alert Parser)
 
 ---
 
@@ -201,6 +203,86 @@ The gate was previously hand-applied to only 7 endpoints and **all of `jobs.py` 
 - **Admin panel:** **Invites tab** (generate + copy-to-clipboard, status list, revoke, extend deadline) and
   **Extension Requests tab** (pending queue, grant/deny) with a **pending-count badge** on the tab.
 - `UserRead` now exposes `subscription_status`/`subscription_plan`/`subscription_end`/`entitlement_source`.
+
+---
+
+## Bright Data Integration + Cross-Source Dedup (major capability — July 13, 2026)
+
+Built as a 3-phase trilogy on top of a new cross-source dedup foundation. **BYOK, cost-aware.**
+Migrations head is **`v8_brightdata_source`**. All shipped + test-backed; **not yet deployed to prod**
+(the owner runs the deploy).
+
+### Phase 1 — cross-source dedup foundation (THE dedup mechanism now)
+The same posting found by Apify **and** Bright Data **and** RSS **and** Gmail must save **once**. The old
+exact-`jd_hash` dedup hashed *per-source-different text*, so it never collapsed cross-source — **the design-doc
+"company+role+location" was NEVER the live logic.**
+- **`utils/dedup.py::build_dedup_key(company, role, location, portal_url)`** — a **tiered canonical key**:
+  tier-1 **canonical job-id** (`linkedin:<id>` from `/jobs/view/<id>` incl. the `/comm/` email-tracking form;
+  `indeed:<jk>`) → tier-2 **canonical URL** (strip tracking/query, drop `/comm`, lowercase host) → tier-3
+  **normalized company+role+location** (reuses `normalize_company`/`normalize_role`; NOT description). Length-
+  bounded (hashed if > 480 chars) to fit `jobs.dedup_key VARCHAR(512)`.
+- **`jobs.dedup_key`** column + **UNIQUE `(user_id, dedup_key)`** index (migrations `v6_dedup_key_column` →
+  backfill via `scripts/dedup_resolve.py --apply` → `v7_dedup_key_unique`). **`jd_hash` is KEPT but advisory
+  only** (community + backwards-compat); the dedup DECISION is `dedup_key`.
+- **`utils/dedup.py::upsert_job(session, values)`** — every insert path saves via this: `INSERT … ON CONFLICT
+  (user_id, dedup_key) DO UPDATE` (see cross-scan auto-enrich below). Wired into scanner (Apify/RSS/Bright Data),
+  gmail_alert_agent (all branches), jobs.py (`confirm_and_save_job` / `save_job_direct`).
+
+### Phase 2 — Bright Data as a discovery source (peer to apify/rss/gmail)
+- **BYOK token** `user_credentials.brightdata_token_enc` (+`_updated_at`) — AES-256, **exact Apify pattern**
+  (Plan & Keys UI, `has_brightdata_token` boolean only, never displayed). **No platform fallback** — skip if unset.
+- **Feeds:** `feed_type='brightdata'`, **`url_or_actor` = sub-source (`'linkedin'`|`'indeed'`)** (the client maps
+  the dataset id), filters in **`user_feeds.provider_config` JSONB** (country/experience_level/time_range/domain/
+  date_posted/limit). **Datasets:** LinkedIn **`gd_lpfll7v5hcqtkxl6l`**, Indeed **`gd_l4dx9j9sscpvs7no2`**.
+- **`utils/brightdata_client.py`** — async trigger→poll→fetch (`/scrape` sync + snapshot poll), per-provider
+  discover-by-keyword schemas + normalizer. `JobSource.brightdata`.
+- **Scanner** fetches+normalizes only; results flow through the **shared pipeline** (free pre-filter BEFORE paid
+  scoring → `dedup_key` → `upsert_job`). Default 25 results/feed; runs in the Celery scan task, never inline.
+- **Usage split:** `provider='brightdata'` (SEPARATE from Apify $), cost **null** (API returns none — dashboard
+  is source of truth); own API-Usage card.
+
+### Phase 3 — on-demand JD-by-URL enrichment (resolves partial-JD jobs)
+- **`POST /jobs/{id}/enrich-brightdata`** — collect-by-URL fetches the full JD for a partial-JD (LinkedIn/Indeed)
+  job; canonicalizes the URL with **dedup's own `_canonical_job_id`**; on success **reuses the exact add-full-jd
+  tail** (`score_pasted_jd` → **`rescore_partial_job_from_text`** — no new rescore logic). 503 if no token, 502
+  on failure — **all leave `has_partial_jd=true`** so manual paste still works. **~1 credit/job.**
+- **Frontend `PartialJdPanel`** — three tiers: free web_fetch → **"Fetch full JD (Bright Data)"** (~1 credit,
+  LinkedIn/Indeed, only when `has_brightdata_token`) → manual paste. Success → job refetch flips the flag → panel
+  unmounts → tailor unlocks inline.
+
+### Cross-scan auto-enrich (`upsert_job` DO UPDATE + scanner routing)
+When a later discovery scan finds a **fuller** JD for an earlier partial job, `upsert_job`'s **DO UPDATE
+enriches** the existing row — **fills gaps only, never overwrites good data, never touches progress**:
+- **Enrich:** `jd_raw`/`jd_md`/`has_partial_jd` replaced ONLY partial→full (≥100-char guard); **never downgrades**.
+  `portal_url`/`salary_range_raw`/`market` filled via `coalesce` (never overwrite non-null).
+- **PROTECTED (never in SET):** status, tailored_cv_id, all scores, notes, source, company/role/location,
+  recruiter_email, scoring_status, jd_hash, etc. Protective WHERE (no churn) + `(xmax=0)` RETURNING keeps
+  `created` accurate. **No auto-rescore.**
+- **Scanner §3 routing** buckets each candidate: new → score+save; existing-partial + full incoming → **enrich**
+  (§3b, no scoring, counted under a per-feed **`enriched`** stat); existing-full → duplicate. Same routing on the
+  gmail public-URL path.
+
+### KEY LEARNING (go/no-go from the live probe)
+- **Bright Data *discovery* (keyword search) tested MEDIOCRE** — noisy / over-filtered (LinkedIn Executive+recency
+  → ~4 loose hits; Indeed 20 with no seniority). Usable but needs keyword tuning; secondary to the current mix.
+- **Bright Data *collect-by-URL* tested EXCELLENT — the real win.** Returns the full JD by canonical URL, solving
+  the **LinkedIn login wall that Apify (a search scraper) cannot**. This is what powers Phase 3 enrichment.
+- **Cost:** free tier **~5,000 credits/mo**, **~1 credit/record**. API returns no per-call cost → read the dashboard.
+
+### Apify cost state (July 13, 2026)
+- **Dead Google feed disabled:** removed from `seeds.py PLATFORM_FEEDS`; the live per-user row is deactivated by a
+  one-off SQL (`UPDATE user_feeds SET is_active=false WHERE feed_type='apify' AND (lower(url_or_actor) LIKE
+  '%google%' OR lower(coalesce(actor_name,'')) LIKE '%google%');`).
+- **LinkedIn recency filter:** `build_linkedin_input` appends **`&f_TPR=r604800`** (7-day default, per-feed via
+  `date_range_days`) so repeat scans fetch FRESH postings, not the same evergreen top-25.
+- **PENDING (bigger lever, NOT done):** consolidate the **11 overlapping LinkedIn Apify feeds → ~3-4** — cost
+  scales linearly with feed count and the feeds heavily overlap (dedup then discards the repeats). See the Apify
+  cost investigation; this is the largest remaining saving.
+
+### Deploy notes
+- **v7's staged-deploy gotcha is PAST:** v7 had a guard that failed the backend entrypoint's auto-`alembic upgrade
+  head` until the backfill ran (needed a one-off `--entrypoint ""` staged run). **v8 and later are normal
+  deploys** — plain `git pull && up -d --build` (auto-upgrade is a clean no-op/forward migration).
 
 ---
 
@@ -400,9 +482,9 @@ docker-compose exec backend pytest tests/test_api_smoke.py -v
 | AI | Anthropic Claude (user's own API key) |
 | Task queue | Celery + Redis + Celery Beat |
 | Email | Gmail IMAP (poll) + SMTP (send) |
-| Job scanning | RSS feeds + Apify actors |
+| Job scanning | RSS feeds + Apify actors + **Bright Data** (LinkedIn/Indeed discovery + collect-by-URL enrichment, BYOK) |
 | PDF | Playwright → HTML template → PDF |
-| Payments | **Stripe** — JobHunt Pro subscription ₹500/mo (Razorpay wallet code present but unused) |
+| Payments | **Stripe (active)** — JobHunt Pro ₹500/mo. **Razorpay is built but DORMANT** (`PAYMENT_PROVIDER=stripe`), blocked on aijobshunt.com merchant approval; post-approval = flip the flag + the webhook-idempotency backlog item. |
 | Storage | Local /app/storage/, user-scoped (`users/{user_id}/tailored|cover_letters|exports/`); S3 migration planned |
 | Testing | pytest + pytest-asyncio (API smoke tests, run in-container against live server) |
 

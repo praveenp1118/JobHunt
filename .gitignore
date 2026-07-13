@@ -76,3 +76,6 @@ feeds_companies_export.sql
 backend/celerybeat-schedule*
 celerybeat-schedule*
 *.pid
+
+# Throwaway Bright Data probe (disposable, never commit)
+backend/app/scripts/bd_test.py
