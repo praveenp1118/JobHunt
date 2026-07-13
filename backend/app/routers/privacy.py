@@ -129,10 +129,18 @@ async def request_deletion(body: DeleteRequest, request: Request,
     user.data_deletion_requested_at = now
     user.data_deletion_scheduled_at = now + timedelta(days=DELETION_GRACE_DAYS)
 
-    # Best-effort: cancel an active Stripe subscription at period end.
+    # Best-effort: cancel the active subscription at period end so FUTURE charges stop.
+    # A deletion request MUST stop the recurring mandate — but a provider hiccup must NOT
+    # block the deletion, so this is wrapped and swallowed.
     try:
-        if user.subscription_id:
-            import asyncio
+        import asyncio
+        from app.utils.razorpay_client import is_razorpay_user, cancel_razorpay_subscription
+        if is_razorpay_user(user):
+            if user.razorpay_subscription_id:
+                await asyncio.to_thread(
+                    cancel_razorpay_subscription, user.razorpay_subscription_id, True)
+                user.subscription_status = "cancelled"
+        elif user.subscription_id:
             import stripe
             from app.config import settings
             stripe.api_key = settings.stripe_secret_key
@@ -140,7 +148,7 @@ async def request_deletion(body: DeleteRequest, request: Request,
             user.subscription_status = "cancelled"
     except Exception as e:  # noqa: BLE001
         import logging
-        logging.getLogger("jobhunt").warning(f"Stripe cancel during deletion failed: {e}")
+        logging.getLogger("jobhunt").warning(f"Provider cancel during deletion failed: {e}")
 
     await session.commit()
     from app.utils.audit_logger import audit_log

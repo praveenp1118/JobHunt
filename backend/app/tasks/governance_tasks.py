@@ -46,15 +46,22 @@ async def _purge_async():
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"purge storage failed for {uid}: {e}")
 
-            # 2) Best-effort: delete the Stripe customer.
+            # 2) Best-effort: stop the user's billing at their payment provider. Razorpay
+            #    has no "delete customer" like Stripe — cancelling the subscription
+            #    immediately (at_cycle_end=False) is the cleanup, since the account is
+            #    being purged. A provider error must not block the purge.
             try:
-                if user.stripe_customer_id:
+                from app.utils.razorpay_client import is_razorpay_user, cancel_razorpay_subscription
+                if is_razorpay_user(user):
+                    await asyncio.to_thread(
+                        cancel_razorpay_subscription, user.razorpay_subscription_id, False)
+                elif user.stripe_customer_id:
                     import stripe
                     from app.config import settings
                     stripe.api_key = settings.stripe_secret_key
                     await asyncio.to_thread(stripe.Customer.delete, user.stripe_customer_id)
             except Exception as e:  # noqa: BLE001
-                logger.warning(f"purge stripe customer failed for {uid}: {e}")
+                logger.warning(f"purge provider cleanup failed for {uid}: {e}")
 
             # 3) Delete the User row — ON DELETE CASCADE removes CVs, jobs, tailored CVs,
             #    chat, career, usage logs, rate-limit logs, credentials, etc. audit_logs.user_id

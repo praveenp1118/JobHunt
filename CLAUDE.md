@@ -1367,7 +1367,37 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: July 13, 2026 (later) — **Razorpay subscriptions — Stage 1-2 (schema + parallel billing
+*Last updated: July 13, 2026 (later still) — **Razorpay Stages 3, 4 & 6 (provider flag + ancillary
+provider-aware cancels + policy docs).** All API-independent (no live Razorpay call to build/test);
+`PAYMENT_PROVIDER` defaults to `stripe` so the deploy is user-invisible until flipped. Test count **175
+(172 pass + 3 skip)**.
+- **Stage 4 (provider flag + frontend):** `config.payment_provider` (`stripe`|`razorpay`, default `stripe`)
+  + public **`GET /api/billing/provider`** → `{provider}`. `frontend/src/api/billing.js` gained a cached
+  `getPaymentProvider()` (falls back to `stripe`) that branches `createCheckoutSession`/`cancelSubscription`/
+  `verifySession` to the `/billing/razorpay/*` endpoints when provider=`razorpay`, else Stripe — both return
+  `{checkout_url}` so PlanKeysTab/Onboarding are unchanged. `SubscriptionSuccess.jsx` reads
+  `session_id || subscription_id || razorpay_subscription_id`. **RBI point-of-authorization auto-renewal
+  disclosure** added at checkout (PlanKeysTab + Onboarding Subscribe step). `.env.production.example` gains
+  `PAYMENT_PROVIDER=stripe`.
+- **Stage 6 (policy docs, both `docs/` + `frontend/public/` copies):** terms §3 provider-neutral (Razorpay,
+  ₹500 incl. 18% GST, e-mandate/UPI AutoPay auto-renewal, ~24h pre-debit notice, GST invoice), §8 auto-renew
+  note (kept the no-partial-refund clause), outages line Stripe→Razorpay; privacy payment-data + processor
+  entry Stripe→Razorpay (PCI DSS L1).
+- **Stage 3 (ancillary provider-aware cancels):** new shared **`utils/razorpay_client.py`** (`is_razorpay_user`
+  / `get_razorpay_client` / `cancel_razorpay_subscription(sub_id, at_cycle_end)`) — single source of the
+  `razorpay.Client` setup; `razorpay_billing._client()` now delegates to it (503 behavior unchanged). The
+  **account purge** (`governance_tasks`) and **data-deletion request** (`routers/privacy`) are now
+  provider-aware: a Razorpay user's purge cancels the subscription **immediately** (`at_cycle_end=False`) and
+  a deletion cancels **at cycle end** (`at_cycle_end=True`, so the recurring e-mandate STOPS); Stripe users
+  keep the **byte-identical** `stripe.Customer.delete` / `stripe.Subscription.modify(cancel_at_period_end=True)`
+  paths. Both wrapped so a provider hiccup logs but never blocks the purge/deletion. +2 tests (Razorpay-user
+  deletion routes to Razorpay cancel; Stripe-user still routes to Stripe).
+  **⚠️ LIVE-HARDENING BACKLOG (still open, do NOT ship live without):** webhook/`/verify` idempotency (dup
+  `subscription.charged` could over-extend `subscription_end`); and confirm the exact query param Razorpay
+  appends on the post-checkout redirect (the flexible getter covers common ones; the webhook is source of
+  truth regardless).*
+
+*Prior: July 13, 2026 (later) — **Razorpay subscriptions — Stage 1-2 (schema + parallel billing
 module, TEST mode).** Additive + env-gated; Stripe stays fully functional. Migration head **`v5_razorpay_columns`**
 (adds `users.razorpay_customer_id` / `razorpay_subscription_id` / `payment_provider`, all nullable; shared
 `subscription_status`/`end`/`plan` + `entitlement_source` unchanged). New **`routers/razorpay_billing.py`**

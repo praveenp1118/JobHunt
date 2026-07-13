@@ -36,6 +36,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.auth.dependencies import current_active_user
+from app.utils.razorpay_client import get_razorpay_client
 
 logger = logging.getLogger("razorpay_billing")
 router = APIRouter()
@@ -49,9 +50,12 @@ def _now() -> datetime:
 
 
 def _client() -> razorpay.Client:
-    if not settings.razorpay_key_id or not settings.razorpay_key_secret:
-        raise HTTPException(status_code=503, detail="Razorpay is not configured (missing keys).")
-    return razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
+    # Reuse the shared helper (single source of the razorpay.Client setup); translate the
+    # background-friendly RuntimeError into the 503 the HTTP endpoints already returned.
+    try:
+        return get_razorpay_client()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 def _activate(user: User) -> None:
