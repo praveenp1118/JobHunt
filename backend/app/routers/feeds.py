@@ -442,6 +442,7 @@ async def remove_target_company(
 @router.post("/feeds/{feed_id}/run", dependencies=[Depends(require_active_subscription)])
 async def run_single_feed(
     feed_id: uuid.UUID,
+    response: Response,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_db),
 ):
@@ -458,6 +459,12 @@ async def run_single_feed(
     )).scalar_one_or_none()
     if not feed:
         raise HTTPException(status_code=404, detail="Feed not found")
+
+    # Per-feed run spends real Claude + Apify money — cap it so it can't be spammed.
+    # Raises 429 with the same {code, message, limit, window_hours} detail as the full scan.
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "feed_run_manual", session)
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
 
     creds = (await session.execute(
         select(UserCredentials).where(UserCredentials.user_id == user.id)

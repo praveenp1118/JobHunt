@@ -401,7 +401,7 @@ function FeedRow({ feed, onToggle, onEdit, onDelete, onRun, canDelete, chip, aut
       </div>
       <div className="flex items-center gap-1 ml-3 shrink-0">
         {onRun && (
-          <button onClick={handleRun} disabled={running} title="Run this feed now"
+          <button onClick={handleRun} disabled={running} title="Scan only this feed now"
             className="text-xs px-2 py-1 rounded-lg border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-60 font-medium inline-flex items-center gap-1 mr-1">
             {running && (
               <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -409,7 +409,7 @@ function FeedRow({ feed, onToggle, onEdit, onDelete, onRun, canDelete, chip, aut
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
               </svg>
             )}
-            {running ? 'Running…' : 'Run'}
+            {running ? 'Running…' : 'Scan this feed'}
           </button>
         )}
         {onEdit && (

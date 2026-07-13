@@ -13,6 +13,7 @@ RATE_LIMITS = {
     "jd_parse":           {"count": 50, "hours": 24},
     "gmail_poll_manual":  {"count": 3,  "hours": 1},
     "scanner_run_manual": {"count": 2,  "hours": 1},
+    "feed_run_manual":    {"count": 10, "hours": 1},   # per-feed "Scan this feed" — real $ per run
 }
 
 
