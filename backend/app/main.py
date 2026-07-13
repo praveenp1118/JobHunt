@@ -163,6 +163,11 @@ app.include_router(activity_router, prefix="/api/activity", tags=["activity"])
 from app.routers.billing import router as billing_router
 app.include_router(billing_router, prefix="/api/billing", tags=["billing"])
 
+# Razorpay — parallel to Stripe during the provider migration (TEST mode). Routes are
+# namespaced under /razorpay/ so they never collide with the Stripe routes above.
+from app.routers.razorpay_billing import router as razorpay_billing_router
+app.include_router(razorpay_billing_router, prefix="/api/billing", tags=["billing-razorpay"])
+
 from app.routers.chat import router as chat_router, chat_websocket
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.add_api_websocket_route("/ws/chat/{conversation_id}", chat_websocket)

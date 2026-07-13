@@ -63,9 +63,11 @@ class Settings(BaseSettings):
     aws_s3_bucket: Optional[str] = None
     aws_region: str = "ap-south-1"
 
-    # ── Razorpay ──────────────────────────────────────────────────────────────
+    # ── Razorpay (JobHunt Pro subscription — parallel to Stripe, TEST keys only) ─
     razorpay_key_id: Optional[str] = None
     razorpay_key_secret: Optional[str] = None
+    razorpay_webhook_secret: Optional[str] = None
+    razorpay_plan_id: Optional[str] = None
 
     # ── Stripe (JobHunt Pro subscription) ─────────────────────────────────────
     stripe_secret_key: str = ""

@@ -74,10 +74,16 @@ class User(SQLAlchemyBaseUserTableUUID, Base, TimestampMixin):
     subscription_plan: Mapped[str] = mapped_column(String(20), default="none", nullable=False)
     subscription_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     subscription_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    # How the current entitlement was obtained: 'invite' | 'stripe' | None (never entitled).
+    # How the current entitlement was obtained: 'invite' | 'stripe' | 'razorpay' | None.
     # Reuses subscription_status/subscription_end above — this only records the SOURCE, so
-    # the UI can show "Request extension" (invite users) vs "Manage subscription" (stripe).
+    # the UI can show "Request extension" (invite users) vs "Manage subscription" (paid).
     entitlement_source: Mapped[Optional[str]] = mapped_column(String(20), default=None, nullable=True)
+
+    # ── Razorpay subscription (parallel to Stripe during migration; TEST mode) ──
+    razorpay_customer_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    razorpay_subscription_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    # Which provider granted the current PAID entitlement: 'stripe' | 'razorpay' | None.
+    payment_provider: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
     # GDPR / terms consent (null = not yet consented → one-time banner on login)
     gdpr_consent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

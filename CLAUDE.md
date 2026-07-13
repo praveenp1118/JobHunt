@@ -1367,7 +1367,32 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: July 13, 2026 — **All-domain de-bias (Phase 1 + 2) + security/reliability hardening sweep.**
+*Last updated: July 13, 2026 (later) — **Razorpay subscriptions — Stage 1-2 (schema + parallel billing
+module, TEST mode).** Additive + env-gated; Stripe stays fully functional. Migration head **`v5_razorpay_columns`**
+(adds `users.razorpay_customer_id` / `razorpay_subscription_id` / `payment_provider`, all nullable; shared
+`subscription_status`/`end`/`plan` + `entitlement_source` unchanged). New **`routers/razorpay_billing.py`**
+(mounted under `/api/billing/razorpay/*`, namespaced so it never collides with Stripe): `create-subscription`
+(Razorpay Subscription against a monthly ₹500 [50000 paise, INCLUSIVE of 18% GST] Plan, total_count=120 [~10 yr],
+returns `{checkout_url: short_url}` — same shape as the Stripe checkout), `cancel` (cancel_at_cycle_end), `verify`
+(success-page poll), and **`/razorpay/webhook`** (HMAC-SHA256 signature verify — rejects a bad/absent sig with 400;
+handles subscription.activated/charged → active +30 d, pending → past_due, halted/cancelled/completed → expired).
+It writes the SAME entitlement columns `is_entitled()` reads + **sets `entitlement_source='razorpay'` explicitly**
+(fixing a pre-existing Stripe-handler bug that never set it). `config.py` + `.env.production.example` gain
+`RAZORPAY_KEY_ID/SECRET/WEBHOOK_SECRET/PLAN_ID` (placeholders; TEST keys only). One-off plan helper
+**`scripts/create_razorpay_plan.py`** (refuses `rzp_live_` keys). +2 tests (webhook flips entitlement →
+`is_entitled=True` on a signed payload; bad signature → 400); invite path untouched (existing invite tests still
+green). Test count **173 (170 pass + 3 skip)**. The invite-or-pay model + `is_entitled` are UNCHANGED — Razorpay
+plugs into the same entitlement seam.
+**⚠️ LIVE-HARDENING BACKLOG (do NOT ship live without these):** (1) **Webhook idempotency** — `subscription.charged`
+can be delivered more than once, and both the webhook and `/verify` call `_activate()` which sets
+`subscription_end = now+30d`, so duplicate delivery could **over-extend** the subscription; before live cutover,
+key activation on the `payment_id` (dedupe) or set `subscription_end` from the billing-cycle end (`current_end`).
+(2) The `/verify` poll compounds the same over-extension — fix alongside (1). Also pending before live cutover:
+`governance_tasks` purge + `privacy` delete-request still target Stripe only (add a Razorpay cancel / customer
+delete), the frontend swap (Stage 5), and the docs/policy update (Stripe→Razorpay, e-mandate/AutoPay disclosure,
+GST invoicing).*
+
+*Prior: July 13, 2026 — **All-domain de-bias (Phase 1 + 2) + security/reliability hardening sweep.**
 Migration head is now **`v4_tailor_draft_persistence`**; test count **168 (165 pass + 3 skip)**. Since the
 July 11 rename, the following shipped (newest first):
 - **Career Insights "Export .md"** (frontend-only): a header button downloads all 7 tabs' findings as one
