@@ -263,6 +263,35 @@ export default function ScoringSettings() {
             </button>
           </div>
         </div>
+        <div className="border-t border-gray-100 pt-3 mt-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm text-gray-800">Auto-fetch full JD for high-scoring alert jobs</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Once a day, partial-JD LinkedIn/Indeed jobs scoring at or above the threshold get their full JD
+                fetched via <strong>Bright Data (~1 credit each)</strong> and re-scored — so they become
+                tailorable. Capped at 20 jobs/day. Requires a Bright Data token (Plan &amp; Keys).
+              </p>
+            </div>
+            <button
+              type="button" role="switch" aria-checked={!!p.auto_enrich_partials}
+              onClick={() => savePref({ auto_enrich_partials: !(p.auto_enrich_partials ?? false) })}
+              className={`shrink-0 mt-0.5 w-10 h-6 rounded-full transition-colors relative ${p.auto_enrich_partials ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${p.auto_enrich_partials ? 'translate-x-4' : ''}`} />
+            </button>
+          </div>
+          {p.auto_enrich_partials && (
+            <div className="flex items-center gap-2 mt-2">
+              <label className="text-[11px] text-gray-500">Only enrich jobs scoring ≥</label>
+              <input
+                type="number" min={0} max={100}
+                defaultValue={p.auto_enrich_threshold ?? 70}
+                onBlur={(e) => savePref({ auto_enrich_threshold: Math.max(0, Math.min(100, Number(e.target.value) || 70)) })}
+                className="w-16 text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:border-emerald-400"
+              />
+            </div>
+          )}
+        </div>
         <div className="flex items-center justify-between border-t border-gray-100 pt-3 mt-3">
           <p className="text-[11px] text-gray-400">Existing jobs have no ATS/Pursuit scores until computed (~₹0.15/job).</p>
           <Button size="sm" variant="secondary" loading={backfilling} onClick={runBackfill}>Compute scores for existing jobs</Button>

@@ -208,6 +208,9 @@ class UserPreferences(Base, TimestampMixin):
     score_pill_style: Mapped[str] = mapped_column(String(20), default="dual_ring", nullable=False)  # dual_ring / single / number_only
     # Auto-compute ATS + Pursuit on each scanned/saved job (off by default — adds ~₹0.15/job)
     auto_dual_score_on_scan: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Daily auto-enrich of HIGH-SCORING partial-JD jobs via Bright Data (opt-in, capped, BYOK)
+    auto_enrich_partials: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    auto_enrich_threshold: Mapped[int] = mapped_column(Integer, default=70, nullable=False)
 
     # V3 Community Insights — opt-in anonymised sharing
     community_sharing_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

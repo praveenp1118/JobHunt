@@ -23,6 +23,7 @@ class RunType(str, Enum):
     night_batch = "night_batch"
     stub_fetch = "stub_fetch"
     followup_check = "followup_check"
+    partial_enrich = "partial_enrich"   # daily Bright Data auto-enrich of high-scoring partials
 
 
 class RunLog(Base):

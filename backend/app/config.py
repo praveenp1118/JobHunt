@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     gmail_poll_interval_minutes: int = 60
     ghost_after_days: int = 28
 
+    # ── Auto-enrich cron (high-scoring partial-JD jobs via Bright Data) ────────
+    partial_enrich_enabled: bool = True         # global kill-switch
+    partial_enrich_cap: int = 20                # HARD ceiling per user per run
+    partial_enrich_cron: str = "0 3 * * *"      # daily 03:00 UTC (08:30 IST) — free slot
+
     @property
     def is_production(self) -> bool:
         return self.env == "production"

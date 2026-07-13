@@ -350,6 +350,8 @@ async def get_preferences(
         "default_score_view": prefs.default_score_view,
         "score_pill_style": prefs.score_pill_style,
         "auto_dual_score_on_scan": prefs.auto_dual_score_on_scan,
+        "auto_enrich_partials": prefs.auto_enrich_partials,
+        "auto_enrich_threshold": prefs.auto_enrich_threshold,
         "community_sharing_enabled": prefs.community_sharing_enabled,
     }
 

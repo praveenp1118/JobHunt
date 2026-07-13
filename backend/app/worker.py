@@ -11,8 +11,16 @@ celery_app = Celery(
         "app.tasks.scanner_tasks",
         "app.tasks.governance_tasks",
         "app.tasks.scoring_tasks",
+        "app.tasks.enrichment_tasks",
     ],
 )
+
+
+def _cron(expr: str):
+    """Build a crontab from a 5-field cron string ("m h dom mon dow") so schedules are
+    env-tunable (config) without a code change."""
+    m, h, dom, mon, dow = expr.split()
+    return crontab(minute=m, hour=h, day_of_month=dom, month_of_year=mon, day_of_week=dow)
 
 celery_app.conf.update(
     task_serializer="json",
@@ -55,5 +63,10 @@ celery_app.conf.beat_schedule = {
     "night-batch-scoring": {
         "task": "tasks.score_pending_jobs_batch",
         "schedule": crontab(hour=21, minute=30),
+    },
+    # Daily auto-enrich of HIGH-SCORING partial-JD jobs (opt-in) — env-tunable cron
+    "enrich-high-scoring-partials-daily": {
+        "task": "tasks.enrich_high_scoring_partials",
+        "schedule": _cron(settings.partial_enrich_cron),
     },
 }

@@ -1449,7 +1449,28 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: July 13, 2026 (later⁷) — **Partial-JD rescore now refreshes the ATS/Pursuit dual scores.**
+*Last updated: July 14, 2026 — **Opt-in daily auto-enrich cron for high-scoring partial-JD jobs.**
+Migration head **`v9_auto_enrich`**; test count **203 (200 pass + 3 skip)**. New Celery-beat task
+**`tasks.enrich_high_scoring_partials`** (`tasks/enrichment_tasks.py`, daily 03:00 UTC via the env-tunable
+`PARTIAL_ENRICH_CRON`): for each **opted-in** active user **with a Bright Data token**, it finds their
+partial-JD jobs where **`coalesce(s1d, s1) >= their threshold`** AND `portal_url` is LinkedIn/Indeed, **caps
+at `PARTIAL_ENRICH_CAP` (20)** ordered by score DESC, and **reuses the exact button path**
+(`brightdata_collect_by_url` → save `jd_raw` → `rescore_partial_job_from_text`, which now also refreshes the
+ATS/Pursuit dual scores). Cost-disciplined: opt-in (`UserPreferences.auto_enrich_partials` default FALSE +
+`auto_enrich_threshold` default 70), high-score-only, per-user cap, BYOK tokens, **idempotent** (only touches
+`has_partial_jd=true`), skip-and-continue on any failure (no-token user / BD fail / thin JD → left partial).
+Per-run **cost transparency** logged to `run_logs` (`RunType.partial_enrich`,
+`details.per_user[]` = candidates/enriched/failed/`bd_credits_est`≈1-per-job/`anthropic_cost_inr`). Settings →
+Scoring & Cost gets a toggle + threshold. Config: `PARTIAL_ENRICH_ENABLED/CAP/CRON`. Migration `v9` is a
+**normal deploy** (enum add + additive columns, no guard). +2 tests. NOT deployed.
+**⚠️ BACKLOG (do NOT fix now — investigate):** **406 of 417 partial jobs are UNSCORED** (`s1`/`s1d` NULL) —
+gated LinkedIn alert cards are saved unscored (`_save_gated_cards`), so the score-gated cron only ever sees the
+~11 scored partials and stays mostly idle. If new partials keep landing unscored, the real fix is to **score
+partials on arrival** (a cheap snippet S1, or route them through the pending/night-batch scorer) so the
+auto-enrich cron has candidates to act on. Investigate why partials arrive unscored and whether a lightweight
+arrival-score is worth it.
+
+Prior: July 13, 2026 (later⁷) — **Partial-JD rescore now refreshes the ATS/Pursuit dual scores.**
 Fixed a bug predating the dual-scoring migration: `rescore_partial_job_from_text` +
 `fetch_and_rescore_partial_job` recomputed only `s1`/`s1d`, so after ANY enrichment (Bright Data / manual
 paste / free web-fetch) the Jobs-list **Match**/**Best Fit** and the Tailor score card — which read
