@@ -97,3 +97,129 @@ async def test_upsert_on_conflict_collapses_duplicate():
             await s.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
             await s.commit()
         await eng.dispose()
+
+
+# ── Change 2: ON CONFLICT DO UPDATE enrich ──────────────────────────────────────
+async def _seed_job(S, uid, jid, **overrides):
+    from app.models.job import Job, JobSource, JobStatus
+    from app.models.user import User
+    async with S() as s:
+        s.add(User(id=uid, email=f"c2-{uid}@t.co", hashed_password="x", is_active=True,
+                   is_superuser=False, is_verified=True, name="C2"))
+        await s.commit()
+    vals = dict(id=jid, user_id=uid, company="Acme", role="Head of Product",
+                dedup_key="url:example.com/job/1", portal_url="https://example.com/job/1",
+                source=JobSource.gmail_alert, status=JobStatus.new)
+    vals.update(overrides)
+    async with S() as s:
+        s.add(Job(**vals))
+        await s.commit()
+
+
+async def _cleanup_c2(S, uid):
+    async with S() as s:
+        await s.execute(text("DELETE FROM jobs WHERE user_id=:u"), {"u": str(uid)})
+        await s.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
+        await s.commit()
+
+
+async def test_upsert_enriches_partial_to_full():
+    """Existing PARTIAL + incoming FULL → jd enriched, has_partial_jd flips false, created=False."""
+    from app.utils.dedup import upsert_job
+    from app.models.job import Job, JobSource, JobStatus
+    eng, S = _sm()
+    uid, jid = uuid.uuid4(), uuid.uuid4()
+    try:
+        await _seed_job(S, uid, jid, has_partial_jd=True, jd_raw="stub", jd_md="stub", s1=None)
+        async with S() as s:
+            job, created = await upsert_job(s, dict(
+                user_id=uid, company="Acme", role="Head of Product",
+                dedup_key="url:example.com/job/1", portal_url="https://example.com/job/1",
+                jd_raw="FULL JD. " * 40, jd_md="FULL JD. " * 40, has_partial_jd=False,
+                source=JobSource.rss, status=JobStatus.new))
+            await s.commit()
+        assert created is False
+        async with S() as s:
+            j = (await s.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.has_partial_jd is False
+            assert (j.jd_raw or "").startswith("FULL JD")
+    finally:
+        await _cleanup_c2(S, uid)
+        await eng.dispose()
+
+
+async def test_upsert_no_downgrade_full_to_partial():
+    """Existing FULL + incoming PARTIAL → NEVER downgrades (flag stays false, jd unchanged)."""
+    from app.utils.dedup import upsert_job
+    from app.models.job import Job, JobSource, JobStatus
+    eng, S = _sm()
+    uid, jid = uuid.uuid4(), uuid.uuid4()
+    try:
+        await _seed_job(S, uid, jid, has_partial_jd=False, jd_raw="ORIGINAL FULL JD", jd_md="ORIGINAL FULL JD")
+        async with S() as s:
+            await upsert_job(s, dict(
+                user_id=uid, company="Acme", role="Head of Product",
+                dedup_key="url:example.com/job/1", portal_url="https://example.com/job/1",
+                jd_raw="tiny", jd_md="tiny", has_partial_jd=True,
+                source=JobSource.gmail_alert, status=JobStatus.new))
+            await s.commit()
+        async with S() as s:
+            j = (await s.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.has_partial_jd is False and j.jd_raw == "ORIGINAL FULL JD"
+    finally:
+        await _cleanup_c2(S, uid)
+        await eng.dispose()
+
+
+async def test_upsert_never_touches_progress():
+    """status / scores / notes are PROTECTED — never overwritten on conflict."""
+    from app.utils.dedup import upsert_job
+    from app.models.job import Job, JobSource, JobStatus
+    eng, S = _sm()
+    uid, jid = uuid.uuid4(), uuid.uuid4()
+    try:
+        await _seed_job(S, uid, jid, has_partial_jd=True, jd_raw="stub", jd_md="stub",
+                        status=JobStatus.applied, s1=88.0, s1d=91.0, notes="my private note")
+        async with S() as s:
+            await upsert_job(s, dict(
+                user_id=uid, company="Acme", role="Head of Product",
+                dedup_key="url:example.com/job/1", portal_url="https://example.com/job/1",
+                jd_raw="FULL JD. " * 40, jd_md="FULL JD. " * 40, has_partial_jd=False,
+                s1=10.0, s1d=10.0, status=JobStatus.new, notes="overwrite attempt",
+                source=JobSource.rss))
+            await s.commit()
+        async with S() as s:
+            j = (await s.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.status == JobStatus.applied        # untouched
+            assert j.s1 == 88.0 and j.s1d == 91.0        # untouched
+            assert j.notes == "my private note"          # untouched
+            assert j.has_partial_jd is False             # but the JD WAS enriched
+    finally:
+        await _cleanup_c2(S, uid)
+        await eng.dispose()
+
+
+async def test_upsert_fill_if_null_respects_existing():
+    """fill-if-null: existing non-null portal_url kept; existing NULL market filled."""
+    from app.utils.dedup import upsert_job
+    from app.models.job import Job, JobSource, JobStatus
+    eng, S = _sm()
+    uid, jid = uuid.uuid4(), uuid.uuid4()
+    try:
+        # existing FULL, portal_url set, market NULL
+        await _seed_job(S, uid, jid, has_partial_jd=False, jd_raw="full", jd_md="full",
+                        portal_url="https://example.com/job/1", market=None)
+        async with S() as s:
+            await upsert_job(s, dict(
+                user_id=uid, company="Acme", role="Head of Product",
+                dedup_key="url:example.com/job/1", portal_url="https://OTHER.example.com/x",
+                market="NL", jd_raw="full2", jd_md="full2", has_partial_jd=False,
+                source=JobSource.rss, status=JobStatus.new))
+            await s.commit()
+        async with S() as s:
+            j = (await s.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.portal_url == "https://example.com/job/1"   # non-null kept (not overwritten)
+            assert j.market == "NL"                              # NULL filled
+    finally:
+        await _cleanup_c2(S, uid)
+        await eng.dispose()

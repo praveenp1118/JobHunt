@@ -76,13 +76,17 @@ def _quota_reason(detail: str) -> str:
 # Field names match each actor's published inputSchema (fetched from the Apify
 # API). These differ per actor, so the builders are actor-specific.
 
-def build_linkedin_input(keywords: str, location: str, max_results: int = 25) -> dict:
+def build_linkedin_input(keywords: str, location: str, max_results: int = 25,
+                         recency_seconds: int = 604800) -> dict:  # default: last 7 days
     """curious_coder/linkedin-jobs-scraper — requires `urls` (LinkedIn job-search
     URLs), plus `count` and `scrapeCompany`. We synthesise the search URL from the
-    user's keywords + location."""
+    user's keywords + location. `f_TPR=r<seconds>` makes LinkedIn return only postings
+    from the last N seconds — so repeat scans fetch FRESH jobs instead of re-paying for
+    the same evergreen top-25 (dedup then discards them anyway)."""
     search_url = (
         "https://www.linkedin.com/jobs/search/"
         f"?keywords={quote_plus(keywords or '')}&location={quote_plus(location or '')}"
+        + (f"&f_TPR=r{recency_seconds}" if recency_seconds else "")
     )
     return {
         "urls": [search_url],

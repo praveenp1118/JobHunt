@@ -258,7 +258,7 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session,
         str(f.id): {
             "feed_name": f.name, "feed_type": f.feed_type,
             "raw_results": 0, "pre_filter_passed": 0, "pre_filter_failed": 0,
-            "s1_scored": 0, "above_threshold": 0, "duplicates": 0, "saved": 0,
+            "s1_scored": 0, "above_threshold": 0, "duplicates": 0, "saved": 0, "enriched": 0,
             "rejected": [], "saved_examples": [], "note": None,
             "error": False, "error_kind": None,   # None | "quota_exhausted" | "failed"
         }
@@ -303,7 +303,10 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session,
                 actor_id = feed.url_or_actor
                 match = (feed.actor_name or actor_id or "").lower()
                 if "linkedin" in match:
-                    input_data = build_linkedin_input(keywords, location)
+                    # Per-feed recency window (date_range_days, default 7) → f_TPR on the search URL.
+                    input_data = build_linkedin_input(
+                        keywords, location,
+                        recency_seconds=(getattr(feed, "date_range_days", None) or 7) * 86400)
                 elif "google" in match:
                     input_data = build_google_jobs_input(keywords, location)
                 else:
@@ -418,8 +421,9 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session,
     # ── 3. Dedup (canonical dedup_key vs DB AND within this batch) ───────────
     # Pre-check on dedup_key avoids paying Claude to score a job we already have; the
     # ON CONFLICT at insert (upsert_job) is the ultimate parallel-source race guard.
-    from app.utils.dedup import build_dedup_key
+    from app.utils.dedup import build_dedup_key, upsert_job
     new_jobs = []
+    enrich_jobs = []   # existing PARTIAL rows this full-JD scan can enrich (no re-score)
     seen_keys = set()  # guard against duplicate cards within the same scan
     for job in filtered_jobs:
         fid = job.get("feed_id")
@@ -430,15 +434,47 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session,
         job["dedup_key"] = dk
         # .first() (not scalar_one_or_none) — tolerant of any pre-existing dup rows.
         existing = (await session.execute(
-            select(Job.id).where(Job.dedup_key == dk, Job.user_id == user.id)
-        )).scalars().first()
-        if dk not in seen_keys and not existing:
-            seen_keys.add(dk)
-            new_jobs.append(job)
-        else:
+            select(Job.id, Job.has_partial_jd).where(Job.dedup_key == dk, Job.user_id == user.id)
+        )).first()
+        if dk in seen_keys:
             if fid in stats:
                 stats[fid]["duplicates"] += 1
             _reject(fid, job, "duplicate")
+        elif existing is None:
+            seen_keys.add(dk)
+            new_jobs.append(job)                        # brand new → score + save
+        elif existing.has_partial_jd:
+            # Existing row is a partial-JD stub (e.g. a LinkedIn Gmail-alert card); this scan
+            # found the SAME job with a full JD → ENRICH the existing row (no re-score, not a
+            # new save). upsert_job's DO UPDATE fills jd_raw/jd_md + flips has_partial_jd=false.
+            seen_keys.add(dk)
+            enrich_jobs.append(job)
+        else:
+            if fid in stats:                            # existing is already full → true duplicate
+                stats[fid]["duplicates"] += 1
+            _reject(fid, job, "duplicate")
+
+    # ── 3b. Enrich existing partial rows (fill the full JD; NO scoring, NOT a new save) ──
+    for job in enrich_jobs:
+        fid = job.get("feed_id")
+        jd_text = job.get("description") or ""
+        if jd_text and "<" in jd_text:
+            from bs4 import BeautifulSoup
+            jd_text = BeautifulSoup(jd_text, "html.parser").get_text(separator="\n")
+        jd_text = jd_text[:50000]
+        try:
+            # company/role are placeholders only — this is a CONFLICT (existing row); the
+            # INSERT never runs and company/role are PROTECTED (not in the enrich SET clause).
+            await upsert_job(session, dict(
+                user_id=user.id, company=job.get("company", "Unknown"),
+                role=job.get("role", "Unknown"), dedup_key=job["dedup_key"],
+                jd_hash=job["jd_hash"], jd_raw=jd_text, jd_md=jd_text,
+                portal_url=job.get("url"), source=JobSource.rss, status=JobStatus.new,
+                has_partial_jd=False))
+            if fid in stats:
+                stats[fid]["enriched"] += 1
+        except Exception as e:
+            print(f"⚠️ enrich failed for {job.get('dedup_key')}: {e}")
 
     # ── 4 + 5. Hybrid-RAG scoring + threshold save ──────────────────────────
     from app.agents.rag_scorer import hybrid_rag_score, config_from_prefs

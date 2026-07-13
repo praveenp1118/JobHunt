@@ -316,3 +316,104 @@ async def test_weekly_scan_per_user_session_isolation(monkeypatch):
             await s.execute(text("DELETE FROM users WHERE id IN (:a, :b)"), {"a": str(ua), "b": str(ub)})
             await s.commit()
         await engine.dispose()
+
+
+# ── Change 3: scanner enriches an existing PARTIAL row (no re-score, not a new save) ──
+async def _seed_user_and_job(S, uid, jid, **job_overrides):
+    from sqlalchemy import text  # noqa
+    from app.models.user import User
+    from app.models.job import Job, JobSource, JobStatus
+    async with S() as s:
+        s.add(User(id=uid, email=f"enr-{uid}@t.co", hashed_password="x", is_active=True,
+                   is_superuser=False, is_verified=True, name="Enr"))
+        await s.commit()
+    vals = dict(id=jid, user_id=uid, company="Acme", role="Head of Product",
+                dedup_key="url:example.com/job/enrich1",
+                portal_url="https://example.com/job/enrich1",
+                source=JobSource.gmail_alert, status=JobStatus.new)
+    vals.update(job_overrides)
+    async with S() as s:
+        s.add(Job(**vals))
+        await s.commit()
+
+
+async def test_scanner_enriches_existing_partial_not_rescored(monkeypatch):
+    """An existing PARTIAL job + a full-JD scan of the SAME job → enriched (jd_raw filled,
+    has_partial_jd=false), counted as 'enriched' (NOT 'saved'/'duplicate'), and NOT re-scored."""
+    from sqlalchemy import select, text
+    from app.models.job import Job
+
+    async def _one_full_rss(url):
+        return [{"role": "Head of Product", "company": "Acme",
+                 "description": "Own the full product roadmap. " * 20,
+                 "url": "https://example.com/job/enrich1"}]
+
+    engine = create_async_engine(settings.database_url)
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    uid, jid = uuid.uuid4(), uuid.uuid4()
+    try:
+        await _seed_user_and_job(Session, uid, jid, has_partial_jd=True,
+                                 jd_raw="stub snippet", jd_md="stub snippet", s1=None)
+        user = SimpleNamespace(id=uid, email=f"enr-{uid}@t.co")
+        feed = SimpleNamespace(id=uuid.uuid4(), name="RSS", feed_type="rss",
+                               url_or_actor="https://example.com/rss",
+                               search_keywords="head of product", keywords=None,
+                               location=None, actor_name=None, domain_cv_id=None)
+        async with Session() as session:
+            with patch.object(rss_mod, "fetch_rss_feed", _one_full_rss):
+                found, added, stats, _rag = await _scan_feeds_for_user(
+                    user, [feed], None, None, session)   # anthropic None → no scoring
+
+        assert found == 1 and added == 0
+        s = stats[0]
+        assert s["enriched"] == 1 and s["saved"] == 0 and s["duplicates"] == 0
+        async with Session() as session:
+            j = (await session.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.has_partial_jd is False                    # flipped
+            assert (j.jd_raw or "").startswith("Own the full")  # full JD written
+            assert j.s1 is None                                 # NOT re-scored
+    finally:
+        async with Session() as session:
+            await session.execute(text("DELETE FROM jobs WHERE user_id=:u"), {"u": str(uid)})
+            await session.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
+            await session.commit()
+        await engine.dispose()
+
+
+async def test_scanner_full_existing_dropped_as_duplicate(monkeypatch):
+    """An existing FULL job re-seen by a scan → dropped as duplicate (NOT enriched, NOT saved)."""
+    from sqlalchemy import select, text
+    from app.models.job import Job
+
+    async def _one_full_rss(url):
+        return [{"role": "Head of Product", "company": "Acme",
+                 "description": "Own the product roadmap. " * 20,
+                 "url": "https://example.com/job/enrich1"}]
+
+    engine = create_async_engine(settings.database_url)
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    uid, jid = uuid.uuid4(), uuid.uuid4()
+    try:
+        await _seed_user_and_job(Session, uid, jid, has_partial_jd=False,
+                                 jd_raw="already full", jd_md="already full")
+        user = SimpleNamespace(id=uid, email=f"enr-{uid}@t.co")
+        feed = SimpleNamespace(id=uuid.uuid4(), name="RSS", feed_type="rss",
+                               url_or_actor="https://example.com/rss",
+                               search_keywords="head of product", keywords=None,
+                               location=None, actor_name=None, domain_cv_id=None)
+        async with Session() as session:
+            with patch.object(rss_mod, "fetch_rss_feed", _one_full_rss):
+                found, added, stats, _rag = await _scan_feeds_for_user(
+                    user, [feed], None, None, session)
+
+        s = stats[0]
+        assert s["duplicates"] == 1 and s["enriched"] == 0 and added == 0
+        async with Session() as session:
+            j = (await session.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.jd_raw == "already full"   # untouched
+    finally:
+        async with Session() as session:
+            await session.execute(text("DELETE FROM jobs WHERE user_id=:u"), {"u": str(uid)})
+            await session.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
+            await session.commit()
+        await engine.dispose()

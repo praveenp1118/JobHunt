@@ -1367,7 +1367,38 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: July 13, 2026 (later⁵) — **Bright Data on-demand JD-by-URL enrichment (Phase 3).** No
+*Last updated: July 13, 2026 (later⁶) — **Apify cost quick-wins + dedup DO-UPDATE enrich + cross-scan
+enrich routing.** No migration; test count **200 (197 pass + 3 skip)**.
+- **Apify quick-wins:** removed the dead **Google Jobs** feed from `seeds.py PLATFORM_FEEDS` (actor returns 0
+  but still spins a paid run every scan) — plus a one-off **prod SQL** to deactivate the existing per-user
+  google row (`UPDATE user_feeds SET is_active=false WHERE feed_type='apify' AND (lower(url_or_actor) LIKE
+  '%google%' OR lower(coalesce(actor_name,'')) LIKE '%google%');`). Added a **LinkedIn recency filter**:
+  `build_linkedin_input` appends **`&f_TPR=r<seconds>`** (default 7 days) to the search URL so repeat scans
+  fetch FRESH postings instead of re-paying for the same evergreen top-25; threaded per-feed via
+  `date_range_days` in the scanner.
+- **`upsert_job`: ON CONFLICT DO NOTHING → DO UPDATE (enrich).** Fills gaps only, never overwrites good data,
+  never touches user progress. **Enrich SET (6 cols):** `jd_raw`/`jd_md`/`has_partial_jd` replaced ONLY when
+  existing is partial AND incoming is a genuinely full JD (≥100 chars) — **never downgrades** full→partial;
+  `portal_url`/`salary_range_raw`/`market` filled via `coalesce` (never overwrite a non-null existing value).
+  **PROTECTED (never in SET):** status, tailored_cv_id, all scores (s1/s1d/s2/s3_*/ats_*/pursuit_*/
+  score_components/domain_cv_scores/best_domain_cv_id), notes, needs_hitl, scoring_status, source,
+  source_feed/email_id, jd_hash, jd_highlights_json, company/role/location, recruiter_email, salary_expectation/
+  offered, interview/offer/follow-up/ghost fields, applied_at, created_at, s1_tokens/s1_cost_inr. A protective
+  **WHERE** fires the UPDATE only when something actually changes (no updated_at churn), and **`(xmax = 0)`**
+  RETURNING distinguishes created (insert) from enriched (update) so `created` stays accurate for all callers.
+  **No auto-rescore from `upsert_job`** (an enriched partial keeps NULL scores; Score-now/night-batch fill them).
+- **Cross-scan enrich routing** (makes the DO-UPDATE actually fire for the real scenario — a later discovery
+  scan finds a fuller JD for an earlier Gmail partial). **Scanner §3** now buckets each candidate: brand-new →
+  score+save; existing **partial** + this (full-JD) scan → **enrich** (a new §3b loop calls `upsert_job` with the
+  full JD, **no scoring**, counted under a new per-feed **`enriched`** stat, NOT `saved`/`duplicate`); existing
+  **full** → dropped as duplicate. The **gmail public-URL path** got the same routing (existing-partial enriched
+  with the already-fetched content, no Claude re-score). `_save_gated_cards` (partial incoming → can't enrich)
+  and email-to-JobHunt (portal_url pre-check + DO-UPDATE at its save) are correct unchanged. **+6 tests**
+  (`test_dedup.py`: partial→full enriches, full→partial no-downgrade, progress cols untouched, fill-if-null;
+  `test_scanner.py`: scanner enriches an existing partial [not re-scored, counted `enriched`], full existing →
+  duplicate). NOT deployed.
+
+Prior: July 13, 2026 (later⁵) — **Bright Data on-demand JD-by-URL enrichment (Phase 3).** No
 migration (token + enum came from Phase 2); test count **194 (191 pass + 3 skip)**. Resolves partial-JD jobs
 (`has_partial_jd=true`, the ~448 LinkedIn alert jobs): the user clicks **"Fetch full JD (Bright Data)"** → BD
 collect-by-URL fetches the full JD → the job's `jd_raw` is set + `has_partial_jd=false` → tailorable. **Client**

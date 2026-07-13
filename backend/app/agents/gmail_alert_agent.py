@@ -514,10 +514,21 @@ async def process_job_alert_email(
             from app.utils.dedup import build_dedup_key, upsert_job
             dedup_key = build_dedup_key(None, None, None, url)   # url-based (tier 1/2)
             existing = (await session.execute(
-                select(Job.id).where(Job.dedup_key == dedup_key, Job.user_id == user.id)
-            )).scalars().first()
-            if existing:
-                results.append({"url": url, "reason": "duplicate"})
+                select(Job.id, Job.has_partial_jd).where(
+                    Job.dedup_key == dedup_key, Job.user_id == user.id)
+            )).first()
+            if existing is not None and not existing.has_partial_jd:
+                results.append({"url": url, "reason": "duplicate"})   # already full → true dup
+                continue
+            if existing is not None and existing.has_partial_jd:
+                # Existing partial row + we already fetched the FULL JD → enrich, NO re-score.
+                # company/role are placeholders (conflict → INSERT never runs; they're protected).
+                await upsert_job(session, dict(
+                    user_id=user.id, company="Unknown", role="Unknown", dedup_key=dedup_key,
+                    jd_hash=jd_hash, jd_raw=content[:50000], jd_md=content[:50000],
+                    portal_url=url, source=JobSource.gmail_alert, status=JobStatus.new,
+                    has_partial_jd=False))
+                results.append({"url": url, "reason": "enriched"})
                 continue
 
             # ── Stage 2: cheap parse + essence score (Haiku, CV essence as context) ──

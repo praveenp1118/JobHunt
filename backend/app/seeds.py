@@ -203,7 +203,8 @@ PLATFORM_COMPANIES = [
 PLATFORM_FEEDS = [
     {"feed_type": "rss",   "name": "Jobicy NL",      "url_or_actor": "https://jobicy.com/feed/job_feed?search_keywords=head+of+product&search_region=netherlands"},
     {"feed_type": "apify", "name": "LinkedIn Jobs",  "url_or_actor": "apify/linkedin-jobs-scraper"},
-    {"feed_type": "apify", "name": "Google Jobs",    "url_or_actor": "bebity/google-jobs-scraper"},
+    # Google Jobs removed — the actor consistently returns 0 results but still spins a paid
+    # run every scan. Re-add only if a working Google-jobs actor is found.
 ]
 
 
