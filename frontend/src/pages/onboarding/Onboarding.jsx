@@ -308,7 +308,11 @@ export default function Onboarding() {
                     </button>
                     <Button loading={subBusy} onClick={handleSubscribe}>Subscribe — ₹500/month</Button>
                   </div>
-                  <p className="mt-3 text-xs text-gray-400">
+                  <p className="mt-3 text-[11px] text-gray-400">
+                    Recurring ₹500/month (incl. 18% GST). Auto-renews monthly via UPI AutoPay / e-mandate until
+                    cancelled — you'll get a reminder ~24h before each charge. Cancel anytime in Settings → Plan &amp; Keys.
+                  </p>
+                  <p className="mt-2 text-xs text-gray-400">
                     Skipping lets you look around, but tailoring, scoring, scanning, and sending stay locked until you redeem a key or subscribe.
                   </p>
                 </>

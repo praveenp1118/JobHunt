@@ -118,6 +118,15 @@ async def get_subscription(user: User = Depends(current_active_user)):
     }
 
 
+# ── Which provider the frontend should use ────────────────────────────────────
+@router.get("/provider")
+async def get_payment_provider():
+    """Which billing provider the frontend should use ('stripe' | 'razorpay'). Public —
+    not sensitive; lets us flip providers via config without a frontend redeploy."""
+    p = settings.payment_provider if settings.payment_provider in ("stripe", "razorpay") else "stripe"
+    return {"provider": p}
+
+
 # ── Cancel (at period end) ────────────────────────────────────────────────────
 @router.post("/cancel")
 async def cancel_subscription(

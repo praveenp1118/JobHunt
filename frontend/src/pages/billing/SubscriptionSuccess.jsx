@@ -8,7 +8,11 @@ export default function SubscriptionSuccess() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const [state, setState] = useState('loading') // loading | success | error
+  // Stripe appends ?session_id=…; Razorpay's redirect uses subscription_id. verifySession
+  // routes to the right endpoint by provider.
   const sessionId = params.get('session_id')
+    || params.get('subscription_id')
+    || params.get('razorpay_subscription_id')
 
   useEffect(() => {
     if (!sessionId) {

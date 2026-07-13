@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     razorpay_webhook_secret: Optional[str] = None
     razorpay_plan_id: Optional[str] = None
 
+    # Which billing provider the frontend uses: 'stripe' | 'razorpay'. Stays 'stripe'
+    # until Razorpay is approved + E2E-tested, then flip (no frontend redeploy needed).
+    payment_provider: str = "stripe"
+
     # ── Stripe (JobHunt Pro subscription) ─────────────────────────────────────
     stripe_secret_key: str = ""
     stripe_publishable_key: str = ""

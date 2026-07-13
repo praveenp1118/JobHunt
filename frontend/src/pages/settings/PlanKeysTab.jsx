@@ -129,6 +129,12 @@ export default function PlanKeysTab() {
             <Button size="sm" loading={subBusy} onClick={handleSubscribe}>Subscribe — ₹500/month →</Button>
           </div>
         )}
+        {!sub.is_active && (
+          <p className="text-[11px] text-gray-400 mt-2 px-1">
+            Recurring ₹500/month (incl. 18% GST). Auto-renews monthly via UPI AutoPay / e-mandate until
+            cancelled — you'll get a reminder ~24h before each charge. Cancel anytime in Settings → Plan &amp; Keys.
+          </p>
+        )}
       </div>
 
       {/* ── Section 2: Anthropic API key ── */}
