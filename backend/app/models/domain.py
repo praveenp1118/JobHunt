@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 from sqlalchemy import String, Text, Boolean, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import mapped_column, Mapped
 
 from app.database import Base
@@ -108,7 +108,7 @@ class UserFeed(Base, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False, index=True
     )
-    feed_type: Mapped[str] = mapped_column(String(20), nullable=False)  # rss | apify
+    feed_type: Mapped[str] = mapped_column(String(20), nullable=False)  # rss | apify | brightdata
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     url_or_actor: Mapped[str] = mapped_column(Text, nullable=False)
     # V2: human-readable Apify actor name (from the Store picker) — used by the
@@ -130,6 +130,10 @@ class UserFeed(Base, TimestampMixin):
     search_keywords: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     job_boards: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_auto_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Phase 2: Bright Data feed filters (sub_source, country, experience_level, time_range,
+    # domain, date_posted, limit). For brightdata feeds: feed_type='brightdata',
+    # url_or_actor = sub-source ('linkedin'|'indeed'); the client maps it to the dataset_id.
+    provider_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
 
 class UserTargetCompany(Base, TimestampMixin):

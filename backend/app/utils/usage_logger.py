@@ -145,6 +145,37 @@ async def log_apify_usage(
     await session.flush()
 
 
+async def log_brightdata_usage(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    sub_source: str,
+    feed_label: str,
+    runs_requested: int,
+    runs_returned: int,
+    jobs_saved: int,
+    entity_id: Optional[str] = None,
+) -> None:
+    """Log a Bright Data discovery run — provider='brightdata' (kept SEPARATE from Apify $
+    so credit usage shows independently). The Bright Data API returns no cost, so cost is
+    NULL here; the dashboard usage meter is the source of truth."""
+    session.add(APIUsageLog(
+        user_id=user_id,
+        provider="brightdata",
+        agent_name=f"brightdata:{sub_source}",
+        category="scanner",
+        entity_type="scan",
+        entity_id=str(entity_id) if entity_id else None,
+        entity_label=feed_label,
+        actor_id=f"brightdata:{sub_source}",
+        runs_requested=runs_requested,
+        runs_returned=runs_returned,
+        jobs_saved=jobs_saved,
+        estimated_cost_usd=None,   # API returns no cost — dashboard is source of truth
+        estimated_cost_inr=None,
+    ))
+    await session.flush()
+
+
 async def log_call(agent_name: str, category: str, response, model: str,
                    entity_type: Optional[str] = None, entity_id=None,
                    entity_label: Optional[str] = None,

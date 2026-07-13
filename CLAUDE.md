@@ -1367,7 +1367,36 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: July 13, 2026 (later³) — **Cross-source dedup foundation (Phase 1) — prerequisite for
+*Last updated: July 13, 2026 (later⁴) — **Bright Data as a parallel discovery scan source (Phase 2).**
+Migration head now **`v8_brightdata_source`**; test count **189 (186 pass + 3 skip)**. Bright Data (BYOK)
+is a discovery source peer to Apify/RSS/Gmail for **LinkedIn + Indeed keyword search**, built on the Phase-1
+dedup foundation. **BYOK token:** `user_credentials.brightdata_token_enc` (+`_updated_at`) — AES-256, exact
+Apify pattern (Settings → Plan & Keys, `has_brightdata_token` boolean only, never displayed; audit
+`key_update`); **no platform fallback** (skip if unset). **`utils/brightdata_client.py`** = async
+trigger→poll→fetch (`/scrape` sync + snapshot poll fallback, from the go/no-go probe) with per-provider
+discover-by-keyword schemas (LinkedIn `gd_lpfll7v5hcqtkxl6l`: keyword/location/country/experience_level/
+time_range; Indeed `gd_l4dx9j9sscpvs7no2`: keyword_search/location/country/domain/date_posted) + a normalizer
+(job_title→role, company_name→company, job_location→location, job_description_formatted→jd, url→portal_url,
+base_salary→salary, job_seniority_level→seniority). **Feed config:** `feed_type='brightdata'`, `url_or_actor` =
+sub-source (`'linkedin'`|`'indeed'`; the client maps the dataset_id), filters in new **`user_feeds.provider_config`
+JSONB** (country/experience_level/time_range/domain/date_posted/limit). **Scanner:** one `brightdata` branch
+that ONLY fetches+normalizes + a free provider-side seniority drop (Internship/Entry level, LinkedIn only) —
+results then flow through the **unchanged shared pipeline**: §2 pre-filter (UNIVERSAL_SKIP + the feed's
+keywords, FREE) runs BEFORE any paid Claude scoring, §3 `build_dedup_key`, §4 `upsert_job` ON CONFLICT. So a
+Bright Data LinkedIn job with the same job-id as an Apify/Gmail one **collapses to one row** (the Phase-1
+payoff) with zero Bright-Data-specific dedup code. Cost-aware: default 25 results/feed, BYOK. Async is slow
+(1–4 min) so it runs only inside the existing Celery scan task (weekly + manual `/feeds/{id}/run`), never
+inline. **Usage split (cost transparency):** `log_brightdata_usage` logs **provider='brightdata'** (NOT lumped
+under Apify), cost **null** (the API returns none — dashboard is source of truth); `GET /usage/logs` summary
+gains a `brightdata` bucket (runs/jobs/sub_source_count) + a separate API-Usage card. **Frontend:** Plan & Keys
+Bright Data token field, Feeds add-feed **Bright Data** provider (sub-source + country + LI/Indeed filters →
+`provider_config`), `brightdata` source badge, API-Usage card. **+7 tests** (`test_brightdata.py`: input-builder
++ normalizer per provider [pure]; scanner branch asserts **pre-filter-runs-before-scoring** [client+scorer
+mocked]; **Bright Data + Apify same LinkedIn id → one row**; usage logs provider='brightdata' w/ null cost).
+**Enrichment / JD-by-URL is Phase 3** (separate). NOT deployed — v8 has no guard so a normal
+`git pull && up --build` (entrypoint auto-`upgrade head`) applies it cleanly; run when ready.
+
+Prior: July 13, 2026 (later³) — **Cross-source dedup foundation (Phase 1) — prerequisite for
 adding Bright Data as a parallel scan source.** Migration head now **`v7_dedup_key_unique`**; test count
 **182 (179 pass + 3 skip)**. The old dedup was an exact SHA-256 of per-source-different text (scanner hashed
 role+company+description, gmail hashed title+company+url, etc.) with no URL/job-id key and no unique

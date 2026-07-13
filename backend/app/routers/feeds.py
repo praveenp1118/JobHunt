@@ -281,8 +281,11 @@ async def create_feed(
     session: AsyncSession = Depends(get_db),
 ):
     """Add a custom feed (RSS URL or Apify actor)."""
-    if body.feed_type not in ("rss", "apify"):
-        raise HTTPException(status_code=400, detail="feed_type must be 'rss' or 'apify'")
+    if body.feed_type not in ("rss", "apify", "brightdata"):
+        raise HTTPException(status_code=400, detail="feed_type must be 'rss', 'apify' or 'brightdata'")
+    if body.feed_type == "brightdata" and body.url_or_actor not in ("linkedin", "indeed"):
+        raise HTTPException(status_code=400,
+                            detail="brightdata url_or_actor (sub-source) must be 'linkedin' or 'indeed'")
 
     feed = UserFeed(
         user_id=user.id,
@@ -299,6 +302,7 @@ async def create_feed(
         # is_auto_generated stays False)
         domain_cv_id=body.domain_cv_id,
         search_keywords=body.search_keywords,
+        provider_config=body.provider_config,   # Phase 2: brightdata filters
     )
     session.add(feed)
     await session.commit()
@@ -471,11 +475,13 @@ async def run_single_feed(
     )).scalar_one_or_none()
     apify_token = (decrypt_if_present(creds.apify_token_enc) if creds and creds.apify_token_enc else None) \
         or settings.platform_apify_token
+    brightdata_token = decrypt_if_present(creds.brightdata_token_enc) if creds and creds.brightdata_token_enc else None
     anthropic_key = (decrypt_if_present(creds.anthropic_api_key_enc) if creds and creds.anthropic_api_key_enc else None) \
         or settings.platform_anthropic_api_key or settings.anthropic_api_key
 
     started = datetime.now(timezone.utc)
-    found, added, feed_stats, _rag_stats = await _scan_feeds_for_user(user, [feed], apify_token, anthropic_key, session)
+    found, added, feed_stats, _rag_stats = await _scan_feeds_for_user(
+        user, [feed], apify_token, anthropic_key, session, brightdata_token=brightdata_token)
     duration = (datetime.now(timezone.utc) - started).total_seconds()
 
     # Usage for this feed run (set_usage_user inside _scan_feeds_for_user reset the session).

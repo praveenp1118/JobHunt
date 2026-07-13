@@ -287,7 +287,7 @@ async def test_weekly_scan_per_user_session_isolation(monkeypatch):
         # after dirtying its OWN session (simulating a mid-user DB failure).
         monkeypatch.setattr("app.utils.subscription.is_entitled", lambda u: True)
 
-        async def fake_scan(user, feeds, apify_token, anthropic_key, session):
+        async def fake_scan(user, feeds, apify_token, anthropic_key, session, brightdata_token=None):
             seen[user.email] = session
             if user.id == ua:
                 session.add(RunLog(run_type=RunType.weekly_scan, status=RunStatus.running,

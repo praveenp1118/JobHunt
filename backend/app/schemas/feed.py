@@ -21,15 +21,16 @@ class FeedRead(BaseModel):
     search_keywords: Optional[str] = None
     job_boards: Optional[str] = None  # JSON string, parsed client-side
     is_auto_generated: bool = False
+    provider_config: Optional[dict] = None  # Phase 2: Bright Data feed filters
 
     class Config:
         from_attributes = True
 
 
 class FeedCreate(BaseModel):
-    feed_type: str  # rss | apify
+    feed_type: str  # rss | apify | brightdata
     name: str
-    url_or_actor: str
+    url_or_actor: str  # brightdata: sub-source ('linkedin'|'indeed')
     actor_name: Optional[str] = None  # human-readable Apify actor name (from Store picker)
     keywords: Optional[str] = None
     location: Optional[str] = None
@@ -37,6 +38,7 @@ class FeedCreate(BaseModel):
     # V2: link a manually-added feed to the domain CV it was built from
     domain_cv_id: Optional[uuid.UUID] = None
     search_keywords: Optional[str] = None
+    provider_config: Optional[dict] = None  # Phase 2: Bright Data filters (country, experience_level, …)
 
 
 # ── V2: domain-CV-driven "Add feed" modal ────────────────────────────────────
@@ -82,6 +84,7 @@ class FeedUpdate(BaseModel):
     date_range_days: Optional[int] = None
     is_active: Optional[bool] = None
     domain_cv_id: Optional[uuid.UUID] = None
+    provider_config: Optional[dict] = None
 
 
 class ScanResult(BaseModel):

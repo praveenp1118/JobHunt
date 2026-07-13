@@ -83,6 +83,7 @@ class CredentialsUpdate(BaseModel):
     notification_email: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     apify_token: Optional[str] = None
+    brightdata_token: Optional[str] = None
 
 
 class CredentialsRead(BaseModel):
@@ -90,9 +91,11 @@ class CredentialsRead(BaseModel):
     notification_email: Optional[str] = None
     has_anthropic_key: bool = False
     has_apify_token: bool = False
+    has_brightdata_token: bool = False
     has_gmail_password: bool = False
     anthropic_key_updated_at: Optional[datetime] = None
     apify_token_updated_at: Optional[datetime] = None
+    brightdata_token_updated_at: Optional[datetime] = None
 
 
 # ── Preferences schema ────────────────────────────────────────────────────────

@@ -38,6 +38,7 @@ class JobSource(str, Enum):
     rss = "rss"
     gmail_alert = "gmail_alert"   # V3: extracted from a job-alert digest email
     email_to_jobhunt = "email_to_jobhunt"   # V3: user emailed a job URL to JobHunt
+    brightdata = "brightdata"   # Phase 2: Bright Data discovery source (LinkedIn/Indeed)
 
 
 class EmailDirection(str, Enum):

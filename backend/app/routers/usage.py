@@ -73,7 +73,11 @@ async def get_usage_logs(
     anth = {"total_tokens": 0, "total_cost_usd": 0.0, "total_cost_inr": 0.0,
             "call_count": 0, "by_category": {}, "by_model": {}}
     apify = {"total_runs": 0, "total_cost_usd": 0.0, "total_cost_inr": 0.0, "actor_count": 0}
+    # Bright Data kept SEPARATE from Apify — credit usage shown on its own (cost is null:
+    # the API returns none, so the dashboard meter is the source of truth).
+    brightdata = {"total_runs": 0, "jobs_saved": 0, "sub_source_count": 0, "cost_available": False}
     actors = set()
+    bd_subs = set()
 
     def _tier(model: str) -> str:
         m = (model or "").lower()
@@ -101,7 +105,13 @@ async def get_usage_logs(
             apify["total_cost_inr"] += r.estimated_cost_inr or 0.0
             if r.actor_id:
                 actors.add(r.actor_id)
+        elif r.provider == "brightdata":
+            brightdata["total_runs"] += r.runs_returned or 0
+            brightdata["jobs_saved"] += r.jobs_saved or 0
+            if r.actor_id:
+                bd_subs.add(r.actor_id)
     apify["actor_count"] = len(actors)
+    brightdata["sub_source_count"] = len(bd_subs)
     anth["total_cost_usd"] = round(anth["total_cost_usd"], 4)
     anth["total_cost_inr"] = round(anth["total_cost_inr"], 2)
     apify["total_cost_usd"] = round(apify["total_cost_usd"], 4)
@@ -111,7 +121,8 @@ async def get_usage_logs(
     for m in anth["by_model"].values():
         m["cost"] = round(m["cost"], 2)
 
-    return {"logs": [_serialize(r) for r in rows], "summary": {"anthropic": anth, "apify": apify}}
+    return {"logs": [_serialize(r) for r in rows],
+            "summary": {"anthropic": anth, "apify": apify, "brightdata": brightdata}}
 
 
 @router.get("/export")

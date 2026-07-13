@@ -25,6 +25,7 @@ const SOURCE_CONFIG = {
   rss:           { label: 'RSS',      classes: 'bg-orange-50 text-orange-600' },
   gmail_alert:   { label: '📧 Alert', classes: 'bg-blue-50 text-blue-600' },
   email_to_jobhunt: { label: '📥 Email', classes: 'bg-blue-50 text-blue-700' },
+  brightdata:    { label: 'Bright Data', classes: 'bg-teal-50 text-teal-700' },
 }
 
 const MARKET_CONFIG = {

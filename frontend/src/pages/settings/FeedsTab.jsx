@@ -381,9 +381,11 @@ function FeedRow({ feed, onToggle, onEdit, onDelete, onRun, canDelete, chip, aut
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-medium text-gray-900 truncate">{feed.name}</p>
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-              feed.feed_type === 'rss' ? 'bg-orange-100 text-orange-600' : 'bg-purple-100 text-purple-600'
+              feed.feed_type === 'rss' ? 'bg-orange-100 text-orange-600'
+                : feed.feed_type === 'brightdata' ? 'bg-teal-100 text-teal-700'
+                : 'bg-purple-100 text-purple-600'
             }`}>
-              {feed.feed_type.toUpperCase()}
+              {feed.feed_type === 'brightdata' ? 'BRIGHT DATA' : feed.feed_type.toUpperCase()}
             </span>
             {autoBadge && (
               <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium">
@@ -555,6 +557,14 @@ function AddFeedModal({ onClose, onSuccess }) {
   const [actorId, setActorId] = useState('')             // Apify actor id (from Store search)
   const [actorName, setActorName] = useState('')         // human-readable actor name (for scanner matching)
 
+  // Bright Data feed config
+  const [bdSub, setBdSub] = useState('linkedin')         // 'linkedin' | 'indeed'
+  const [bdCountry, setBdCountry] = useState('NL')
+  const [bdExperience, setBdExperience] = useState('')   // LinkedIn
+  const [bdTimeRange, setBdTimeRange] = useState('Past month')  // LinkedIn
+  const [bdDomain, setBdDomain] = useState('www.indeed.com')    // Indeed
+  const [bdDatePosted, setBdDatePosted] = useState('Last 7 days')  // Indeed
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -602,6 +612,23 @@ function AddFeedModal({ onClose, onSuccess }) {
 
   const handleSave = async () => {
     if (!domainCvId) { setError('Select a domain CV first'); return }
+    if (feedType === 'brightdata') {
+      const provider_config = bdSub === 'linkedin'
+        ? { country: bdCountry, experience_level: bdExperience, time_range: bdTimeRange, limit: 25 }
+        : { country: bdCountry, domain: bdDomain, date_posted: bdDatePosted, limit: 25 }
+      setSaving(true); setError('')
+      try {
+        await createFeed({
+          feed_type: 'brightdata', name: feedName || 'Bright Data feed',
+          url_or_actor: bdSub, keywords, search_keywords: keywords,
+          domain_cv_id: domainCvId, location: selectedCV?.country_name || null,
+          provider_config,
+        })
+        onSuccess()
+      } catch (e) { setError(e.response?.data?.detail || 'Save failed') }
+      finally { setSaving(false) }
+      return
+    }
     const urlOrActor = feedType === 'rss' ? url : actorId
     if (!urlOrActor) { setError(feedType === 'rss' ? 'RSS URL is required' : 'Select an Apify actor'); return }
     setSaving(true)
@@ -695,13 +722,13 @@ function AddFeedModal({ onClose, onSuccess }) {
               {/* Feed type */}
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1.5">Feed type</label>
-                <div className="flex gap-2">
-                  {['rss', 'apify'].map((t) => (
+                <div className="flex gap-2 flex-wrap">
+                  {['rss', 'apify', 'brightdata'].map((t) => (
                     <button key={t} type="button" onClick={() => setFeedType(t)}
-                      className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors uppercase ${
+                      className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${t === 'brightdata' ? 'capitalize' : 'uppercase'} ${
                         feedType === t ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                       }`}>
-                      {t}
+                      {t === 'brightdata' ? 'Bright Data' : t}
                     </button>
                   ))}
                 </div>
@@ -738,6 +765,53 @@ function AddFeedModal({ onClose, onSuccess }) {
                   value={actorId}
                   onChange={(id, name) => { setActorId(id); setActorName(name) }}
                 />
+              )}
+
+              {/* Bright Data: sub-source + per-provider filters */}
+              {feedType === 'brightdata' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1.5">Source</label>
+                    <div className="flex gap-2">
+                      {['linkedin', 'indeed'].map((s) => (
+                        <button key={s} type="button" onClick={() => setBdSub(s)}
+                          className={`px-4 py-1.5 rounded-lg text-sm font-medium border capitalize ${
+                            bdSub === s ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                          }`}>{s}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <Input label="Country code" value={bdCountry} onChange={(e) => setBdCountry(e.target.value)} placeholder="NL" />
+                  {bdSub === 'linkedin' ? (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 block mb-1.5">Experience level</label>
+                        <select value={bdExperience} onChange={(e) => setBdExperience(e.target.value)} className={selectCls}>
+                          {['', 'Internship', 'Entry level', 'Associate', 'Mid-Senior level', 'Director', 'Executive'].map((v) => (
+                            <option key={v} value={v}>{v || 'Any'}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 block mb-1.5">Time range</label>
+                        <select value={bdTimeRange} onChange={(e) => setBdTimeRange(e.target.value)} className={selectCls}>
+                          {['Past 24 hours', 'Past week', 'Past month', 'Any time'].map((v) => (<option key={v} value={v}>{v}</option>))}
+                        </select>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Input label="Indeed domain" value={bdDomain} onChange={(e) => setBdDomain(e.target.value)} placeholder="nl.indeed.com" />
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 block mb-1.5">Date posted</label>
+                        <select value={bdDatePosted} onChange={(e) => setBdDatePosted(e.target.value)} className={selectCls}>
+                          {['Last 24 hours', 'Last 3 days', 'Last 7 days', 'Last 14 days'].map((v) => (<option key={v} value={v}>{v}</option>))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+                  <p className="text-[11px] text-gray-400">Up to 25 results per scan (credit-aware). Requires a Bright Data token in Plan &amp; Keys.</p>
+                </div>
               )}
             </>
           )}

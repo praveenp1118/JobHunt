@@ -256,9 +256,11 @@ async def get_credentials(
         notification_email=creds.notification_email,
         has_anthropic_key=bool(creds.anthropic_api_key_enc),
         has_apify_token=bool(creds.apify_token_enc),
+        has_brightdata_token=bool(creds.brightdata_token_enc),
         has_gmail_password=bool(creds.gmail_app_password_enc),
         anthropic_key_updated_at=creds.anthropic_key_updated_at,
         apify_token_updated_at=creds.apify_token_updated_at,
+        brightdata_token_updated_at=creds.brightdata_token_updated_at,
     )
 
 
@@ -297,6 +299,10 @@ async def update_credentials(
         creds.apify_token_enc = encrypt_if_present(update.apify_token)
         creds.apify_token_updated_at = now
         updated_fields.append("apify_token")
+    if update.brightdata_token is not None:
+        creds.brightdata_token_enc = encrypt_if_present(update.brightdata_token)
+        creds.brightdata_token_updated_at = now
+        updated_fields.append("brightdata_token")
 
     await session.commit()
     if updated_fields:

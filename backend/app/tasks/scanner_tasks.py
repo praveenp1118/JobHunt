@@ -107,6 +107,10 @@ async def _weekly_scan_async():
                         if not apify_token:
                             apify_token = settings.platform_apify_token
 
+                        # Bright Data is BYOK-only (no platform fallback) — skip if unset.
+                        brightdata_token = (decrypt_if_present(creds.brightdata_token_enc)
+                                            if creds.brightdata_token_enc else None)
+
                         anthropic_key = None
                         if creds.anthropic_api_key_enc:
                             anthropic_key = decrypt_if_present(creds.anthropic_api_key_enc)
@@ -117,6 +121,7 @@ async def _weekly_scan_async():
                             user=user,
                             feeds=feeds,
                             apify_token=apify_token,
+                            brightdata_token=brightdata_token,
                             anthropic_key=anthropic_key,
                             session=user_session,
                         )
@@ -208,7 +213,7 @@ async def _weekly_scan_async():
     return {"found": total_found, "added": total_added, "errors": errors}
 
 
-async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session):
+async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session, brightdata_token=None):
     """Scan all feeds for a single user."""
     from app.utils.usage_logger import set_usage_user
     set_usage_user(user.id)  # attribute all agent calls in this scan to this user
@@ -327,6 +332,57 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
                 if count == 0:
                     stats[fid]["note"] = "Apify actor returned no usable results"
 
+            elif feed.feed_type == "brightdata":
+                # Bright Data discovery — BYOK. This branch only FETCHES + NORMALISES; the
+                # results then flow through the SAME shared pipeline as every other source:
+                # §2 pre-filter (free) BEFORE any paid scoring → §3 dedup_key → §4 upsert
+                # (ON CONFLICT). So a Bright Data LinkedIn job with the same job-id as an
+                # Apify/Gmail one collapses to one row (the Phase-1 payoff) with zero
+                # Bright-Data-specific dedup code.
+                if not brightdata_token:
+                    stats[fid]["note"] = "Bright Data not triggered — no token configured"
+                    continue
+                from app.utils.brightdata_client import (brightdata_discover,
+                                                         normalize_brightdata, BrightDataError)
+                cfg = feed.provider_config or {}
+                sub = feed.url_or_actor  # 'linkedin' | 'indeed'
+                keyword = feed.search_keywords or feed.keywords or "head of product"
+                try:
+                    raw_items = await brightdata_discover(
+                        sub_source=sub, keyword=keyword, location=feed.location or "",
+                        country=cfg.get("country") or "", cfg=cfg,
+                        token=brightdata_token, limit=cfg.get("limit", 25))  # cost-aware default 25
+                except BrightDataError as e:
+                    stats[fid]["error"] = True
+                    stats[fid]["error_kind"] = "failed"
+                    stats[fid]["note"] = f"Bright Data error: {e}"
+                    print(f"⚠️ Feed {feed.name}: Bright Data — {e}")
+                    continue
+                count = 0
+                for raw in raw_items:
+                    n = normalize_brightdata(raw, sub)
+                    if not n:
+                        continue
+                    # FREE provider-side seniority drop BEFORE the shared pre-filter/scoring —
+                    # LinkedIn exposes job_seniority_level; Indeed doesn't (seniority="").
+                    if (n.get("seniority") or "").strip().lower() in ("internship", "entry level"):
+                        continue
+                    n["feed_id"] = fid
+                    n["source"] = "brightdata"
+                    all_raw_jobs.append(n)
+                    count += 1
+                stats[fid]["raw_results"] += count
+                try:
+                    from app.utils.usage_logger import log_brightdata_usage
+                    await log_brightdata_usage(
+                        session, user.id, sub_source=sub, feed_label=feed.name,
+                        runs_requested=cfg.get("limit", 25), runs_returned=len(raw_items),
+                        jobs_saved=count, entity_id=str(feed.id))
+                except Exception as e:
+                    print(f"⚠️ brightdata usage log failed: {e}")
+                if count == 0:
+                    stats[fid]["note"] = "Bright Data returned no usable results"
+
         except ApifyQuotaExhausted as e:
             stats[fid]["error"] = True
             stats[fid]["error_kind"] = "quota_exhausted"
@@ -440,7 +496,8 @@ async def _scan_feeds_for_user(user, feeds, apify_token, anthropic_key, session)
     added = 0
     saved_job_objs = []  # scored (non-pending) jobs, for optional dual scoring below
     source_map = {"rss": JobSource.rss, "apify_linkedin": JobSource.apify,
-                  "apify_google": JobSource.apify, "apify": JobSource.apify}
+                  "apify_google": JobSource.apify, "apify": JobSource.apify,
+                  "brightdata": JobSource.brightdata}
     for job in rag_jobs:
         fid = job.get("feed_id")
         try:

@@ -11,6 +11,7 @@ import Input from '../../components/ui/Input'
 export default function PlanKeysTab() {
   const [anthropicKey, setAnthropicKey] = useState('')
   const [apifyToken, setApifyToken] = useState('')
+  const [brightdataToken, setBrightdataToken] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [subBusy, setSubBusy] = useState(false)
@@ -58,9 +59,11 @@ export default function PlanKeysTab() {
       await updateCredentials({
         anthropic_api_key: anthropicKey || undefined,
         apify_token: apifyToken || undefined,
+        brightdata_token: brightdataToken || undefined,
       })
       setAnthropicKey('')
       setApifyToken('')
+      setBrightdataToken('')
       toast.success('API keys saved securely')
     } catch (e) {
       const msg = e.response?.data?.detail || 'Save failed'
@@ -232,9 +235,40 @@ export default function PlanKeysTab() {
         </div>
       </div>
 
+      {/* ── Section 4: Bright Data token ── */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6">
+        <h2 className="text-sm font-semibold text-gray-900 mb-1">Bright Data token <span className="text-gray-400 font-normal">(optional)</span></h2>
+        <p className="text-xs text-gray-500 mb-4">Encrypted with AES-256 at rest. Never displayed again after you save it.</p>
+
+        <div className="rounded-xl bg-slate-50 border border-slate-100 p-4 mb-4 text-xs text-gray-600 leading-relaxed space-y-2">
+          <p><span className="font-semibold text-gray-800">Why you need this (optional):</span> Bright Data adds LinkedIn &amp; Indeed keyword-search feeds (structured results with the full JD). Configure Bright Data feeds under <span className="font-medium">Feeds &amp; Scanning</span>. Credit usage is tracked separately from Apify in <span className="font-medium">API Usage</span>.</p>
+          <div>
+            <p className="font-semibold text-gray-800">How to get your token:</p>
+            <ol className="list-decimal list-inside mt-1 space-y-0.5">
+              <li>Go to <a href="https://brightdata.com" target="_blank" rel="noreferrer" className="text-emerald-600 hover:underline">brightdata.com</a> and sign up</li>
+              <li>Open <span className="font-medium">Account settings → API tokens</span></li>
+              <li>Create + copy your API token</li>
+            </ol>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-sm font-medium text-gray-700">Token</label>
+          <span className={`text-xs font-medium ${creds.has_brightdata_token ? 'text-emerald-600' : 'text-gray-400'}`}>
+            {creds.has_brightdata_token ? '✓ Saved' : 'Not set'}
+          </span>
+        </div>
+        <Input
+          type="password"
+          placeholder={creds.has_brightdata_token ? '••••••••••••••••• (saved)' : 'Bright Data API token'}
+          value={brightdataToken}
+          onChange={(e) => setBrightdataToken(e.target.value)}
+        />
+      </div>
+
       {error && <p className="text-sm text-red-500">{error}</p>}
       <div className="flex justify-end">
-        <Button onClick={handleSave} loading={saving} disabled={!anthropicKey && !apifyToken} size="sm">
+        <Button onClick={handleSave} loading={saving} disabled={!anthropicKey && !apifyToken && !brightdataToken} size="sm">
           Save keys
         </Button>
       </div>

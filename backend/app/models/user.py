@@ -129,10 +129,12 @@ class UserCredentials(Base, TimestampMixin):
     # API keys (Default plan) - encrypted
     anthropic_api_key_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     apify_token_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    brightdata_token_enc: Mapped[Optional[str]] = mapped_column(Text, nullable=True)   # Bright Data (BYOK)
 
     # Key-rotation timestamps (for the 90-day rotation reminder)
     anthropic_key_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     apify_token_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    brightdata_token_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="credentials")
