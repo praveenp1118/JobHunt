@@ -1367,7 +1367,29 @@ Project root: D:\JobHunt
 
 ---
 
-*Last updated: July 13, 2026 (later⁴) — **Bright Data as a parallel discovery scan source (Phase 2).**
+*Last updated: July 13, 2026 (later⁵) — **Bright Data on-demand JD-by-URL enrichment (Phase 3).** No
+migration (token + enum came from Phase 2); test count **194 (191 pass + 3 skip)**. Resolves partial-JD jobs
+(`has_partial_jd=true`, the ~448 LinkedIn alert jobs): the user clicks **"Fetch full JD (Bright Data)"** → BD
+collect-by-URL fetches the full JD → the job's `jd_raw` is set + `has_partial_jd=false` → tailorable. **Client**
+(`utils/brightdata_client.py`): `brightdata_collect_by_url(url, sub_source, token)` — plain `/scrape` (NO discover
+param), `canonicalize_job_url` reuses **dedup's own `_canonical_job_id`** (so `linkedin.com/comm/jobs/view/<id>`
+→ `https://www.linkedin.com/jobs/view/<id>` matches the dedup builder exactly), `detect_sub_source`, and a shared
+`_resolve_records` (array / NDJSON / async snapshot / **single JSONL record → [rec]** — the probe's collect-by-URL
+shape; discover now uses it too). **Endpoint** `POST /jobs/{id}/enrich-brightdata` (gated like fetch-jd/add-full-jd):
+503 `brightdata_token_required` if no token, 400 `unsupported_url` for non-LinkedIn/Indeed, 502
+`brightdata_failed`/`brightdata_no_jd` on failure — **all leave `has_partial_jd=true`** so manual paste still
+works. On success it runs the BD fetch **inline** (collect-by-URL is synchronous/fast per the probe) then reuses
+the **EXACT add-full-jd tail** (save `jd_raw`/`jd_md` → clear flag → `score_pasted_jd.delay` →
+`rescore_partial_job_from_text`) — zero new rescore logic; Claude rescoring stays backgrounded. **Frontend**
+(`PartialJdPanel.jsx`, the shared partial-JD component): three tiers — free web_fetch → **Bright Data (~1 credit,
+LinkedIn/Indeed)** → manual paste. The BD button shows only for LinkedIn/Indeed URLs when `has_brightdata_token`
+(else a "add your token in Settings" hint); on success the job refetch flips `has_partial_jd` → the panel
+unmounts → tailor unlocks inline (same as paste); on failure the paste box stays. **+5 tests**
+(`test_brightdata.py`): canonicalize-matches-dedup, single-JSONL-record resolve, enrich flips-partial (BD mocked),
+no-token→503, BD-failure→502 keeps-partial. Bright Data trilogy (Phase 1 dedup → Phase 2 discovery → Phase 3
+enrichment) complete. NOT deployed.
+
+Prior: July 13, 2026 (later⁴) — **Bright Data as a parallel discovery scan source (Phase 2).**
 Migration head now **`v8_brightdata_source`**; test count **189 (186 pass + 3 skip)**. Bright Data (BYOK)
 is a discovery source peer to Apify/RSS/Gmail for **LinkedIn + Indeed keyword search**, built on the Phase-1
 dedup foundation. **BYOK token:** `user_credentials.brightdata_token_enc` (+`_updated_at`) — AES-256, exact

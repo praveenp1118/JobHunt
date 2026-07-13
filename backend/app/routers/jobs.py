@@ -838,6 +838,62 @@ async def add_full_jd(
     return {"queued": True}
 
 
+@router.post("/{job_id}/enrich-brightdata",
+             dependencies=[Depends(require_active_subscription)])
+async def enrich_brightdata(
+    job_id: uuid.UUID,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """On-demand: fetch the full JD for a partial-JD (LinkedIn/Indeed) job via Bright Data
+    collect-by-URL, then reuse the SAME rescore path as manual paste (add-full-jd →
+    score_pasted_jd → rescore_partial_job_from_text). Never 500s: a clear error leaves the
+    job partial so the manual-paste fallback still works."""
+    from app.utils.brightdata_client import (brightdata_collect_by_url, detect_sub_source,
+                                             BrightDataError)
+    job = (await session.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == user.id)
+    )).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.portal_url:
+        raise HTTPException(status_code=400, detail={"code": "no_portal_url",
+            "message": "No portal URL to fetch the full JD from."})
+
+    creds = (await session.execute(
+        select(UserCredentials).where(UserCredentials.user_id == user.id))).scalar_one_or_none()
+    token = decrypt_if_present(creds.brightdata_token_enc) if creds and creds.brightdata_token_enc else None
+    if not token:
+        raise HTTPException(status_code=503, detail={"code": "brightdata_token_required",
+            "message": "Add your Bright Data token in Settings to enable one-click JD fetch."})
+
+    sub = detect_sub_source(job.portal_url)
+    if not sub:
+        raise HTTPException(status_code=400, detail={"code": "unsupported_url",
+            "message": "Bright Data enrichment supports LinkedIn/Indeed URLs — paste the JD manually."})
+
+    try:
+        rec = await brightdata_collect_by_url(job.portal_url, sub, token)
+    except BrightDataError as e:
+        raise HTTPException(status_code=502, detail={"code": "brightdata_failed",
+            "message": f"Bright Data couldn't fetch this JD ({e}). Paste it manually instead."})
+
+    jd = ((rec or {}).get("job_description_formatted")
+          or (rec or {}).get("description") or (rec or {}).get("description_text") or "").strip()
+    if len(jd) < 100:
+        raise HTTPException(status_code=502, detail={"code": "brightdata_no_jd",
+            "message": "Bright Data returned no full JD for this posting — paste it manually."})
+
+    # Reuse the EXACT add-full-jd tail — no new scoring logic.
+    job.jd_raw = jd[:50000]
+    job.jd_md = jd[:50000]
+    job.has_partial_jd = False
+    await session.commit()
+    from app.tasks.gmail_tasks import score_pasted_jd
+    score_pasted_jd.delay(str(job_id), str(user.id))
+    return {"enriched": True, "jd_length": len(jd)}
+
+
 async def _score_key_prefs(user, session):
     creds = (await session.execute(
         select(UserCredentials).where(UserCredentials.user_id == user.id))).scalar_one_or_none()

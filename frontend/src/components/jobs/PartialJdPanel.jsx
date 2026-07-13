@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { addFullJd, fetchJobJd } from '../../api/jobs'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { addFullJd, fetchJobJd, enrichBrightdata } from '../../api/jobs'
+import { getCredentials } from '../../api/auth'
 import { toast } from '../../store/toast'
 import Button from '../ui/Button'
 
@@ -16,7 +17,14 @@ export default function PartialJdPanel({ job, onEnriched, showAutoFetch = true, 
   const [pastedJd, setPastedJd] = useState('')
   const [savingJd, setSavingJd] = useState(false)
   const [fetchingJd, setFetchingJd] = useState(false)
+  const [enriching, setEnriching] = useState(false)
   const jobId = job.id
+
+  // Bright Data one-click fetch is only offered for LinkedIn/Indeed URLs when the user has
+  // a token saved (has_brightdata_token). Otherwise we prompt them to add it in Settings.
+  const { data: credsData } = useQuery({ queryKey: ['credentials'], queryFn: getCredentials, staleTime: 60000 })
+  const hasBrightdata = !!credsData?.data?.has_brightdata_token
+  const bdEligible = /linkedin\.com|indeed\./i.test(job.portal_url || '')
 
   // Background rescore lands a few seconds later — refresh the job + tracker as it does.
   const poll = (delays) =>
@@ -59,6 +67,21 @@ export default function PartialJdPanel({ job, onEnriched, showAutoFetch = true, 
     }
   }
 
+  const handleEnrichBd = async () => {
+    setEnriching(true)
+    try {
+      await enrichBrightdata(jobId)
+      toast.success('Full JD fetched via Bright Data — scoring now; tailoring unlocks shortly')
+      poll([4000, 10000, 18000])
+      setTimeout(() => setEnriching(false), 20000)
+    } catch (e) {
+      const d = e.response?.data?.detail
+      toast.error(e.userMessage || (typeof d === 'string' ? d : d?.message)
+                  || 'Bright Data fetch failed — paste the JD manually.')
+      setEnriching(false)
+    }
+  }
+
   return (
     <div className={className}>
       {job.portal_url && (
@@ -76,7 +99,7 @@ export default function PartialJdPanel({ job, onEnriched, showAutoFetch = true, 
           rows={6}
           className="mt-1 w-full text-xs border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-emerald-400 resize-y"
         />
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
           <Button size="sm" loading={savingJd} disabled={pastedJd.trim().length < 100} onClick={handleAddFullJd}>
             Save JD + tailor →
           </Button>
@@ -85,11 +108,20 @@ export default function PartialJdPanel({ job, onEnriched, showAutoFetch = true, 
               Try auto-fetch (free)
             </Button>
           )}
+          {job.portal_url && bdEligible && hasBrightdata && (
+            <Button size="sm" variant="secondary" loading={enriching} onClick={handleEnrichBd}>
+              Fetch full JD (Bright Data)
+            </Button>
+          )}
         </div>
         {showAutoFetch && (
           <p className="mt-1.5 text-[11px] text-gray-400">
-            Auto-fetch works for some sites; LinkedIn needs manual paste (it requires a login).
+            Auto-fetch works for some sites; LinkedIn needs Bright Data or manual paste.
           </p>
+        )}
+        {bdEligible && (hasBrightdata
+          ? <p className="mt-1 text-[11px] text-gray-400">Bright Data fetch uses ~1 credit and works for LinkedIn/Indeed.</p>
+          : <p className="mt-1 text-[11px] text-gray-400">Add your Bright Data token in <a href="/settings#plan" className="text-emerald-600 hover:underline">Settings</a> to enable one-click LinkedIn/Indeed JD fetch.</p>
         )}
       </div>
     </div>

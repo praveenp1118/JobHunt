@@ -29,6 +29,11 @@ export const fetchJobJd = (id) =>
 export const addFullJd = (id, jd_text) =>
   client.post(`/jobs/${id}/add-full-jd`, { jd_text })
 
+// Phase 3: fetch the full JD via Bright Data collect-by-URL (LinkedIn/Indeed, ~1 credit),
+// then reuse the same rescore path as manual paste.
+export const enrichBrightdata = (id) =>
+  client.post(`/jobs/${id}/enrich-brightdata`)
+
 // Night-batch scoring: score one pending job now, or all of them.
 export const scoreNow = (id) => client.post(`/jobs/${id}/score-now`)
 export const scoreAllPending = () => client.post('/jobs/score-pending')

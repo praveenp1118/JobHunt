@@ -211,3 +211,146 @@ async def test_brightdata_usage_logs_separate_provider():
             await s.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
             await s.commit()
         await eng.dispose()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 3 — on-demand JD-by-URL enrichment (collect-by-URL)
+# ══════════════════════════════════════════════════════════════════════════════
+def test_canonicalize_job_url_matches_dedup():
+    """Bright Data canonicalization uses the SAME job-id extraction as the dedup builder."""
+    from app.utils.brightdata_client import canonicalize_job_url, detect_sub_source
+    from app.utils.dedup import build_dedup_key
+    li = "https://www.linkedin.com/comm/jobs/view/4432636617/?trackingId=abc&trk=eml"
+    assert canonicalize_job_url(li, "linkedin") == "https://www.linkedin.com/jobs/view/4432636617"
+    assert build_dedup_key("", "", "", li) == "linkedin:4432636617"   # identical id logic
+    assert detect_sub_source(li) == "linkedin"
+    ind = "https://nl.indeed.com/viewjob?jk=b661bc2362cab0c6"
+    assert canonicalize_job_url(ind, "indeed") == "https://www.indeed.com/viewjob?jk=b661bc2362cab0c6"
+    assert detect_sub_source(ind) == "indeed"
+    assert detect_sub_source("https://boards.greenhouse.io/x/jobs/9") is None
+
+
+async def test_collect_resolves_single_jsonl_record():
+    """collect-by-URL returns ONE JSONL record (dict) synchronously → resolver → [rec]."""
+    import json
+    from app.utils.brightdata_client import _resolve_records
+    rec = {"job_title": "Head of Product", "job_description_formatted": "x" * 500}
+    r = SimpleNamespace(text=json.dumps(rec), status_code=200)
+    out = await _resolve_records(None, r, "tok")
+    assert out == [rec]
+
+
+async def _seed_partial_job(S, *, with_token, uid, jid):
+    from app.models.job import Job, JobSource, JobStatus
+    from app.models.user import User, UserCredentials
+    from app.utils.encryption import encrypt
+    async with S() as s:   # commit the user (+creds) FIRST so the job FK resolves
+        s.add(User(id=uid, email=f"e-{uid}@t.co", hashed_password="x", is_active=True,
+                   is_superuser=False, is_verified=True, name="E"))
+        if with_token:
+            s.add(UserCredentials(user_id=uid, brightdata_token_enc=encrypt("bd-fake")))
+        await s.commit()
+    async with S() as s:
+        s.add(Job(id=jid, user_id=uid, company="Acme", role="Head of Product",
+                  portal_url="https://www.linkedin.com/comm/jobs/view/4432636617/?trk=eml",
+                  has_partial_jd=True, source=JobSource.gmail_alert, status=JobStatus.new,
+                  dedup_key="linkedin:4432636617"))
+        await s.commit()
+
+
+async def _cleanup(S, uid):
+    async with S() as s:
+        await s.execute(text("DELETE FROM jobs WHERE user_id=:u"), {"u": str(uid)})
+        await s.execute(text("DELETE FROM user_credentials WHERE user_id=:u"), {"u": str(uid)})
+        await s.execute(text("DELETE FROM users WHERE id=:u"), {"u": str(uid)})
+        await s.commit()
+
+
+async def test_enrich_brightdata_flips_partial(monkeypatch):
+    """Happy path: BD returns the full JD → has_partial_jd flips false + rescore queued.
+    Reuses the exact add-full-jd tail (score_pasted_jd → rescore_partial_job_from_text)."""
+    from app.routers.jobs import enrich_brightdata
+    from app.models.job import Job
+    from app.models.user import User
+    import app.utils.brightdata_client as bd
+    import app.tasks.gmail_tasks as gt
+
+    async def fake_collect(url, sub_source, token, **k):
+        assert sub_source == "linkedin"
+        return {"job_description_formatted": "Full JD. " * 60}
+    monkeypatch.setattr(bd, "brightdata_collect_by_url", fake_collect)
+    called = {}
+    monkeypatch.setattr(gt.score_pasted_jd, "delay", lambda *a: called.setdefault("delay", a))
+
+    eng, S = _sm()
+    uid, jid = uuid.uuid4(), uuid.uuid4()
+    try:
+        await _seed_partial_job(S, with_token=True, uid=uid, jid=jid)
+        async with S() as s:
+            user = (await s.execute(select(User).where(User.id == uid))).scalar_one()
+            res = await enrich_brightdata(jid, user, s)
+        assert res["enriched"] is True and "delay" in called
+        async with S() as s:
+            j = (await s.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.has_partial_jd is False and (j.jd_raw or "").startswith("Full JD")
+    finally:
+        await _cleanup(S, uid)
+        await eng.dispose()
+
+
+async def test_enrich_brightdata_no_token_503():
+    """No Bright Data token → clear 503; the job stays partial (paste fallback intact)."""
+    import pytest
+    from fastapi import HTTPException
+    from app.routers.jobs import enrich_brightdata
+    from app.models.job import Job
+    from app.models.user import User
+
+    eng, S = _sm()
+    uid, jid = uuid.uuid4(), uuid.uuid4()
+    try:
+        await _seed_partial_job(S, with_token=False, uid=uid, jid=jid)
+        async with S() as s:
+            user = (await s.execute(select(User).where(User.id == uid))).scalar_one()
+            with pytest.raises(HTTPException) as ei:
+                await enrich_brightdata(jid, user, s)
+        assert ei.value.status_code == 503
+        assert ei.value.detail["code"] == "brightdata_token_required"
+        async with S() as s:
+            j = (await s.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.has_partial_jd is True
+    finally:
+        await _cleanup(S, uid)
+        await eng.dispose()
+
+
+async def test_enrich_brightdata_failure_keeps_partial(monkeypatch):
+    """A Bright Data failure → 502 + the job STAYS partial so manual paste still works."""
+    import pytest
+    from fastapi import HTTPException
+    from app.routers.jobs import enrich_brightdata
+    from app.models.job import Job
+    from app.models.user import User
+    import app.utils.brightdata_client as bd
+    from app.utils.brightdata_client import BrightDataError
+
+    async def boom(*a, **k):
+        raise BrightDataError("login wall")
+    monkeypatch.setattr(bd, "brightdata_collect_by_url", boom)
+
+    eng, S = _sm()
+    uid, jid = uuid.uuid4(), uuid.uuid4()
+    try:
+        await _seed_partial_job(S, with_token=True, uid=uid, jid=jid)
+        async with S() as s:
+            user = (await s.execute(select(User).where(User.id == uid))).scalar_one()
+            with pytest.raises(HTTPException) as ei:
+                await enrich_brightdata(jid, user, s)
+        assert ei.value.status_code == 502
+        assert ei.value.detail["code"] == "brightdata_failed"
+        async with S() as s:
+            j = (await s.execute(select(Job).where(Job.id == jid))).scalar_one()
+            assert j.has_partial_jd is True and not j.jd_raw   # unchanged; paste still available
+    finally:
+        await _cleanup(S, uid)
+        await eng.dispose()
