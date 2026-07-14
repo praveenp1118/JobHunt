@@ -86,6 +86,10 @@ export const trimTailor = (tailoredCvId) =>
 export const regenerateCL = (tailoredCvId, excludeTemplate) =>
   client.post(`/tailor/${tailoredCvId}/regenerate-cl`, { exclude_template: excludeTemplate })
 
+// Standalone: generate ONLY a cover letter / ONLY an email (skips Suggest-changes + CV tailoring).
+export const coverLetterOnly = (jobId) => client.post(`/tailor/${jobId}/cover-letter-only`)
+export const emailOnly = (jobId) => client.post(`/tailor/${jobId}/email-only`)
+
 export const draftFollowUp = (jobId, context) =>
   client.post(`/tailor/followup/${jobId}`, { context })
 

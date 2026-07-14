@@ -31,6 +31,7 @@ from app.agents.tailor_agents import (
     generate_tailor_package,
     apply_tailor_changes,
     regenerate_cover_letter,
+    generate_email_draft,
     generate_followup_email,
     extract_jd_highlights,
 )
@@ -54,6 +55,53 @@ async def _get_anthropic_key(user: User, session: AsyncSession) -> Optional[str]
         if creds and creds.anthropic_api_key_enc:
             return decrypt_if_present(creds.anthropic_api_key_enc)
     return settings.platform_anthropic_api_key or settings.anthropic_api_key
+
+
+async def _resolve_cv_for_only(job, user, session):
+    """(domain_cv_id, cv_content_md) for the cover-letter/email-only paths.
+    Content priority mirrors the tailor selection: best_domain_cv_id → detected_domain_cv_id →
+    active MASTER. The RECORD's domain_cv_id (NOT NULL) is the resolved domain CV, or the newest
+    usable domain CV when we fall through to master content. Returns None if the user has NO
+    domain CV (the whole tailor flow already requires one)."""
+    for dcv_id in (job.best_domain_cv_id, job.detected_domain_cv_id):
+        if dcv_id:
+            dcv = (await session.execute(select(DomainCV).where(
+                DomainCV.id == dcv_id, DomainCV.user_id == user.id))).scalar_one_or_none()
+            if dcv and dcv.content_md and dcv.status != CVStatus.blocked:
+                return dcv.id, dcv.content_md
+    # No usable best/detected → content falls back to master; the record still needs a
+    # domain_cv_id (NOT NULL), so pin it to the newest usable domain CV.
+    any_dcv = (await session.execute(select(DomainCV).where(
+        DomainCV.user_id == user.id, DomainCV.content_md.isnot(None),
+        DomainCV.status != CVStatus.blocked).order_by(DomainCV.created_at.desc()))).scalars().first()
+    if not any_dcv:
+        return None
+    master = (await session.execute(select(MasterCV).where(
+        MasterCV.user_id == user.id, MasterCV.is_active == True))).scalars().first()
+    content = master.content_md if (master and master.content_md) else any_dcv.content_md
+    return any_dcv.id, content
+
+
+async def _get_or_create_tailored(job, user, session, domain_cv_id):
+    """Reuse the job's existing TailoredCV (from Generate-All or a prior only-run), else create
+    a minimal one: cv_md='' (NOT NULL), status='generated' (= change-log-ready / cv-empty — the
+    exact only-paths state), NO change log, NO scores. Never creates a duplicate."""
+    tailored = None
+    if job.tailored_cv_id:
+        tailored = (await session.execute(select(TailoredCV).where(
+            TailoredCV.id == job.tailored_cv_id, TailoredCV.user_id == user.id))).scalar_one_or_none()
+    if not tailored:
+        tailored = (await session.execute(select(TailoredCV).where(
+            TailoredCV.job_id == job.id, TailoredCV.user_id == user.id)
+            .order_by(TailoredCV.created_at.desc()))).scalars().first()
+    if tailored:
+        return tailored
+    tailored = TailoredCV(user_id=user.id, job_id=job.id, domain_cv_id=domain_cv_id,
+                          cv_md="", status="generated", jd_hash=job.jd_hash)
+    session.add(tailored)
+    await session.flush()
+    job.tailored_cv_id = tailored.id
+    return tailored
 
 
 def _get_s3_status(s3_master: float, s3_block: int, s3_review: int) -> str:
@@ -834,6 +882,104 @@ async def regenerate_cl(
     from app.utils.usage_logger import get_session_usage
     _u = get_session_usage()
     return {"cover_letter_md": new_cl, "template_used": template_used,
+            "tokens_used": _u["tokens"] or None, "cost_inr": round(_u["cost_inr"], 2) or None}
+
+
+# ══════════════════════════════════════════════════════════════
+# STANDALONE: cover-letter-only / email-only (skip Suggest-changes + CV tailoring)
+# One Claude call each. No change log, no cv_md, no S2/S3. Reuse the job's TailoredCV
+# record if present, else create one. CV content: best/detected domain CV → active master.
+# ══════════════════════════════════════════════════════════════
+
+@router.post("/{job_id}/cover-letter-only", dependencies=[Depends(require_active_subscription)])
+async def cover_letter_only(
+    job_id: uuid.UUID,
+    response: Response,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Generate ONLY a cover letter — no change log, no cv_md, no scores. One Claude call."""
+    job = (await session.execute(select(Job).where(
+        Job.id == job_id, Job.user_id == user.id))).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.jd_raw and not job.jd_md:
+        raise HTTPException(status_code=400, detail="Job has no JD content to write a cover letter against")
+    resolved = await _resolve_cv_for_only(job, user, session)
+    if resolved is None:
+        raise HTTPException(status_code=400, detail={"code": "no_domain_cv",
+            "message": "Create a domain CV first (tailoring needs at least one)."})
+    domain_cv_id, cv_content = resolved
+
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "tailor_generate", session)   # shared bucket
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
+
+    prefs = (await session.execute(select(UserPreferences).where(
+        UserPreferences.user_id == user.id))).scalar_one_or_none()
+    cl_tone = str(prefs.cl_tone) if prefs else "professional"
+    cl_template = str(prefs.cl_template) if prefs else "random"
+    anthropic_key = await _get_anthropic_key(user, session)
+    user_model = await get_user_model(user.id, session)
+    from app.utils.usage_logger import set_usage_entity, get_session_usage
+    set_usage_entity("job", job.id, f"{job.company} · {job.role}")
+
+    tailored = await _get_or_create_tailored(job, user, session, domain_cv_id)
+    new_cl, template_used = await regenerate_cover_letter(
+        tailored_cv_md=cv_content, jd_text=job.jd_md or job.jd_raw or "",
+        company=job.company, role=job.role, user_name=user.name or "Candidate",
+        cl_tone=cl_tone, cl_template=cl_template,
+        user_anthropic_key=anthropic_key, model=user_model,
+    )
+    tailored.cover_letter_md = new_cl
+    tailored.cl_template_used = template_used
+    await session.commit()
+    _u = get_session_usage()
+    return {"tailored_cv_id": str(tailored.id), "cover_letter_md": new_cl,
+            "cl_template_used": template_used,
+            "tokens_used": _u["tokens"] or None, "cost_inr": round(_u["cost_inr"], 2) or None}
+
+
+@router.post("/{job_id}/email-only", dependencies=[Depends(require_active_subscription)])
+async def email_only(
+    job_id: uuid.UUID,
+    response: Response,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Generate ONLY the application email draft — no change log, no cv_md, no scores."""
+    job = (await session.execute(select(Job).where(
+        Job.id == job_id, Job.user_id == user.id))).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.jd_raw and not job.jd_md:
+        raise HTTPException(status_code=400, detail="Job has no JD content to write an email against")
+    resolved = await _resolve_cv_for_only(job, user, session)
+    if resolved is None:
+        raise HTTPException(status_code=400, detail={"code": "no_domain_cv",
+            "message": "Create a domain CV first (tailoring needs at least one)."})
+    domain_cv_id, cv_content = resolved
+
+    from app.utils.rate_limiter import enforce_rate_limit
+    _rl = await enforce_rate_limit(user.id, "tailor_generate", session)   # shared bucket
+    response.headers["X-RateLimit-Remaining"] = str(_rl["remaining"])
+
+    anthropic_key = await _get_anthropic_key(user, session)
+    user_model = await get_user_model(user.id, session)
+    from app.utils.usage_logger import set_usage_entity, get_session_usage
+    set_usage_entity("job", job.id, f"{job.company} · {job.role}")
+
+    tailored = await _get_or_create_tailored(job, user, session, domain_cv_id)
+    email = await generate_email_draft(
+        cv_md=cv_content, jd_text=job.jd_md or job.jd_raw or "",
+        company=job.company, role=job.role, user_name=user.name or "Candidate",
+        recruiter_email=job.recruiter_email,
+        user_anthropic_key=anthropic_key, model=user_model,
+    )
+    tailored.email_draft = email
+    await session.commit()
+    _u = get_session_usage()
+    return {"tailored_cv_id": str(tailored.id), "email_draft": email,
             "tokens_used": _u["tokens"] or None, "cost_inr": round(_u["cost_inr"], 2) or None}
 
 

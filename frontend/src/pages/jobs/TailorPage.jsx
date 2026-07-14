@@ -5,7 +5,7 @@ import { clsx } from 'clsx'
 import {
   getJob, getJdHighlights, generateTailor, getTailorDraft, getTailorChangelog,
   approveChange, rejectChange, editChange, applyTailor, regenerateCL, trimTailor,
-  sendApplication, updateJobStatus,
+  sendApplication, updateJobStatus, coverLetterOnly, emailOnly,
 } from '../../api/jobs'
 import { getDomainCVs } from '../../api/cvs'
 import { getPreferences, getSettingsMode } from '../../api/auth'
@@ -70,6 +70,8 @@ export default function TailorPage() {
   const [generating, setGenerating] = useState(false)
   const [applying, setApplying] = useState(false)
   const [applyResult, setApplyResult] = useState(null)
+  const [clOnlyBusy, setClOnlyBusy] = useState(false)
+  const [emailOnlyBusy, setEmailOnlyBusy] = useState(false)
   const [overflowInfo, setOverflowInfo] = useState(null)
   const [trimming, setTrimming] = useState(false)
   const [genUsage, setGenUsage] = useState(null)
@@ -246,6 +248,53 @@ export default function TailorPage() {
     } finally {
       setApplying(false)
     }
+  }
+
+  // Readable message for a gated/failed call — 429 rate-limit + 402 subscription lapse
+  // must never fail silently.
+  const gatedMsg = (e, fallback) => {
+    const st = e.response?.status
+    const d = e.response?.data?.detail
+    if (st === 429) {
+      const m = (d && typeof d === 'object' && d.message) || 'Rate limit reached — you’ve hit the tailoring cap.'
+      const w = (d && typeof d === 'object' && d.window_hours) ? ` Try again within ${d.window_hours}h.` : ''
+      return `${m}${w}`
+    }
+    if (st === 402) return 'Your subscription has lapsed — renew in Settings to keep generating.'
+    return e.userMessage || (typeof d === 'string' ? d : d?.message) || fallback
+  }
+
+  // Standalone: generate ONLY a cover letter / email — skips Suggest-changes + CV tailoring.
+  // Routes the output through applyResult WITHOUT setting tailored_cv_md, so the full-apply
+  // button stays enabled (its disable keys on applyResult?.tailored_cv_md now).
+  const handleCoverLetterOnly = async () => {
+    setClOnlyBusy(true)
+    try {
+      const r = await coverLetterOnly(jobId)
+      setTailoredCvId(r.data.tailored_cv_id)
+      setApplyResult((p) => ({ ...(p || {}), cover_letter_md: r.data.cover_letter_md, cl_template_used: r.data.cl_template_used }))
+      setRightTab('cover_letter')
+      const c = r.data.cost_inr
+      toast.success(`Cover letter generated${c ? ` · ⚡ ₹${c}` : ''}`)
+    } catch (e) {
+      toast.error(gatedMsg(e, 'Could not generate the cover letter'))
+    } finally { setClOnlyBusy(false) }
+  }
+
+  const handleEmailOnly = async () => {
+    setEmailOnlyBusy(true)
+    try {
+      const r = await emailOnly(jobId)
+      setTailoredCvId(r.data.tailored_cv_id)
+      setApplyResult((p) => ({ ...(p || {}), email_draft: r.data.email_draft }))
+      setEmailSubject(`Application: ${job?.role} — ${job?.company}`)
+      setEmailBody(r.data.email_draft || '')
+      setRightTab('email')
+      const c = r.data.cost_inr
+      toast.success(`Email draft generated${c ? ` · ⚡ ₹${c}` : ''}`)
+    } catch (e) {
+      toast.error(gatedMsg(e, 'Could not generate the email'))
+    } finally { setEmailOnlyBusy(false) }
   }
 
   const handleTrim = async () => {
@@ -483,6 +532,13 @@ export default function TailorPage() {
             </div>
           </div>
 
+          {/* Quick generate — skip Suggest-changes / the change log (CV tab stays tied to the change log) */}
+          <div className="px-5 py-2 border-b border-gray-100 bg-gray-50/60 shrink-0 flex items-center gap-2">
+            <span className="text-[11px] text-gray-400 mr-auto">Skip the change log:</span>
+            <Button size="sm" variant="secondary" loading={clOnlyBusy} onClick={handleCoverLetterOnly}>Cover Letter only</Button>
+            <Button size="sm" variant="secondary" loading={emailOnlyBusy} onClick={handleEmailOnly}>Email only</Button>
+          </div>
+
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
             {generating ? (
               <div className="flex justify-center py-12"><Spinner /></div>
@@ -560,7 +616,7 @@ export default function TailorPage() {
             <span className="text-xs text-gray-500">
               {approved.length} approved · {rejected.length} rejected · {pending.length} pending
             </span>
-            <Button onClick={handleApply} loading={applying} disabled={!allReviewed || !!applyResult}>
+            <Button onClick={handleApply} loading={applying} disabled={!allReviewed || !!applyResult?.tailored_cv_md}>
               ⚡ Generate tailored CV + cover letter
             </Button>
           </div>
@@ -582,6 +638,12 @@ export default function TailorPage() {
             {!applyResult ? (
               <div className="text-center py-12 text-sm text-gray-400">
                 Review the change log, then<br />“Generate tailored CV + cover letter”<br />to preview here.
+                <br /><br />Or use “Cover Letter only” / “Email only” above to skip the change log.
+              </div>
+            ) : rightTab === 'cv' && !applyResult.tailored_cv_md ? (
+              <div className="text-center py-12 text-sm text-gray-400">
+                No tailored CV yet — run the full tailor (review the change log →<br />
+                “Generate tailored CV + cover letter”). The CV tab is tied to the change log.
               </div>
             ) : rightTab === 'cv' ? (
               <div>
